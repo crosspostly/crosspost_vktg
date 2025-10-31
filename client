@@ -1,0 +1,1596 @@
+/**
+ * VK→Telegram Crossposter - CLIENT v6.0 FINAL
+ * 
+ * ✅ Пользовательский интерфейс для управления связками
+ * ✅ Автоматическая проверка новых постов по триггеру
+ * ✅ Защита от дублей постов
+ * ✅ Встроенный HTML интерфейс
+ * ✅ Тестирование публикаций
+ */
+
+// ============================================
+// КОНФИГУРАЦИЯ
+// ============================================
+
+const DEV_MODE = false; // Включить подробное логирование
+const CLIENT_VERSION = "6.0";
+
+// 🚨 ВАЖНО: ЗАМЕНИТЕ НА URL ВАШЕГО СЕРВЕРА!
+// Получите этот URL после развертывания Server.gs как Web App
+const SERVER_URL = "YOUR_SERVER_URL_HERE";
+
+// Настройки клиента
+const CACHE_DURATION = 10 * 60 * 1000; // 10 минут кеш для лицензий
+const MAX_POSTS_CHECK = 50; // Максимум постов для проверки за раз
+
+// ============================================
+// 1. МЕНЮ И ИНИЦИАЛИЗАЦИЯ
+// ============================================
+
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  
+  ui.createMenu("VK→Telegram")
+    .addItem("🚀 Открыть панель управления", "openMainPanel")
+    .addItem("🧪 Проверить новые посты вручную", "checkNewPostsManually")
+    .addItem("⚙️ Создать/обновить триггер (30 мин)", "setupTrigger")
+    .addItem("📊 Показать статистику", "showUserStatistics")
+    .addItem("🔍 Показать логи", "showLogsSheet")
+    .addToUi();
+}
+
+function openMainPanel() {
+  try {
+    const htmlContent = getMainPanelHtml();
+    if (!htmlContent) {
+      throw new Error("Failed to generate main panel HTML");
+    }
+    
+    const html = HtmlService.createHtmlOutput(htmlContent);
+    if (!html) {
+      throw new Error("Failed to create HTML output");
+    }
+    
+    html.setWidth(1000).setHeight(700);
+    
+    SpreadsheetApp.getUi()
+      .showModelessDialog(html, "🚀 VK→Telegram Manager v" + CLIENT_VERSION);
+      
+  } catch (error) {
+    logEvent("ERROR", "main_panel_error", "client", error.message);
+    SpreadsheetApp.getUi().alert("❌ Ошибка открытия панели: " + error.message);
+  }
+}
+
+// ============================================
+// 2. ГЛАВНЫЙ HTML ИНТЕРФЕЙС
+// ============================================
+
+function getMainPanelHtml() {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f5f7fa;
+      color: #333;
+    }
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px 40px;
+      text-align: center;
+    }
+    .header h1 {
+      font-size: 28px;
+      margin-bottom: 10px;
+    }
+    .header p {
+      opacity: 0.9;
+      font-size: 14px;
+    }
+    .content {
+      padding: 30px 40px;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+    .section {
+      background: white;
+      padding: 24px;
+      border-radius: 12px;
+      margin-bottom: 30px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .section h2 {
+      font-size: 18px;
+      color: #333;
+      margin-bottom: 20px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+    }
+    .section h2 .icon {
+      margin-right: 10px;
+      font-size: 20px;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+    input, select {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #f0f0f0;
+      border-radius: 8px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102,126,234,0.1);
+    }
+    .hint {
+      font-size: 12px;
+      color: #999;
+      margin-top: 6px;
+      line-height: 1.4;
+    }
+    button {
+      padding: 12px 20px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 14px;
+      transition: all 0.3s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      width: 100%;
+    }
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(102,126,234,0.3);
+    }
+    .btn-secondary {
+      background: #e5e7eb;
+      color: #374151;
+      width: 100%;
+    }
+    .btn-secondary:hover:not(:disabled) {
+      background: #d1d5db;
+    }
+    .btn-small {
+      padding: 6px 12px;
+      font-size: 12px;
+      width: auto;
+    }
+    .btn-success {
+      background: #10b981;
+      color: white;
+    }
+    .btn-danger {
+      background: #ef4444;
+      color: white;
+    }
+    .btn-warning {
+      background: #f59e0b;
+      color: white;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+    
+    .message {
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 13px;
+      display: none;
+    }
+    .message.success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+      display: block;
+    }
+    .message.error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+      display: block;
+    }
+    .message.warning {
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeaa7;
+      display: block;
+    }
+    .message.loading {
+      background: #e7f3ff;
+      color: #004085;
+      display: block;
+    }
+    
+    .loader {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(255,255,255,0.8);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      display: none;
+    }
+    .loader.show {
+      display: flex;
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #667eea;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .bindings-list {
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .binding-item {
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    .binding-item.paused {
+      opacity: 0.6;
+      background: #fff3cd;
+      border-color: #ffeaa7;
+    }
+    .binding-header {
+      display: flex;
+      justify-content: between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+    .binding-info {
+      flex: 1;
+    }
+    .binding-actions {
+      display: flex;
+      gap: 6px;
+      margin-left: 12px;
+    }
+    .binding-vk {
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 4px;
+      word-break: break-all;
+    }
+    .binding-tg {
+      font-size: 12px;
+      color: #666;
+      font-family: 'Courier New', monospace;
+    }
+    .binding-status {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .status-active {
+      background: #d4edda;
+      color: #155724;
+    }
+    .status-paused {
+      background: #fff3cd;
+      color: #856404;
+    }
+    
+    .empty-state {
+      text-align: center;
+      color: #999;
+      padding: 40px 20px;
+      font-style: italic;
+    }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .stat-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 16px;
+      border-radius: 8px;
+      text-align: center;
+    }
+    .stat-value {
+      font-size: 24px;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+    .stat-label {
+      font-size: 12px;
+      opacity: 0.9;
+    }
+    
+    .license-info {
+      background: #e7f3ff;
+      border: 1px solid #bee5eb;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+    .license-type {
+      font-weight: 600;
+      color: #004085;
+      font-size: 16px;
+      margin-bottom: 4px;
+    }
+    .license-details {
+      font-size: 13px;
+      color: #004085;
+      opacity: 0.8;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🚀 VK→Telegram Manager</h1>
+    <p>Управление автоматическим кросспостингом</p>
+  </div>
+  
+  <div class="content">
+    <!-- Loader -->
+    <div id="loader" class="loader">
+      <div class="spinner"></div>
+    </div>
+    
+    <!-- License Section -->
+    <div class="section" id="license-section">
+      <h2><span class="icon">🔑</span>1. Ваша лицензия</h2>
+      <div id="license-message" class="message"></div>
+      
+      <div id="license-input-form">
+        <div class="form-group">
+          <label>Лицензионный ключ</label>
+          <input type="text" id="license-key-input" placeholder="LICENSE-TRIAL-ABC123-2025-12-31">
+          <div class="hint">Получите у администратора сервера</div>
+        </div>
+        <button class="btn-primary" onclick="checkAndSaveLicense()">Проверить и сохранить</button>
+      </div>
+      
+      <div id="license-info" class="license-info" style="display: none;">
+        <div class="license-type" id="license-type-display"></div>
+        <div class="license-details" id="license-details-display"></div>
+      </div>
+    </div>
+    
+    <!-- Bindings Section -->
+    <div class="section" id="bindings-section" style="display: none;">
+      <h2><span class="icon">🔗</span>2. Ваши связки (<span id="bindings-count">0</span>)</h2>
+      <div id="bindings-message" class="message"></div>
+      
+      <div class="stats-grid" id="bindings-stats" style="display: none;">
+        <div class="stat-card">
+          <div class="stat-value" id="active-bindings">0</div>
+          <div class="stat-label">Активных</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="paused-bindings">0</div>
+          <div class="stat-label">На паузе</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="total-bindings">0</div>
+          <div class="stat-label">Всего</div>
+        </div>
+      </div>
+      
+      <div id="bindings-list" class="bindings-list"></div>
+      
+      <button class="btn-secondary" id="add-binding-btn" onclick="showAddBindingDialog()">
+        ➕ Создать новую связку
+      </button>
+    </div>
+    
+    <!-- Status Section -->
+    <div class="section" id="status-section" style="display: none;">
+      <h2><span class="icon">📊</span>3. Статус системы</h2>
+      <div id="status-content"></div>
+    </div>
+  </div>
+
+<script>
+  // ============================================
+  // ГЛОБАЛЬНОЕ СОСТОЯНИЕ
+  // ============================================
+  
+  let appState = {
+    license: null,
+    bindings: [],
+    stats: { active: 0, paused: 0, total: 0 }
+  };
+
+  // ============================================
+  // ИНИЦИАЛИЗАЦИЯ
+  // ============================================
+  
+  document.addEventListener('DOMContentLoaded', function() {
+    loadInitialData();
+  });
+
+  function loadInitialData() {
+    showLoader(true);
+    
+    google.script.run
+      .withSuccessHandler(function(data) {
+        showLoader(false);
+        
+        if (data.success) {
+          appState.license = data.license;
+          appState.bindings = data.bindings || [];
+          updateUI();
+        } else {
+          showMessage('license', 'error', 'Ошибка загрузки: ' + data.error);
+        }
+      })
+      .withFailureHandler(function(error) {
+        showLoader(false);
+        showMessage('license', 'error', 'Ошибка соединения: ' + error.message);
+      })
+      .getInitialData();
+  }
+
+  function updateUI() {
+    updateLicenseSection();
+    updateBindingsSection();
+    updateStatusSection();
+  }
+
+  function updateLicenseSection() {
+    const licenseInputForm = document.getElementById('license-input-form');
+    const licenseInfo = document.getElementById('license-info');
+    const licenseTypeDisplay = document.getElementById('license-type-display');
+    const licenseDetailsDisplay = document.getElementById('license-details-display');
+    
+    if (appState.license) {
+      licenseInputForm.style.display = 'none';
+      licenseInfo.style.display = 'block';
+      
+      licenseTypeDisplay.textContent = appState.license.type + ' лицензия';
+      licenseDetailsDisplay.innerHTML = 
+        'Максимум связок: <strong>' + appState.license.maxGroups + '</strong><br>' +
+        'Действует до: <strong>' + new Date(appState.license.expires).toLocaleDateString() + '</strong>';
+      
+      document.getElementById('bindings-section').style.display = 'block';
+      document.getElementById('status-section').style.display = 'block';
+      
+      showMessage('license', 'success', '✅ Лицензия активна');
+    } else {
+      licenseInputForm.style.display = 'block';
+      licenseInfo.style.display = 'none';
+      
+      document.getElementById('bindings-section').style.display = 'none';
+      document.getElementById('status-section').style.display = 'none';
+    }
+  }
+
+  function updateBindingsSection() {
+    if (!appState.license) return;
+    
+    const bindings = appState.bindings;
+    const activeBindings = bindings.filter(b => b.status === 'active').length;
+    const pausedBindings = bindings.filter(b => b.status === 'paused').length;
+    
+    appState.stats = {
+      active: activeBindings,
+      paused: pausedBindings,
+      total: bindings.length
+    };
+    
+    // Обновляем счетчики
+    document.getElementById('bindings-count').textContent = bindings.length;
+    document.getElementById('active-bindings').textContent = activeBindings;
+    document.getElementById('paused-bindings').textContent = pausedBindings;
+    document.getElementById('total-bindings').textContent = bindings.length;
+    
+    // Показываем/скрываем статистику
+    const statsGrid = document.getElementById('bindings-stats');
+    if (bindings.length > 0) {
+      statsGrid.style.display = 'grid';
+    } else {
+      statsGrid.style.display = 'none';
+    }
+    
+    // Обновляем список связок
+    const bindingsList = document.getElementById('bindings-list');
+    
+    if (bindings.length === 0) {
+      bindingsList.innerHTML = '<div class="empty-state">📭 Связки еще не созданы<br><br>Создайте первую связку, чтобы начать автоматический кросспостинг</div>';
+    } else {
+      bindingsList.innerHTML = bindings.map(binding => 
+        '<div class="binding-item' + (binding.status === 'paused' ? ' paused' : '') + '">' +
+          '<div class="binding-header">' +
+            '<div class="binding-info">' +
+              '<div class="binding-vk">📘 ' + binding.vkGroupUrl + '</div>' +
+              '<div class="binding-tg">→ 💬 ' + binding.tgChatId + '</div>' +
+            '</div>' +
+            '<div class="binding-actions">' +
+              '<button class="btn-small btn-success" onclick="testBinding(\'' + binding.id + '\')" title="Тест">🚀</button>' +
+              '<button class="btn-small btn-warning" onclick="toggleBinding(\'' + binding.id + '\')" title="' + (binding.status === 'active' ? 'Пауза' : 'Возобновить') + '">' + (binding.status === 'active' ? '⏸️' : '▶️') + '</button>' +
+              '<button class="btn-small btn-secondary" onclick="editBinding(\'' + binding.id + '\')" title="Редактировать">✏️</button>' +
+              '<button class="btn-small btn-danger" onclick="deleteBinding(\'' + binding.id + '\')" title="Удалить">🗑️</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="binding-status status-' + binding.status + '">' + binding.status + '</div>' +
+        '</div>'
+      ).join('');
+    }
+    
+    // Обновляем кнопку добавления
+    const addButton = document.getElementById('add-binding-btn');
+    if (bindings.length >= appState.license.maxGroups) {
+      addButton.disabled = true;
+      addButton.textContent = '❌ Достигнут лимит связок';
+    } else {
+      addButton.disabled = false;
+      addButton.textContent = '➕ Создать новую связку';
+    }
+  }
+
+  function updateStatusSection() {
+    if (!appState.license) return;
+    
+    const statusContent = document.getElementById('status-content');
+    
+    const serverStatus = SERVER_URL === 'YOUR_SERVER_URL_HERE' ? 
+      '❌ Не настроен' : '✅ Настроен';
+    
+    const triggerStatus = '⚠️ Проверьте в меню "Создать/обновить триггер"';
+    
+    statusContent.innerHTML = 
+      '<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">' +
+        '<div><strong>Сервер:</strong> ' + serverStatus + '</div>' +
+        '<div><strong>Лицензия:</strong> ✅ Активна</div>' +
+        '<div><strong>Связок:</strong> ' + appState.stats.total + ' (' + appState.stats.active + ' активных)</div>' +
+        '<div><strong>Триггер:</strong> ' + triggerStatus + '</div>' +
+      '</div>' +
+      '<div style="margin-top: 16px; padding: 12px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">' +
+        '💡 <strong>Как это работает:</strong> Каждые 30 минут система автоматически проверяет новые посты в ваших VK группах и отправляет их в соответствующие Telegram каналы. Используйте кнопку "Тест" для мгновенной проверки каждой связки.' +
+      '</div>';
+  }
+
+  // ============================================
+  // УПРАВЛЕНИЕ ЛИЦЕНЗИЕЙ
+  // ============================================
+
+  function checkAndSaveLicense() {
+    const licenseKey = document.getElementById('license-key-input').value.trim();
+    
+    if (!licenseKey) {
+      showMessage('license', 'error', 'Введите лицензионный ключ');
+      return;
+    }
+    
+    showMessage('license', 'loading', '🔄 Проверка лицензии на сервере...');
+    showLoader(true);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        showLoader(false);
+        
+        if (result.success) {
+          appState.license = result.license;
+          updateUI();
+          loadBindings();
+        } else {
+          showMessage('license', 'error', result.error);
+        }
+      })
+      .withFailureHandler(function(error) {
+        showLoader(false);
+        showMessage('license', 'error', 'Ошибка: ' + error.message);
+      })
+      .saveLicenseWithCheck(licenseKey);
+  }
+
+  // ============================================
+  // УПРАВЛЕНИЕ СВЯЗКАМИ
+  // ============================================
+
+  function loadBindings() {
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          appState.bindings = result.bindings;
+          updateBindingsSection();
+        }
+      })
+      .withFailureHandler(function(error) {
+        showMessage('bindings', 'error', 'Ошибка загрузки связок: ' + error.message);
+      })
+      .getBindings();
+  }
+
+  function showAddBindingDialog() {
+    const vkUrl = prompt(
+      '🔗 Введите URL VK группы:\\n\\n' +
+      'Поддерживаемые форматы:\\n' +
+      '• https://vk.com/durov\\n' +
+      '• https://vk.com/public123456\\n' +
+      '• https://vk.com/club123456\\n' +
+      '• vk.com/имя_группы\\n\\n' +
+      '📌 Система автоматически извлечет ID группы из ссылки',
+      'https://vk.com/'
+    );
+    
+    if (!vkUrl) return;
+    
+    const tgChatInput = prompt(
+      '💬 Введите ссылку на Telegram канал:\\n\\n' +
+      'Поддерживаемые форматы:\\n' +
+      '• https://t.me/имя_канала\\n' +
+      '• t.me/имя_канала\\n' +
+      '• @имя_канала\\n' +
+      '• имя_канала\\n' +
+      '• -1001234567890 (если знаете chat_id)\\n\\n' +
+      '📌 Система автоматически определит chat_id канала\\n\\n' +
+      '💡 Для получения ссылки на канал:\\n' +
+      '1. Откройте канал в Telegram\\n' +
+      '2. Скопируйте ссылку из адресной строки\\n' +
+      '3. Или используйте имя канала без @',
+      'https://t.me/'
+    );
+    
+    if (!tgChatInput) return;
+    
+    showMessage('bindings', 'loading', '🔄 Создание связки...');
+    showLoader(true);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        showLoader(false);
+        
+        if (result.success) {
+          showMessage('bindings', 'success', '✅ Связка создана!');
+          loadBindings();
+        } else {
+          showMessage('bindings', 'error', result.error);
+        }
+      })
+      .withFailureHandler(function(error) {
+        showLoader(false);
+        showMessage('bindings', 'error', 'Ошибка: ' + error.message);
+      })
+      .addBinding(vkUrl, tgChatInput);
+  }
+
+  function editBinding(bindingId) {
+    const binding = appState.bindings.find(b => b.id === bindingId);
+    if (!binding) return;
+    
+    const newVkUrl = prompt(
+      'Редактировать VK группу:\\n\\n' +
+      'Поддерживаемые форматы:\\n' +
+      '• https://vk.com/группа\\n' +
+      '• https://vk.com/public123456\\n' +
+      '• vk.com/club123456',
+      binding.vkGroupUrl
+    );
+    if (!newVkUrl) return;
+    
+    const newTgChatInput = prompt(
+      'Редактировать Telegram канал:\\n\\n' +
+      'Поддерживаемые форматы:\\n' +
+      '• https://t.me/канал\\n' +
+      '• @имя_канала\\n' +
+      '• -1001234567890 (chat_id)',
+      binding.tgChatId
+    );
+    if (!newTgChatInput) return;
+    
+    showMessage('bindings', 'loading', '🔄 Сохранение изменений...');
+    showLoader(true);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        showLoader(false);
+        
+        if (result.success) {
+          showMessage('bindings', 'success', '✅ Связка обновлена!');
+          loadBindings();
+        } else {
+          showMessage('bindings', 'error', result.error);
+        }
+      })
+      .withFailureHandler(function(error) {
+        showLoader(false);
+        showMessage('bindings', 'error', 'Ошибка: ' + error.message);
+      })
+      .editBinding(bindingId, newVkUrl, newTgChatInput);
+  }
+
+  function toggleBinding(bindingId) {
+    const binding = appState.bindings.find(b => b.id === bindingId);
+    if (!binding) return;
+    
+    const action = binding.status === 'active' ? 'приостановить' : 'возобновить';
+    
+    if (!confirm('Вы уверены что хотите ' + action + ' эту связку?')) return;
+    
+    showMessage('bindings', 'loading', '🔄 Изменение статуса...');
+    showLoader(true);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        showLoader(false);
+        
+        if (result.success) {
+          showMessage('bindings', 'success', '✅ Статус изменен на "' + result.newStatus + '"');
+          loadBindings();
+        } else {
+          showMessage('bindings', 'error', result.error);
+        }
+      })
+      .withFailureHandler(function(error) {
+        showLoader(false);
+        showMessage('bindings', 'error', 'Ошибка: ' + error.message);
+      })
+      .toggleBindingStatus(bindingId);
+  }
+
+  function deleteBinding(bindingId) {
+    const binding = appState.bindings.find(b => b.id === bindingId);
+    if (!binding) return;
+    
+    if (!confirm('Вы уверены что хотите удалить связку?\\n\\n' + binding.vkGroupUrl + ' → ' + binding.tgChatId)) return;
+    
+    showMessage('bindings', 'loading', '🔄 Удаление связки...');
+    showLoader(true);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        showLoader(false);
+        
+        if (result.success) {
+          showMessage('bindings', 'success', '✅ Связка удалена');
+          loadBindings();
+        } else {
+          showMessage('bindings', 'error', result.error);
+        }
+      })
+      .withFailureHandler(function(error) {
+        showLoader(false);
+        showMessage('bindings', 'error', 'Ошибка: ' + error.message);
+      })
+      .deleteBinding(bindingId);
+  }
+
+  function testBinding(bindingId) {
+    const binding = appState.bindings.find(b => b.id === bindingId);
+    if (!binding) return;
+    
+    if (!confirm('Отправить последний пост из VK группы в Telegram?\\n\\nЭто поможет проверить работоспособность связки.')) return;
+    
+    showMessage('bindings', 'loading', '🧪 Отправка тестового поста...');
+    showLoader(true);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        showLoader(false);
+        
+        if (result.success) {
+          showMessage('bindings', 'success', '✅ Тестовый пост отправлен! Проверьте Telegram.');
+        } else {
+          showMessage('bindings', 'error', 'Ошибка теста: ' + result.error);
+        }
+      })
+      .withFailureHandler(function(error) {
+        showLoader(false);
+        showMessage('bindings', 'error', 'Ошибка: ' + error.message);
+      })
+      .testPublication(bindingId);
+  }
+
+  // ============================================
+  // УТИЛИТЫ
+  // ============================================
+
+  function showMessage(section, type, text) {
+    const messageEl = document.getElementById(section + '-message');
+    messageEl.className = 'message ' + type;
+    messageEl.textContent = text;
+    
+    if (type !== 'loading') {
+      setTimeout(() => {
+        messageEl.style.display = 'none';
+      }, 5000);
+    }
+  }
+
+  function showLoader(show) {
+    const loader = document.getElementById('loader');
+    if (show) {
+      loader.classList.add('show');
+    } else {
+      loader.classList.remove('show');
+    }
+  }
+</script>
+</body>
+</html>`;
+}
+
+// ============================================
+// 3. API FUNCTIONS (СЕРВЕРНЫЕ ВЫЗОВЫ)
+// ============================================
+
+function getInitialData() {
+  try {
+    const license = getLicense();
+    const bindings = license ? getBindings().bindings || [] : [];
+    
+    return {
+      success: true,
+      license: license,
+      bindings: bindings
+    };
+    
+  } catch (error) {
+    logEvent("ERROR", "get_initial_data", "client", error.message);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+function saveLicenseWithCheck(licenseKey) {
+  try {
+    if (SERVER_URL === "YOUR_SERVER_URL_HERE" || !SERVER_URL) {
+      return {
+        success: false,
+        error: "❌ Сервер не настроен!\\n\\nВам нужно:\\n1. Скопировать URL сервера из Server.gs (пункт 'Проверить состояние сервера')\\n2. Вставить его в Client.gs в строку: const SERVER_URL = \"ВАШ_URL_ЗДЕСЬ\""
+      };
+    }
+    
+    logEvent("INFO", "license_check_start", "client", "Checking license: " + licenseKey.substring(0, 20) + "...");
+    
+    const response = UrlFetchApp.fetch(SERVER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      payload: JSON.stringify({
+        event: "check_license",
+        license_key: licenseKey
+      }),
+      muteHttpExceptions: true,
+      timeout: 30000
+    });
+    
+    const result = JSON.parse(response.getContentText());
+    
+    if (result.success) {
+      // Сохраняем лицензию локально
+      PropertiesService.getUserProperties().setProperty("LICENSE_KEY", licenseKey);
+      
+      logEvent("INFO", "license_saved", "client", "License type: " + result.license.type);
+      
+      return {
+        success: true,
+        license: {
+          key: licenseKey,
+          type: result.license.type,
+          maxGroups: result.license.maxGroups,
+          expires: result.license.expires
+        }
+      };
+    } else {
+      logEvent("WARN", "license_check_failed", "client", result.error);
+      return { success: false, error: result.error };
+    }
+    
+  } catch (error) {
+    logEvent("ERROR", "license_check_error", "client", error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+function addBinding(vkGroupUrl, tgChatId) {
+  try {
+    const license = getLicense();
+    if (!license) {
+      return { success: false, error: "Лицензия не найдена" };
+    }
+    
+    logEvent("INFO", "add_binding_start", "client", vkGroupUrl + " → " + tgChatId);
+    
+    const response = UrlFetchApp.fetch(SERVER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      payload: JSON.stringify({
+        event: "add_binding",
+        license_key: license.key,
+        vk_group_url: vkGroupUrl,
+        tg_chat_id: tgChatId
+      }),
+      muteHttpExceptions: true,
+      timeout: 30000
+    });
+    
+    const result = JSON.parse(response.getContentText());
+    
+    if (result.success) {
+      logEvent("INFO", "binding_added", "client", "Binding ID: " + result.binding_id);
+    } else {
+      logEvent("WARN", "add_binding_failed", "client", result.error);
+    }
+    
+    return result;
+    
+  } catch (error) {
+    logEvent("ERROR", "add_binding_error", "client", error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+function editBinding(bindingId, vkGroupUrl, tgChatId) {
+  try {
+    const license = getLicense();
+    if (!license) {
+      return { success: false, error: "Лицензия не найдена" };
+    }
+    
+    const response = UrlFetchApp.fetch(SERVER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      payload: JSON.stringify({
+        event: "edit_binding",
+        license_key: license.key,
+        binding_id: bindingId,
+        vk_group_url: vkGroupUrl,
+        tg_chat_id: tgChatId
+      }),
+      muteHttpExceptions: true,
+      timeout: 30000
+    });
+    
+    const result = JSON.parse(response.getContentText());
+    
+    if (result.success) {
+      logEvent("INFO", "binding_edited", "client", "Binding ID: " + bindingId);
+    } else {
+      logEvent("WARN", "edit_binding_failed", "client", result.error);
+    }
+    
+    return result;
+    
+  } catch (error) {
+    logEvent("ERROR", "edit_binding_error", "client", error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+function deleteBinding(bindingId) {
+  try {
+    const license = getLicense();
+    if (!license) {
+      return { success: false, error: "Лицензия не найдена" };
+    }
+    
+    const response = UrlFetchApp.fetch(SERVER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      payload: JSON.stringify({
+        event: "delete_binding",
+        license_key: license.key,
+        binding_id: bindingId
+      }),
+      muteHttpExceptions: true,
+      timeout: 30000
+    });
+    
+    const result = JSON.parse(response.getContentText());
+    
+    if (result.success) {
+      logEvent("INFO", "binding_deleted", "client", "Binding ID: " + bindingId);
+    } else {
+      logEvent("WARN", "delete_binding_failed", "client", result.error);
+    }
+    
+    return result;
+    
+  } catch (error) {
+    logEvent("ERROR", "delete_binding_error", "client", error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+function getBindings() {
+  try {
+    const license = getLicense();
+    if (!license) {
+      return { success: false, error: "Лицензия не найдена" };
+    }
+    
+    const response = UrlFetchApp.fetch(SERVER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      payload: JSON.stringify({
+        event: "get_bindings",
+        license_key: license.key
+      }),
+      muteHttpExceptions: true,
+      timeout: 30000
+    });
+    
+    return JSON.parse(response.getContentText());
+    
+  } catch (error) {
+    logEvent("ERROR", "get_bindings_error", "client", error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+function toggleBindingStatus(bindingId) {
+  try {
+    const license = getLicense();
+    if (!license) {
+      return { success: false, error: "Лицензия не найдена" };
+    }
+    
+    const response = UrlFetchApp.fetch(SERVER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      payload: JSON.stringify({
+        event: "toggle_binding_status",
+        license_key: license.key,
+        binding_id: bindingId
+      }),
+      muteHttpExceptions: true,
+      timeout: 30000
+    });
+    
+    const result = JSON.parse(response.getContentText());
+    
+    if (result.success) {
+      logEvent("INFO", "binding_status_toggled", "client", "Binding ID: " + bindingId + ", New status: " + result.new_status);
+    } else {
+      logEvent("WARN", "toggle_status_failed", "client", result.error);
+    }
+    
+    return result;
+    
+  } catch (error) {
+    logEvent("ERROR", "toggle_status_error", "client", error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+function testPublication(bindingId) {
+  try {
+    const license = getLicense();
+    if (!license) {
+      return { success: false, error: "Лицензия не найдена" };
+    }
+    
+    logEvent("INFO", "test_publication_start", "client", "Binding ID: " + bindingId);
+    
+    const response = UrlFetchApp.fetch(SERVER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      payload: JSON.stringify({
+        event: "test_publication",
+        license_key: license.key,
+        binding_id: bindingId
+      }),
+      muteHttpExceptions: true,
+      timeout: 30000
+    });
+    
+    const result = JSON.parse(response.getContentText());
+    
+    if (result.success) {
+      logEvent("INFO", "test_publication_success", "client", "Binding ID: " + bindingId);
+    } else {
+      logEvent("WARN", "test_publication_failed", "client", result.error);
+    }
+    
+    return result;
+    
+  } catch (error) {
+    logEvent("ERROR", "test_publication_error", "client", error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+// ============================================
+// 4. ТРИГГЕР И АВТОМАТИЧЕСКАЯ ПРОВЕРКА
+// ============================================
+
+function checkNewPostsManually() {
+  const result = checkNewPosts();
+  
+  if (result.success) {
+    SpreadsheetApp.getUi().alert(
+      "✅ Проверка завершена!\n\n" +
+      "Проверено связок: " + result.bindingsChecked + "\n" +
+      "Новых постов найдено: " + result.newPostsFound + "\n" +
+      "Успешно отправлено: " + result.postsSent + "\n\n" +
+      "Подробности в логах."
+    );
+  } else {
+    SpreadsheetApp.getUi().alert("❌ Ошибка проверки: " + result.error);
+  }
+}
+
+function checkNewPosts() {
+  try {
+    logEvent("INFO", "check_posts_start", "client", "Manual/Trigger check started");
+    
+    const license = getLicense();
+    if (!license) {
+      return { success: false, error: "Лицензия не найдена" };
+    }
+    
+    const bindingsResult = getBindings();
+    if (!bindingsResult.success) {
+      return { success: false, error: "Не удалось получить связки: " + bindingsResult.error };
+    }
+    
+    const activeBindings = bindingsResult.bindings.filter(b => b.status === 'active');
+    if (activeBindings.length === 0) {
+      return { success: true, bindingsChecked: 0, newPostsFound: 0, postsSent: 0 };
+    }
+    
+    let newPostsFound = 0;
+    let postsSent = 0;
+    
+    for (const binding of activeBindings) {
+      try {
+        const vkGroupId = extractVkGroupId(binding.vkGroupUrl);
+        if (!vkGroupId) {
+          logEvent("WARN", "invalid_vk_url", "client", binding.vkGroupUrl);
+          continue;
+        }
+        
+        const posts = getVkPosts(vkGroupId);
+        if (!posts || posts.length === 0) {
+          continue;
+        }
+        
+        const lastPostIds = getLastPostIds();
+        const lastKnownId = lastPostIds[vkGroupId] || 0;
+        
+        const newPosts = posts.filter(post => post.id > lastKnownId);
+        newPostsFound += newPosts.length;
+        
+        for (const post of newPosts) {
+          if (isPostAlreadySent(vkGroupId, post.id)) {
+            continue; // Дубль
+          }
+          
+          const sendResult = sendPostToServer(license.key, binding.id, post);
+          
+          if (sendResult.success) {
+            markPostAsSent(vkGroupId, post.id, binding.tgChatId);
+            postsSent++;
+            logEvent("INFO", "post_sent", "client", `VK ${vkGroupId} Post ${post.id} → TG ${binding.tgChatId}`);
+          } else {
+            logEvent("ERROR", "post_send_failed", "client", sendResult.error);
+          }
+        }
+        
+        // Обновляем последний ID поста
+        if (posts.length > 0) {
+          lastPostIds[vkGroupId] = Math.max(...posts.map(p => p.id));
+          saveLastPostIds(lastPostIds);
+        }
+        
+      } catch (bindingError) {
+        logEvent("ERROR", "binding_check_error", "client", "Binding " + binding.id + ": " + bindingError.message);
+      }
+    }
+    
+    logEvent("INFO", "check_posts_complete", "client", 
+             `Checked: ${activeBindings.length}, Found: ${newPostsFound}, Sent: ${postsSent}`);
+    
+    return {
+      success: true,
+      bindingsChecked: activeBindings.length,
+      newPostsFound: newPostsFound,
+      postsSent: postsSent
+    };
+    
+  } catch (error) {
+    logEvent("ERROR", "check_posts_error", "client", error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+function sendPostToServer(licenseKey, bindingId, vkPost) {
+  try {
+    logEvent("DEBUG", "send_post_to_server_start", "client", `Binding: ${bindingId}, Post ID: ${vkPost.id}, Text length: ${vkPost.text?.length || 0}, Attachments: ${vkPost.attachments?.length || 0}`);
+    
+    const payload = {
+      event: "send_post",
+      license_key: licenseKey,
+      binding_id: bindingId,
+      vk_post: {
+        id: vkPost.id,
+        text: vkPost.text?.substring(0, 100) + (vkPost.text?.length > 100 ? "..." : ""), // Сокращаем текст для логов
+        date: vkPost.date,
+        attachments: vkPost.attachments || []
+      }
+    };
+    
+    logEvent("DEBUG", "server_request_payload", "client", `Event: ${payload.event}, Payload size: ${JSON.stringify(payload).length} chars`);
+    
+    const response = UrlFetchApp.fetch(SERVER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
+      timeout: 30000
+    });
+    
+    const responseText = response.getContentText();
+    logEvent("DEBUG", "server_response", "client", `Status: ${response.getResponseCode()}, Body length: ${responseText.length}, First 150 chars: ${responseText.substring(0, 150)}`);
+    
+    const result = JSON.parse(responseText);
+    
+    if (result.success) {
+      logEvent("INFO", "post_sent_successfully", "client", `Post ID: ${vkPost.id}, Message ID: ${result.message_id || 'unknown'}`);
+    } else {
+      logEvent("WARN", "post_send_failed_server", "client", `Post ID: ${vkPost.id}, Error: ${result.error}`);
+    }
+    
+    return result;
+    
+  } catch (error) {
+    logEvent("ERROR", "send_post_to_server_error", "client", `Post ID: ${vkPost.id}, Error: ${error.message}, Stack: ${error.stack?.substring(0, 200)}`);
+    return { success: false, error: error.message };
+  }
+}
+
+// ============================================
+// 5. VK API И УТИЛИТЫ
+// ============================================
+
+function getVkPosts(groupId) {
+  try {
+    const url = `https://api.vk.com/method/wall.get?owner_id=-${groupId}&count=10&v=5.131`;
+    
+    const response = UrlFetchApp.fetch(url, {
+      muteHttpExceptions: true,
+      timeout: 15000
+    });
+    
+    const data = JSON.parse(response.getContentText());
+    
+    if (data.error) {
+      logEvent("ERROR", "vk_api_error", "client", `Group ${groupId}: ${data.error.error_msg}`);
+      return [];
+    }
+    
+    if (!data.response || !data.response.items) {
+      return [];
+    }
+    
+    return data.response.items.map(post => ({
+      id: post.id,
+      text: post.text || "",
+      date: post.date,
+      attachments: post.attachments || []
+    }));
+    
+  } catch (error) {
+    logEvent("ERROR", "vk_posts_error", "client", `Group ${groupId}: ${error.message}`);
+    return [];
+  }
+}
+
+function extractVkGroupId(url) {
+  try {
+    // Убираем протокол и домен
+    url = url.replace(/https?:\/\/(www\.|m\.)?vk\.com\//, '');
+    
+    // Числовой ID
+    if (/^\d+$/.test(url)) {
+      return url;
+    }
+    
+    // public123456
+    if (/^public\d+$/.test(url)) {
+      return url.replace('public', '');
+    }
+    
+    // club123456
+    if (/^club\d+$/.test(url)) {
+      return url.replace('club', '');
+    }
+    
+    // Короткий адрес - делаем запрос к API
+    const apiUrl = `https://api.vk.com/method/groups.getById?group_ids=${encodeURIComponent(url)}&v=5.131`;
+    
+    const response = UrlFetchApp.fetch(apiUrl, {
+      muteHttpExceptions: true,
+      timeout: 10000
+    });
+    
+    const data = JSON.parse(response.getContentText());
+    
+    if (data.error || !data.response || !data.response[0]) {
+      return null;
+    }
+    
+    return data.response[0].id.toString();
+    
+  } catch (error) {
+    logEvent("ERROR", "extract_group_id_error", "client", `URL: ${url}, Error: ${error.message}`);
+    return null;
+  }
+}
+
+// ============================================
+// 6. УПРАВЛЕНИЕ ТРИГГЕРАМИ
+// ============================================
+
+function setupTrigger() {
+  try {
+    // Удаляем старые триггеры
+    const triggers = ScriptApp.getProjectTriggers();
+    triggers.forEach(trigger => {
+      if (trigger.getHandlerFunction() === 'checkNewPosts') {
+        ScriptApp.deleteTrigger(trigger);
+      }
+    });
+    
+    // Создаем новый триггер на каждые 30 минут
+    ScriptApp.newTrigger('checkNewPosts')
+      .timeBased()
+      .everyMinutes(30)
+      .create();
+    
+    logEvent("INFO", "trigger_created", "client", "30-minute trigger created");
+    
+    SpreadsheetApp.getUi().alert(
+      "✅ Триггер создан!\n\n" +
+      "Система будет автоматически проверять новые посты каждые 30 минут.\n\n" +
+      "Для проверки работы используйте:\n" +
+      "• VK→Telegram > Проверить новые посты вручную\n" +
+      "• Кнопку \"Тест\" у каждой связки"
+    );
+    
+  } catch (error) {
+    logEvent("ERROR", "trigger_setup_error", "client", error.message);
+    SpreadsheetApp.getUi().alert("❌ Ошибка создания триггера: " + error.message);
+  }
+}
+
+// ============================================
+// 7. ХРАНЕНИЕ ДАННЫХ И ЛОГИРОВАНИЕ
+// ============================================
+
+function getLicense() {
+  try {
+    const licenseKey = PropertiesService.getUserProperties().getProperty("LICENSE_KEY");
+    if (!licenseKey) return null;
+    
+    // Здесь можно добавить кэширование данных лицензии
+    return { key: licenseKey };
+    
+  } catch (error) {
+    return null;
+  }
+}
+
+function getLastPostIds() {
+  try {
+    const data = PropertiesService.getUserProperties().getProperty("LAST_POST_IDS");
+    return data ? JSON.parse(data) : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function saveLastPostIds(ids) {
+  try {
+    PropertiesService.getUserProperties().setProperty("LAST_POST_IDS", JSON.stringify(ids));
+  } catch (error) {
+    logEvent("ERROR", "save_last_ids_error", "client", error.message);
+  }
+}
+
+function isPostAlreadySent(vkGroupId, postId) {
+  try {
+    const sheet = getOrCreatePublishedPostsSheet(vkGroupId);
+    const data = sheet.getDataRange().getValues();
+    
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0] == postId) {
+        return true;
+      }
+    }
+    
+    return false;
+  } catch (error) {
+    return false;
+  }
+}
+
+function markPostAsSent(vkGroupId, postId, tgChatId) {
+  try {
+    const sheet = getOrCreatePublishedPostsSheet(vkGroupId);
+    sheet.appendRow([
+      postId,
+      new Date().toISOString(),
+      tgChatId,
+      "sent"
+    ]);
+  } catch (error) {
+    logEvent("ERROR", "mark_post_sent_error", "client", error.message);
+  }
+}
+
+function getOrCreatePublishedPostsSheet(vkGroupId) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheetName = `Published_${vkGroupId}`;
+  let sheet = ss.getSheetByName(sheetName);
+  
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    sheet.appendRow(["Post ID", "Sent At", "TG Chat ID", "Status"]);
+    
+    // Форматируем заголовки
+    const headerRange = sheet.getRange(1, 1, 1, 4);
+    headerRange.setBackground("#10b981");
+    headerRange.setFontColor("white");
+    headerRange.setFontWeight("bold");
+    sheet.setFrozenRows(1);
+    
+    logEvent("INFO", "published_sheet_created", "client", "Sheet: " + sheetName);
+  }
+  
+  return sheet;
+}
+
+function logEvent(level, event, source, details) {
+  try {
+    if (!DEV_MODE && level === "DEBUG") {
+      return; // Пропускаем DEBUG логи в продакшене
+    }
+    
+    const sheet = getOrCreateLogsSheet();
+    sheet.appendRow([
+      new Date().toISOString(),
+      level,
+      event,
+      source,
+      details || "",
+      CLIENT_VERSION
+    ]);
+    
+    // Также логируем в консоль
+    console.log(`[${level}] ${event} (${source}): ${details}`);
+    
+  } catch (error) {
+    console.error("Logging error:", error.message);
+  }
+}
+
+function getOrCreateLogsSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName("Logs");
+  
+  if (!sheet) {
+    sheet = ss.insertSheet("Logs");
+    sheet.appendRow(["Timestamp", "Level", "Event", "Source", "Details", "Version"]);
+    
+    // Форматируем заголовки
+    const headerRange = sheet.getRange(1, 1, 1, 6);
+    headerRange.setBackground("#667eea");
+    headerRange.setFontColor("white");
+    headerRange.setFontWeight("bold");
+    sheet.setFrozenRows(1);
+  }
+  
+  return sheet;
+}
+
+// ============================================
+// 8. ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ
+// ============================================
+
+function showUserStatistics() {
+  try {
+    const license = getLicense();
+    if (!license) {
+      SpreadsheetApp.getUi().alert("❌ Лицензия не найдена");
+      return;
+    }
+    
+    const bindingsResult = getBindings();
+    const bindings = bindingsResult.success ? bindingsResult.bindings : [];
+    
+    const activeBindings = bindings.filter(b => b.status === 'active').length;
+    const pausedBindings = bindings.filter(b => b.status === 'paused').length;
+    
+    // Считаем статистику из листов Published_*
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheets = ss.getSheets().filter(s => s.getName().startsWith('Published_'));
+    let totalPostsSent = 0;
+    
+    sheets.forEach(sheet => {
+      const data = sheet.getDataRange().getValues();
+      totalPostsSent += Math.max(0, data.length - 1); // -1 для заголовка
+    });
+    
+    const today = new Date();
+    const triggerCount = ScriptApp.getProjectTriggers()
+      .filter(t => t.getHandlerFunction() === 'checkNewPosts').length;
+    
+    const message = `📊 Статистика клиента v${CLIENT_VERSION}\n\n` +
+                   `🔗 Связки:\n` +
+                   `• Всего: ${bindings.length}\n` +
+                   `• Активных: ${activeBindings}\n` +
+                   `• На паузе: ${pausedBindings}\n\n` +
+                   `📈 Активность:\n` +
+                   `• Всего постов отправлено: ${totalPostsSent}\n` +
+                   `• Активных триггеров: ${triggerCount}\n` +
+                   `• Листов с постами: ${sheets.length}\n\n` +
+                   `🔧 Сервер: ${SERVER_URL === "YOUR_SERVER_URL_HERE" ? "❌ Не настроен" : "✅ Настроен"}`;
+    
+    SpreadsheetApp.getUi().alert(message);
+    
+  } catch (error) {
+    SpreadsheetApp.getUi().alert("❌ Ошибка: " + error.message);
+  }
+}
+
+function showLogsSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let logsSheet = ss.getSheetByName("Logs");
+  
+  if (!logsSheet) {
+    logsSheet = getOrCreateLogsSheet();
+    SpreadsheetApp.getUi().alert("✅ Лист 'Logs' создан!\n\nЗдесь будут храниться все события клиента.");
+  }
+  
+  ss.setActiveSheet(logsSheet);
+}
+
+// ============================================
+// КОНЕЦ CLIENT.GS
+// ============================================
