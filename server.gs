@@ -719,51 +719,98 @@ function getServerHealthHtml(healthData) {
 
 function doPost(e) {
   try {
-    const clientIp = e.parameter.clientIp || "unknown";
-    const payload = JSON.parse(e.postData.contents);
+    // Проверяем входящие данные
+    if (!e || !e.postData || !e.postData.contents) {
+      logEvent("ERROR", "invalid_request_structure", "anonymous", "Missing post data");
+      return jsonResponse({
+        success: false, 
+        error: "Invalid request: missing post data"
+      }, 400);
+    }
+
+    const clientIp = e.parameter?.clientIp || "unknown";
+    
+    let payload;
+    try {
+      payload = JSON.parse(e.postData.contents);
+    } catch (parseError) {
+      logEvent("ERROR", "json_parse_error", "anonymous", 
+               `Invalid JSON: ${parseError.message}, Content: ${e.postData.contents.substring(0, 100)}`);
+      return jsonResponse({
+        success: false, 
+        error: "Invalid JSON in request body"
+      }, 400);
+    }
+
+    // Проверяем обязательные поля
+    if (!payload.event) {
+      logEvent("WARN", "missing_event_field", payload.license_key || "anonymous", 
+               `Payload keys: ${Object.keys(payload).join(', ')}`);
+      return jsonResponse({
+        success: false, 
+        error: "Missing 'event' field in request"
+      }, 400);
+    }
     
     logEvent("DEBUG", "api_request", payload.license_key || "anonymous", 
              `Event: ${payload.event}, IP: ${clientIp}`);
     
-    switch(payload.event) {
-      case "check_license":
-        return handleCheckLicense(payload, clientIp);
-      
-      case "get_bindings":
-        return handleGetBindings(payload, clientIp);
-      
-      case "add_binding":
-        return handleAddBinding(payload, clientIp);
-      
-      case "edit_binding":
-        return handleEditBinding(payload, clientIp);
-      
-      case "delete_binding":
-        return handleDeleteBinding(payload, clientIp);
-      
-      case "toggle_binding_status":
-        return handleToggleBindingStatus(payload, clientIp);
-      
-      case "send_post":
-        return handleSendPost(payload, clientIp);
-      
-      case "test_publication":
-        return handleTestPublication(payload, clientIp);
-      
-      default:
-        logEvent("WARN", "unknown_event", payload.license_key || "anonymous", 
-                 `Unknown event: ${payload.event}`);
-        return jsonResponse({
-          success: false, 
-          error: `Unknown event: ${payload.event}`
-        }, 400);
+    // Безопасное выполнение обработчиков с дополнительной обработкой ошибок
+    try {
+      switch(payload.event) {
+        case "check_license":
+          return handleCheckLicense(payload, clientIp);
+        
+        case "get_bindings":
+          return handleGetBindings(payload, clientIp);
+        
+        case "get_user_bindings_with_names":
+          return handleGetUserBindingsWithNames(payload, clientIp);
+        
+        case "add_binding":
+          return handleAddBinding(payload, clientIp);
+        
+        case "edit_binding":
+          return handleEditBinding(payload, clientIp);
+        
+        case "delete_binding":
+          return handleDeleteBinding(payload, clientIp);
+        
+        case "toggle_binding_status":
+          return handleToggleBindingStatus(payload, clientIp);
+        
+        case "send_post":
+          return handleSendPost(payload, clientIp);
+        
+        case "test_publication":
+          return handleTestPublication(payload, clientIp);
+        
+        case "get_vk_posts":
+          return handleGetVkPosts(payload, clientIp);
+        
+        default:
+          logEvent("WARN", "unknown_event", payload.license_key || "anonymous", 
+                   `Unknown event: ${payload.event}, Available events: check_license, get_bindings, add_binding, edit_binding, delete_binding, toggle_binding_status, send_post, test_publication`);
+          return jsonResponse({
+            success: false, 
+            error: `Unknown event: ${payload.event}`
+          }, 400);
+      }
+    } catch (handlerError) {
+      logEvent("ERROR", "handler_execution_error", payload.license_key || "anonymous", 
+               `Event: ${payload.event}, Handler error: ${handlerError.message}, Stack: ${handlerError.stack?.substring(0, 200)}`);
+      return jsonResponse({
+        success: false, 
+        error: `Handler error for event '${payload.event}': ${handlerError.message}`
+      }, 500);
     }
     
   } catch (error) {
-    logEvent("ERROR", "api_error", "system", error.message);
+    logEvent("ERROR", "api_critical_error", "system", 
+             `Critical API error: ${error.message}, Stack: ${error.stack?.substring(0, 200)}`);
     return jsonResponse({
       success: false, 
-      error: "Server error: " + error.message
+      error: "Critical server error: " + error.message
     }, 500);
   }
 }
@@ -824,6 +871,60 @@ function handleCheckLicense(payload, clientIp) {
     
   } catch (error) {
     logEvent("ERROR", "license_check_error", payload.license_key, error.message);
+    return jsonResponse({ success: false, error: error.message }, 500);
+  }
+}
+
+function handleGetBindings(payload, clientIp) {
+  try {
+    const { license_key } = payload;
+    
+    // Проверяем лицензию
+    const licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    const licenseData = JSON.parse(licenseCheck.getContent());
+    
+    if (!licenseData.success) {
+      return licenseCheck;
+    }
+    
+    const bindings = getUserBindings(license_key);
+    
+    logEvent("INFO", "bindings_retrieved", license_key, `Count: ${bindings.length}, IP: ${clientIp}`);
+    
+    return jsonResponse({
+      success: true,
+      bindings: bindings
+    });
+    
+  } catch (error) {
+    logEvent("ERROR", "get_bindings_error", payload.license_key, error.message);
+    return jsonResponse({ success: false, error: error.message }, 500);
+  }
+}
+
+function handleGetUserBindingsWithNames(payload, clientIp) {
+  try {
+    const { license_key } = payload;
+    
+    // Проверяем лицензию
+    const licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    const licenseData = JSON.parse(licenseCheck.getContent());
+    
+    if (!licenseData.success) {
+      return licenseCheck;
+    }
+    
+    const bindings = getUserBindingsWithNames(license_key);
+    
+    logEvent("INFO", "bindings_with_names_retrieved", license_key, `Count: ${bindings.length}, IP: ${clientIp}`);
+    
+    return jsonResponse({
+      success: true,
+      bindings: bindings
+    });
+    
+  } catch (error) {
+    logEvent("ERROR", "get_bindings_with_names_error", payload.license_key, error.message);
     return jsonResponse({ success: false, error: error.message }, 500);
   }
 }
@@ -1242,27 +1343,47 @@ function sendTelegramMessage(token, chatId, text) {
   try {
     const url = `https://api.telegram.org/bot${token}/sendMessage`;
     
+    const payload = {
+      chat_id: chatId,
+      text: text,
+      parse_mode: 'Markdown',
+      disable_web_page_preview: true
+    };
+    
     const response = UrlFetchApp.fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      payload: JSON.stringify({
-        chat_id: chatId,
-        text: text,
-        parse_mode: 'Markdown',
-        disable_web_page_preview: true
-      }),
-      muteHttpExceptions: true
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
+      timeout: REQUEST_TIMEOUT
     });
     
-    const result = JSON.parse(response.getContentText());
+    const responseText = response.getContentText();
+    const result = JSON.parse(responseText);
     
     if (result.ok) {
+      logEvent("DEBUG", "telegram_message_sent", "server", 
+               `Chat: ${chatId}, Message ID: ${result.result.message_id}, Text length: ${text?.length || 0}`);
       return { success: true, message_id: result.result.message_id };
     } else {
+      // Детальное логирование ошибки Telegram API
+      logApiError("TELEGRAM", "sendMessage", {
+        chat_id: chatId,
+        text_length: text?.length || 0,
+        parse_mode: "Markdown"
+      }, {
+        status_code: response.getResponseCode(),
+        error_code: result.error_code,
+        description: result.description,
+        response_body: responseText.substring(0, 500)
+      });
+      
       return { success: false, error: result.description || "Unknown error" };
     }
     
   } catch (error) {
+    logEvent("ERROR", "telegram_message_exception", "server", 
+             `Chat: ${chatId}, Error: ${error.message}, Text length: ${text?.length || 0}`);
     return { success: false, error: error.message };
   }
 }
@@ -1273,6 +1394,87 @@ function sendTelegramMediaGroup(token, chatId, mediaUrls, caption) {
       return sendTelegramMessage(token, chatId, caption);
     }
     
+    const MAX_CAPTION_LENGTH = 1024; // Лимит Telegram для caption
+    
+    // Проверяем длину caption
+    if (caption && caption.length > MAX_CAPTION_LENGTH) {
+      logEvent("WARN", "caption_too_long", "server", 
+               `Caption length: ${caption.length}, splitting media and text`);
+      
+      // Отправляем медиа БЕЗ подписи
+      const mediaResult = sendMediaGroupWithoutCaption(token, chatId, mediaUrls);
+      
+      if (mediaResult.success) {
+        // Отправляем текст отдельным сообщением (или несколькими, если очень длинный)
+        const textResult = sendLongTextMessage(token, chatId, caption);
+        
+        return {
+          success: textResult.success,
+          message_id: mediaResult.message_id, // ID первого сообщения (медиа)
+          text_message_id: textResult.message_id,
+          split_message: true
+        };
+      }
+      
+      return mediaResult;
+    }
+    
+    // Обычная отправка с подписью (если caption <= 1024)
+    return sendMediaGroupWithCaption(token, chatId, mediaUrls, caption);
+    
+  } catch (error) {
+    logEvent("ERROR", "send_media_group_error", "server", error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Отправляет media group БЕЗ caption
+ */
+function sendMediaGroupWithoutCaption(token, chatId, mediaUrls) {
+  try {
+    const url = `https://api.telegram.org/bot${token}/sendMediaGroup`;
+    
+    const media = mediaUrls.slice(0, 10).map((item) => ({
+      type: item.type,
+      media: item.url
+      // НЕ добавляем caption и parse_mode
+    }));
+    
+    const response = UrlFetchApp.fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      payload: JSON.stringify({
+        chat_id: chatId,
+        media: media
+      }),
+      muteHttpExceptions: true,
+      timeout: REQUEST_TIMEOUT
+    });
+    
+    const result = JSON.parse(response.getContentText());
+    
+    if (result.ok) {
+      logEvent("INFO", "media_group_sent_no_caption", "server", 
+               `Media count: ${media.length}, Message ID: ${result.result[0].message_id}`);
+      return { success: true, message_id: result.result[0].message_id };
+    } else {
+      logEvent("ERROR", "media_group_failed_no_caption", "server", 
+               `Error: ${result.description}, Code: ${result.error_code}`);
+      return { success: false, error: result.description || "Media group send failed" };
+    }
+    
+  } catch (error) {
+    logEvent("ERROR", "media_group_exception", "server", error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Отправляет media group С caption (стандартный способ)
+ */
+function sendMediaGroupWithCaption(token, chatId, mediaUrls, caption) {
+  try {
     const url = `https://api.telegram.org/bot${token}/sendMediaGroup`;
     
     const media = mediaUrls.slice(0, 10).map((item, index) => ({
@@ -1289,20 +1491,127 @@ function sendTelegramMediaGroup(token, chatId, mediaUrls, caption) {
         chat_id: chatId,
         media: media
       }),
-      muteHttpExceptions: true
+      muteHttpExceptions: true,
+      timeout: REQUEST_TIMEOUT
     });
     
     const result = JSON.parse(response.getContentText());
     
     if (result.ok) {
+      logEvent("INFO", "media_group_sent_with_caption", "server", 
+               `Media count: ${media.length}, Caption length: ${caption?.length || 0}, Message ID: ${result.result[0].message_id}`);
       return { success: true, message_id: result.result[0].message_id };
     } else {
-      return { success: false, error: result.description || "Unknown error" };
+      logEvent("ERROR", "media_group_failed_with_caption", "server", 
+               `Error: ${result.description}, Code: ${result.error_code}, Caption length: ${caption?.length || 0}`);
+      return { success: false, error: result.description || "Media group send failed" };
     }
     
   } catch (error) {
+    logEvent("ERROR", "media_group_with_caption_exception", "server", error.message);
     return { success: false, error: error.message };
   }
+}
+
+/**
+ * Отправляет длинное текстовое сообщение, разбивая если нужно
+ */
+function sendLongTextMessage(token, chatId, text) {
+  try {
+    const MAX_MESSAGE_LENGTH = 4096; // Лимит Telegram для текстовых сообщений
+    
+    if (!text || text.length === 0) {
+      return { success: true, message_id: null };
+    }
+    
+    // Если текст помещается в одно сообщение
+    if (text.length <= MAX_MESSAGE_LENGTH) {
+      return sendTelegramMessage(token, chatId, text);
+    }
+    
+    // Разбиваем длинный текст на части
+    logEvent("WARN", "splitting_long_text", "server", 
+             `Text length: ${text.length}, splitting into multiple messages`);
+    
+    const textParts = splitTextIntoChunks(text, MAX_MESSAGE_LENGTH);
+    let lastMessageId = null;
+    
+    for (let i = 0; i < textParts.length; i++) {
+      const part = textParts[i];
+      const partPrefix = textParts.length > 1 ? `📝 ${i + 1}/${textParts.length}: ` : '';
+      
+      const result = sendTelegramMessage(token, chatId, partPrefix + part);
+      
+      if (!result.success) {
+        logEvent("ERROR", "text_part_send_failed", "server", 
+                 `Part ${i + 1}/${textParts.length}, Error: ${result.error}`);
+        return result; // Возвращаем ошибку если хотя бы одна часть не отправилась
+      }
+      
+      lastMessageId = result.message_id;
+      
+      // Небольшая пауза между сообщениями
+      if (i < textParts.length - 1) {
+        Utilities.sleep(500); // 0.5 секунды
+      }
+    }
+    
+    logEvent("INFO", "long_text_sent_successfully", "server", 
+             `Sent ${textParts.length} text parts, last message ID: ${lastMessageId}`);
+    
+    return { success: true, message_id: lastMessageId, parts_count: textParts.length };
+    
+  } catch (error) {
+    logEvent("ERROR", "send_long_text_error", "server", error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Разбивает текст на части, стараясь сохранить целостность предложений
+ */
+function splitTextIntoChunks(text, maxLength) {
+  const chunks = [];
+  let currentChunk = "";
+  
+  // Разбиваем текст по предложениям
+  const sentences = text.split(/([.!?]\s+)/);
+  
+  for (let i = 0; i < sentences.length; i++) {
+    const sentence = sentences[i];
+    
+    // Если добавление предложения не превысит лимит
+    if ((currentChunk + sentence).length <= maxLength) {
+      currentChunk += sentence;
+    } else {
+      // Сохраняем текущий chunk если он не пустой
+      if (currentChunk.trim().length > 0) {
+        chunks.push(currentChunk.trim());
+      }
+      
+      // Если само предложение длиннее лимита - принудительно разбиваем
+      if (sentence.length > maxLength) {
+        const forcedChunks = sentence.match(new RegExp(`.{1,${maxLength}}`, 'g'));
+        chunks.push(...forcedChunks);
+        currentChunk = "";
+      } else {
+        currentChunk = sentence;
+      }
+    }
+  }
+  
+  // Добавляем последний chunk
+  if (currentChunk.trim().length > 0) {
+    chunks.push(currentChunk.trim());
+  }
+  
+  // Если ничего не получилось - принудительно разбиваем по символам
+  if (chunks.length === 0 && text.length > 0) {
+    const forcedChunks = text.match(new RegExp(`.{1,${maxLength}}`, 'g'));
+    chunks.push(...forcedChunks);
+  }
+  
+  return chunks;
 }
 
 // ============================================
@@ -1322,43 +1631,69 @@ function getVkPosts(groupId, count = 10) {
     
     const url = `https://api.vk.com/method/wall.get?owner_id=${ownerId}&count=${count}&v=${VK_API_VERSION}&access_token=${userToken}`;
     
+    logEvent("DEBUG", "vk_posts_request", "server", 
+             `Group ID: ${groupId}, Owner ID: ${ownerId}, Count: ${count}`);
+    
     const response = UrlFetchApp.fetch(url, {
       muteHttpExceptions: true,
-      timeout: 8000  // ← ВАЖНО: таймаут
+      timeout: 10000
     });
     
-    const data = JSON.parse(response.getContentText());
+    const responseText = response.getContentText();
+    const data = JSON.parse(responseText);
     
     if (data.error) {
       const errorCode = data.error.error_code;
       let errorMsg = data.error.error_msg;
       
-      // Более подробные ошибки
+      // Детальное логирование ошибки VK API
+      logApiError("VK_API", "wall.get", {
+        owner_id: ownerId,
+        count: count,
+        v: VK_API_VERSION
+      }, {
+        status_code: response.getResponseCode(),
+        error_code: errorCode,
+        description: errorMsg,
+        response_body: responseText.substring(0, 500)
+      });
+      
+      // Более подробные ошибки для пользователей
       if (errorCode === 30) {
-        errorMsg = "Group is private or closed";
+        errorMsg = "Группа/страница закрыта или приватная";
       } else if (errorCode === 15) {
-        errorMsg = "Access denied (need group permission)";
+        errorMsg = "Нет доступа к группе/странице (требуется разрешение)";
       } else if (errorCode === 113) {
-        errorMsg = "Invalid user or group ID";
+        errorMsg = "Неверный ID группы/пользователя";
+      } else if (errorCode === 18) {
+        errorMsg = "Страница удалена или заблокирована";
+      } else if (errorCode === 203) {
+        errorMsg = "Нет доступа к сообществу";
       }
       
       throw new Error(`VK API Error (${errorCode}): ${errorMsg}`);
     }
     
     if (!data.response || !data.response.items || data.response.items.length === 0) {
-      // Не ошибка - просто нет постов
+      logEvent("INFO", "vk_posts_empty", "server", 
+               `Group ID: ${groupId} - no posts found`);
       return [];
     }
     
-    return data.response.items.map(post => ({
+    const posts = data.response.items.map(post => ({
       id: post.id,
       text: post.text || "",
       date: post.date,
       attachments: post.attachments || []
     }));
     
+    logEvent("INFO", "vk_posts_retrieved", "server", 
+             `Group ID: ${groupId}, Posts found: ${posts.length}`);
+    
+    return posts;
+    
   } catch (error) {
-    logEvent("ERROR", "vk_api_error", "system", 
+    logEvent("ERROR", "vk_api_error", "server", 
              `Group ID: ${groupId}, Error: ${error.message}`);
     throw error;  // Пробрасываем ошибку дальше
   }
@@ -1684,6 +2019,54 @@ function logEvent(level, event, user, details) {
   }
 }
 
+/**
+ * Детальное логирование ошибок API с полными запросами и ответами
+ * @param {string} service - Название сервиса (TELEGRAM, VK_API, VK_USER)
+ * @param {string} endpoint - Конечная точка API
+ * @param {Object} request - Данные запроса
+ * @param {Object} response - Данные ответа
+ */
+function logApiError(service, endpoint, request, response) {
+  try {
+    const errorDetails = {
+      service: service,
+      endpoint: endpoint,
+      timestamp: new Date().toISOString(),
+      request: {
+        method: request.method || "POST",
+        parameters: Object.keys(request).filter(key => key !== 'method').reduce((obj, key) => {
+          // Маскируем конфиденциальные данные
+          if (key.toLowerCase().includes('token') || key.toLowerCase().includes('key')) {
+            obj[key] = request[key] ? request[key].substring(0, 10) + "..." : null;
+          } else {
+            obj[key] = request[key];
+          }
+          return obj;
+        }, {})
+      },
+      response: {
+        status_code: response.status_code,
+        error_code: response.error_code,
+        description: response.description,
+        body_preview: response.response_body || "No body"
+      }
+    };
+    
+    const logMessage = `${service} API Error - ${endpoint}: ${response.description || 'Unknown error'} (Code: ${response.error_code}, HTTP: ${response.status_code})`;
+    
+    logEvent("ERROR", "api_error_detailed", "server", 
+             JSON.stringify(errorDetails).substring(0, 2000)); // Ограничиваем размер лога
+    
+    // Дополнительно логируем краткую версию для удобства
+    logEvent("WARN", `${service.toLowerCase()}_api_fail`, "server", 
+             `${endpoint}: ${response.description} (${response.error_code})`);
+    
+  } catch (error) {
+    logEvent("ERROR", "log_api_error_failed", "server", 
+             `Failed to log API error: ${error.message}, Original service: ${service}, endpoint: ${endpoint}`);
+  }
+}
+
 function jsonResponse(data, statusCode = 200) {
   return ContentService
     .createTextOutput(JSON.stringify(data))
@@ -1815,7 +2198,7 @@ function getAdminPanelHtml() {
 
 function showStatistics() {
   var stats = getSystemStats();
-  
+    
   var message = '📊 Статистика сервера v' + SERVER_VERSION + '\n\n';
   message += '🔑 Лицензии:\n';
   message += '• Всего: ' + stats.totalLicenses + '\n';
@@ -1931,204 +2314,200 @@ function showLogsSheet() {
 // ============================================
 
 /**
- * Извлекает ID группы ВКонтакте из различных форматов ссылок
- * @param {string} url - URL группы ВКонтакте
- * @return {string} - ID группы или null при ошибке
+ * Улучшенное извлечение ID группы ВКонтакте с поддержкой личных страниц
+ * @param {string} url - URL группы/страницы ВКонтакте
+ * @return {string} - ID группы/пользователя
  */
-function extractVkGroupId(url) {
-  try {
-    if (!url || typeof url !== 'string') {
-      throw new Error('Некорректная ссылка на ВК группу');
-    }
-    
-    // Убираем лишние пробелы и приводим к нижнему регистру
-    url = url.trim().toLowerCase();
-    
-    // Форматы ссылок ВК:
-    // https://vk.com/public123456 -> -123456
-    // https://vk.com/club123456 -> -123456  
-    // https://vk.com/shortname -> нужен API запрос
-    // vk.com/public123456 -> -123456
-    
-    // Добавляем протокол если отсутствует
-    if (!url.startsWith('http')) {
-      url = 'https://' + url;
-    }
-    
-    // Извлекаем путь из URL
-    const urlParts = url.match(/vk\.com\/(.+)/);
-    if (!urlParts) {
-      throw new Error('Неверный формат ссылки ВК (должна содержать vk.com)');
-    }
-    
-    const path = urlParts[1];
-    
-    // Случай 1: public123456 -> -123456
-    const publicMatch = path.match(/^public(\d+)$/);
-    if (publicMatch) {
-      return '-' + publicMatch[1];
-    }
-    
-    // Случай 2: club123456 -> -123456
-    const clubMatch = path.match(/^club(\d+)$/);
-    if (clubMatch) {
-      return '-' + clubMatch[1];
-    }
-    
-    // Случай 3: короткое имя -> нужен API запрос к ВК
-    const shortName = path.replace(/[^a-z0-9_]/g, '');
-    if (shortName) {
-      return resolveVkShortName(shortName);
-    }
-    
-    throw new Error('Неподдерживаемый формат ссылки ВК');
-    
-  } catch (error) {
-    logEvent('ERROR', 'vk_url_parse_error', 'system', `URL: ${url}, Error: ${error.message}`);
-    throw error;
-  }
-}
-/**
- * Резолвит короткое имя ВК группы в ID через API
- * @param {string} shortName - короткое имя группы
- * @return {string} - ID группы
- */
-function resolveVkShortName(shortName) {
-  try {
-    const userToken = PropertiesService.getScriptProperties()
-      .getProperty("VK_USER_ACCESS_TOKEN");
+// ============================================
+// Старая версия extractTelegramChatId удалена - используется новая улучшенная версия в конце файла
     
     if (!userToken) {
       throw new Error("VK User Access Token not configured");
     }
     
-    // Проверяем что shortName не пустой
-    if (!shortName || typeof shortName !== 'string' || shortName.trim() === '') {
-      throw new Error("Empty or invalid screen name");
+    logEvent("DEBUG", "vk_group_name_request", "server", `Group ID: ${groupId}`);
+    
+    let apiMethod;
+    let apiParams;
+    
+    // Определяем тип запроса по ID
+    if (groupId.toString().startsWith('-')) {
+      // Это группа или страница
+      const positiveId = groupId.toString().substring(1);
+      apiMethod = "groups.getById";
+      apiParams = `group_id=${encodeURIComponent(positiveId)}`;
+    } else {
+      // Это пользователь
+      apiMethod = "users.get";
+      apiParams = `user_ids=${encodeURIComponent(groupId)}`;
     }
     
-    const cleanShortName = shortName.trim();
+    const url = `https://api.vk.com/method/${apiMethod}?${apiParams}&v=${VK_API_VERSION}&access_token=${userToken}`;
     
-    logEvent("DEBUG", "vk_resolve_start", "system", `Resolving VK shortname: ${cleanShortName}`);
-    
-    // ИСПРАВЛЕННЫЙ URL - правильное кодирование параметров
-    const apiUrl = `https://api.vk.com/method/utils.resolveScreenName` +
-                   `?screen_name=${encodeURIComponent(cleanShortName)}` +
-                   `&access_token=${encodeURIComponent(userToken)}` +
-                   `&v=${VK_API_VERSION}`;
-    
-    logEvent("DEBUG", "vk_api_request_url", "system", `URL: ${apiUrl.substring(0, 100)}...`);
-    
-    const response = UrlFetchApp.fetch(apiUrl, {
-      method: 'GET',
+    const response = UrlFetchApp.fetch(url, {
       muteHttpExceptions: true,
       timeout: 10000
     });
     
     const responseText = response.getContentText();
-    logEvent("DEBUG", "vk_api_response", "system", 
-             `Status: ${response.getResponseCode()}, Response: ${responseText.substring(0, 200)}`);
-    
     const data = JSON.parse(responseText);
     
     if (data.error) {
-      const errorCode = data.error.error_code;
-      const errorMsg = data.error.error_msg;
-      
-      logEvent("WARN", "vk_api_error", "system", 
-               `Screen name: ${cleanShortName}, Error code: ${errorCode}, Message: ${errorMsg}`);
-      
-      // Более понятные сообщения об ошибках
-      if (errorCode === 100) {
-        throw new Error(`Группа "${cleanShortName}" не найдена в ВК`);
-      } else if (errorCode === 113) {
-        throw new Error(`Неверный ID или имя группы "${cleanShortName}"`);
-      } else if (errorCode === 15) {
-        throw new Error(`Доступ к группе "${cleanShortName}" запрещен`);
-      } else {
-        throw new Error(`VK API Error (${errorCode}): ${errorMsg}`);
-      }
+      logEvent("WARN", "vk_group_name_api_error", "server", 
+               `Group ID: ${groupId}, Error: ${data.error.error_msg} (${data.error.error_code})`);
+      return `Группа ${groupId}`; // Fallback
     }
     
-    if (!data.response) {
-      logEvent("WARN", "vk_empty_response", "system", `Screen name: ${cleanShortName}`);
-      throw new Error(`Группа "${cleanShortName}" не найдена`);
+    if (!data.response || data.response.length === 0) {
+      logEvent("WARN", "vk_group_name_not_found", "server", `Group ID: ${groupId}`);
+      return `Группа ${groupId}`; // Fallback
     }
     
-    if (data.response.type !== "group") {
-      logEvent("WARN", "vk_not_group", "system", 
-               `Screen name: ${cleanShortName}, Type: ${data.response.type}`);
-      throw new Error(`"${cleanShortName}" не является группой ВК (это ${data.response.type})`);
+    const item = data.response[0];
+    let name;
+    
+    if (apiMethod === "groups.getById") {
+      // Для групп и страниц
+      name = item.name || `Группа ${groupId}`;
+    } else {
+      // Для пользователей
+      name = `${item.first_name || ''} ${item.last_name || ''}`.trim() || `Пользователь ${groupId}`;
     }
     
-    const groupId = "-" + data.response.object_id;
-    logEvent("INFO", "vk_resolve_success", "system", 
-             `Screen name: ${cleanShortName} -> Group ID: ${groupId}`);
+    logEvent("INFO", "vk_group_name_retrieved", "server", 
+             `Group ID: ${groupId} -> Name: ${name}`);
     
-    return groupId;
+    return name;
     
-  } catch (error) {
-    logEvent("ERROR", "vk_resolve_error", "system", 
-             `Short name: ${shortName}, Error: ${error.message}`);
-    
-    // Если это уже наша ошибка с понятным сообщением, пробрасываем как есть
-    if (error.message.includes('не найдена') || 
-        error.message.includes('запрещен') || 
-        error.message.includes('не является группой')) {
-      throw error;
-    }
-    
-    // Иначе оборачиваем в более понятное сообщение
-    throw new Error(`Не удалось найти ВК группу "${shortName}": ${error.message}`);
+} catch (error) {
+    logEvent("ERROR", "vk_group_name_error", "server", 
+             `Group ID: ${groupId}, Error: ${error.message}`);
+    return `Группа ${groupId}`; // Fallback
   }
 }
 
 /**
- * Извлекает Chat ID Telegram канала из ссылки или username
- * @param {string} input - ссылка на канал или @username
- * @return {string} - chat_id канала
+ * Получает название Telegram канала/чата по его ID
+ * @param {string} chatId - ID чата или @username
+ * @return {string} - название канала/чата
  */
-function extractTelegramChatId(input) {
+function getTelegramChatName(chatId) {
   try {
-    if (!input || typeof input !== 'string') {
-      throw new Error('Некорректная ссылка на Telegram канал');
+    const botToken = PropertiesService.getScriptProperties().getProperty("BOT_TOKEN");
+    
+    if (!botToken) {
+      throw new Error("Bot token not configured");
     }
     
-    input = input.trim();
+    logEvent("DEBUG", "tg_chat_name_request", "server", `Chat ID: ${chatId}`);
     
-    // Форматы Telegram:
-    // https://t.me/channelname -> @channelname
-    // t.me/channelname -> @channelname
-    // @channelname -> @channelname
-    // channelname -> @channelname
-    // -1001234567890 -> -1001234567890 (уже chat_id)
+    const url = `https://api.telegram.org/bot${botToken}/getChat`;
     
-    // Если уже является chat_id (начинается с -100)
-    if (input.match(/^-100\d+$/)) {
-      return input;
+    const response = UrlFetchApp.fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      payload: JSON.stringify({
+        chat_id: chatId
+      }),
+      muteHttpExceptions: true,
+      timeout: 10000
+    });
+    
+    const responseText = response.getContentText();
+    const data = JSON.parse(responseText);
+    
+    if (!data.ok) {
+      logEvent("WARN", "tg_chat_name_api_error", "server", 
+               `Chat ID: ${chatId}, Error: ${data.description || 'Unknown error'}`);
+      return chatId.toString(); // Fallback к ID
     }
     
-    // Если начинается с @, оставляем как есть
-    if (input.startsWith('@')) {
-      return input;
+    const chat = data.result;
+    let name;
+    
+    // Определяем название в зависимости от типа чата
+    if (chat.title) {
+      // Группа, супергруппа или канал
+      name = chat.title;
+    } else if (chat.first_name || chat.last_name) {
+      // Личный чат с пользователем
+      name = `${chat.first_name || ''} ${chat.last_name || ''}`.trim();
+    } else if (chat.username) {
+      // Fallback к username
+      name = `@${chat.username}`;
+    } else {
+      // Последний fallback
+      name = chatId.toString();
     }
     
-    // Извлекаем имя канала из t.me ссылки
-    const tMeMatch = input.match(/t\.me\/([a-zA-Z0-9_]+)/);
-    if (tMeMatch) {
-      return '@' + tMeMatch[1];
-    }
+    logEvent("INFO", "tg_chat_name_retrieved", "server", 
+             `Chat ID: ${chatId} -> Name: ${name} (Type: ${chat.type})`);
     
-    // Простое имя канала без символов
-    if (input.match(/^[a-zA-Z0-9_]+$/)) {
-      return '@' + input;
-    }
-    
-    throw new Error('Неподдерживаемый формат ссылки Telegram');
+    return name;
     
   } catch (error) {
-    logEvent('ERROR', 'tg_url_parse_error', 'system', `Input: ${input}, Error: ${error.message}`);
-    throw error;
+    logEvent("ERROR", "tg_chat_name_error", "server", 
+             `Chat ID: ${chatId}, Error: ${error.message}`);
+    return chatId.toString(); // Fallback к ID
+  }
+}
+
+/**
+ * Получает расширенную информацию о связке с названиями групп
+ * @param {Object} binding - объект связки
+ * @return {Object} - связка с добавленными названиями
+ */
+function enrichBindingWithNames(binding) {
+  try {
+    // Извлекаем ID из URL
+    const vkGroupId = extractVkGroupId(binding.vkGroupUrl);
+    
+    // Получаем названия
+    const vkGroupName = getVkGroupName(vkGroupId);
+    const tgChatName = getTelegramChatName(binding.tgChatId);
+    
+    return {
+      ...binding,
+      vkGroupName: vkGroupName,
+      tgChatName: tgChatName,
+      vkGroupId: vkGroupId
+    };
+    
+  } catch (error) {
+    logEvent("ERROR", "enrich_binding_error", "server", 
+             `Binding ID: ${binding.id}, Error: ${error.message}`);
+    
+    return {
+      ...binding,
+      vkGroupName: binding.vkGroupUrl,
+      tgChatName: binding.tgChatId,
+      vkGroupId: null
+    };
+  }
+}
+
+/**
+ * Обновленная функция получения связок пользователя с названиями
+ * @param {string} licenseKey - ключ лицензии
+ * @return {Array} - массив связок с названиями
+ */
+function getUserBindingsWithNames(licenseKey) {
+  try {
+    const bindings = getUserBindings(licenseKey);
+    
+    // Обогащаем каждую связку названиями
+    const enrichedBindings = bindings.map(binding => {
+      return enrichBindingWithNames(binding);
+    });
+    
+    logEvent("INFO", "user_bindings_enriched", licenseKey, 
+             `Processed ${enrichedBindings.length} bindings with names`);
+    
+    return enrichedBindings;
+    
+  } catch (error) {
+    logEvent("ERROR", "get_user_bindings_with_names_error", licenseKey, error.message);
+    return getUserBindings(licenseKey); // Fallback к обычной функции
   }
 }
 
@@ -2172,6 +2551,753 @@ function testUrlExtraction() {
       console.log(`❌ TG: ${input} -> Error: ${error.message}`);
     }
   });
+}
+
+/**
+ * Тестирует функции получения названий групп/каналов
+ */
+function testNameRetrieval() {
+  console.log('=== Тестирование получения названий ===');
+  
+  // Тест VK групп (используйте реальные ID для тестирования)
+  const vkGroupIds = ['-1', '-30022666']; // Пример: Павел Дуров, ВКонтакте
+  
+  vkGroupIds.forEach(groupId => {
+    try {
+      const name = getVkGroupName(groupId);
+      console.log(`✅ VK Group ${groupId}: ${name}`);
+    } catch (error) {
+      console.log(`❌ VK Group ${groupId}: Error: ${error.message}`);
+    }
+  });
+  
+  // Тест Telegram каналов
+  const tgChatIds = ['@durov', '@telegram'];
+  
+  tgChatIds.forEach(chatId => {
+    try {
+      const name = getTelegramChatName(chatId);
+      console.log(`✅ TG Chat ${chatId}: ${name}`);
+    } catch (error) {
+      console.log(`❌ TG Chat ${chatId}: Error: ${error.message}`);
+    }
+  });
+}
+
+/**
+ * Обработчик отправки поста из VK в Telegram
+ */
+function handleSendPost(payload, clientIp) {
+  try {
+    const { license_key, binding_id, vk_post } = payload;
+    
+    // Проверяем лицензию
+    const licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    const licenseData = JSON.parse(licenseCheck.getContent());
+    
+    if (!licenseData.success) {
+      return licenseCheck;
+    }
+    
+    // Находим связку
+    const binding = findBindingById(binding_id, license_key);
+    if (!binding) {
+      logEvent("WARN", "binding_not_found_for_send", license_key, `Binding ID: ${binding_id}`);
+      return jsonResponse({
+        success: false,
+        error: "Binding not found"
+      }, 404);
+    }
+    
+    if (binding.status !== "active") {
+      logEvent("WARN", "binding_inactive_for_send", license_key, `Binding ID: ${binding_id}, Status: ${binding.status}`);
+      return jsonResponse({
+        success: false,
+        error: "Binding is not active"
+      }, 403);
+    }
+    
+    logEvent("INFO", "send_post_start", license_key, 
+             `Binding: ${binding_id}, VK Post: ${vk_post.id}, Text length: ${vk_post.text?.length || 0}`);
+    
+    // Получаем токен бота
+    const botToken = PropertiesService.getScriptProperties().getProperty("BOT_TOKEN");
+    if (!botToken) {
+      logEvent("ERROR", "bot_token_missing", license_key, "Bot token not configured");
+      return jsonResponse({
+        success: false,
+        error: "Bot token not configured"
+      }, 500);
+    }
+    
+    // Форматируем текст с применением всех улучшений
+    let formattedText = "";
+    if (vk_post.text) {
+      formattedText = formatVkTextForTelegram(vk_post.text);
+      logEvent("DEBUG", "text_formatted", license_key, 
+               `Original length: ${vk_post.text.length}, Formatted length: ${formattedText.length}`);
+    }
+    
+    // Обрабатываем медиа вложения
+    const mediaResult = getVkMediaUrls(vk_post.attachments || []);
+    
+    let sendResult;
+    
+    if (mediaResult.photos.length > 0) {
+      // Отправляем как media group с текстом в caption
+      sendResult = sendTelegramMediaGroup(botToken, binding.tgChatId, mediaResult.photos, formattedText);
+    } else if (formattedText) {
+      // Отправляем только текст
+      sendResult = sendTelegramMessage(botToken, binding.tgChatId, formattedText);
+    } else {
+      // Нет ни текста, ни медиа
+      logEvent("WARN", "empty_post", license_key, `VK Post: ${vk_post.id} has no content`);
+      return jsonResponse({
+        success: false,
+        error: "Post has no content to send"
+      }, 400);
+    }
+    
+    // Отправляем дополнительную информацию о видео, аудио, документах
+    if (mediaResult.videoLinks.length > 0 || mediaResult.audioLinks.length > 0 || mediaResult.docLinks.length > 0) {
+      const additionalContent = [];
+      
+      if (mediaResult.videoLinks.length > 0) {
+        additionalContent.push("📹 **Видео:**", ...mediaResult.videoLinks);
+      }
+      
+      if (mediaResult.audioLinks.length > 0) {
+        additionalContent.push("🎵 **Аудио:**", ...mediaResult.audioLinks);
+      }
+      
+      if (mediaResult.docLinks.length > 0) {
+        additionalContent.push("📎 **Документы:**", ...mediaResult.docLinks);
+      }
+      
+      if (additionalContent.length > 0) {
+        const additionalText = additionalContent.join("\n");
+        sendTelegramMessage(botToken, binding.tgChatId, additionalText);
+      }
+    }
+    
+    if (sendResult.success) {
+      logEvent("INFO", "post_sent_successfully", license_key, 
+               `VK Post: ${vk_post.id}, TG Message: ${sendResult.message_id}, Binding: ${binding_id}`);
+      
+      return jsonResponse({
+        success: true,
+        message_id: sendResult.message_id,
+        formatted_text_length: formattedText.length,
+        has_media: mediaResult.photos.length > 0
+      });
+    } else {
+      logEvent("ERROR", "post_send_failed", license_key, 
+               `VK Post: ${vk_post.id}, Error: ${sendResult.error}, Binding: ${binding_id}`);
+      
+      return jsonResponse({
+        success: false,
+        error: sendResult.error
+      }, 500);
+          }
+    
+  } catch (error) {
+    logEvent("ERROR", "send_post_error", payload.license_key || "unknown", error.message);
+    return jsonResponse({ success: false, error: error.message }, 500);
+  }
+}
+
+/**
+ * Обработчик тестовой публикации
+ */
+function handleTestPublication(payload, clientIp) {
+  try {
+    const { license_key, binding_id } = payload;
+    
+    // Проверяем лицензию
+    const licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    const licenseData = JSON.parse(licenseCheck.getContent());
+    
+    if (!licenseData.success) {
+      return licenseCheck;
+    }
+    
+    // Находим связку
+    const binding = findBindingById(binding_id, license_key);
+    if (!binding) {
+      return jsonResponse({
+        success: false,
+        error: "Binding not found"
+      }, 404);
+    }
+    
+    logEvent("INFO", "test_publication_start", license_key, 
+             `Binding: ${binding_id}, VK: ${binding.vkGroupUrl}, TG: ${binding.tgChatId}`);
+    
+    // Получаем токен бота
+    const botToken = PropertiesService.getScriptProperties().getProperty("BOT_TOKEN");
+    if (!botToken) {
+      return jsonResponse({
+        success: false,
+        error: "Bot token not configured"
+      }, 500);
+    }
+    
+    // Создаем тестовое сообщение с демонстрацией форматирования
+    const testText = `🧪 **Тестовое сообщение VK→Telegram Crossposter**
+
+Эта связка работает корректно! Проверяем функции форматирования:
+
+*Первое предложение выделено жирным.* Остальной текст обычный.
+
+Проверяем слова в ВЕРХНЕМ РЕГИСТРЕ — они должны быть *ЖИРНЫМИ*.
+
+Пример ссылки VK: [durov|Павел Дуров](https://vk.com/durov)
+
+🔗 **Детали связки:**
+📰 VK: ${binding.vkGroupUrl}
+📱 TG: ${binding.tgChatId}
+🆔 Binding ID: ${binding_id}
+
+⏰ Время теста: ${new Date().toLocaleString('ru-RU')}`;
+    
+    // Отправляем тестовое сообщение
+    const sendResult = sendTelegramMessage(botToken, binding.tgChatId, testText);
+    
+    if (sendResult.success) {
+      logEvent("INFO", "test_publication_success", license_key, 
+               `Binding: ${binding_id}, Message ID: ${sendResult.message_id}`);
+      
+      return jsonResponse({
+        success: true,
+        message_id: sendResult.message_id,
+        message: "Тестовое сообщение отправлено успешно! Проверьте ваш Telegram канал/чат."
+      });
+    } else {
+      logEvent("ERROR", "test_publication_failed", license_key, 
+               `Binding: ${binding_id}, Error: ${sendResult.error}`);
+      
+      return jsonResponse({
+        success: false,
+        error: `Не удалось отправить тестовое сообщение: ${sendResult.error}`
+      }, 500);
+    }
+    
+  } catch (error) {
+    logEvent("ERROR", "test_publication_error", payload.license_key || "unknown", error.message);
+    return jsonResponse({ success: false, error: error.message }, 500);
+  }
+}
+
+// ============================================
+// ФУНКЦИИ ПОЛУЧЕНИЯ НАЗВАНИЙ ГРУПП И КАНАЛОВ
+// ============================================
+
+/**
+ * Получает название группы ВКонтакте по ID
+ */
+function getVkGroupName(groupId) {
+  try {
+    const userToken = PropertiesService.getScriptProperties()
+      .getProperty("VK_USER_ACCESS_TOKEN");
+    
+    if (!userToken) {
+      logEvent("WARN", "vk_token_missing_for_name", "server", `Group ID: ${groupId}`);
+      return null;
+    }
+    
+    const isGroup = groupId.toString().startsWith('-');
+    const cleanId = Math.abs(parseInt(groupId));
+    
+    logEvent("DEBUG", "vk_name_request_start", "server", 
+             `Group ID: ${groupId}, Clean ID: ${cleanId}, Is Group: ${isGroup}`);
+    
+    let apiMethod, apiParams;
+    
+    if (isGroup) {
+      // Получаем название группы
+      apiMethod = 'groups.getById';
+      apiParams = `group_id=${cleanId}&fields=name,screen_name`;
+    } else {
+      // Получаем имя пользователя
+      apiMethod = 'users.get';
+      apiParams = `user_ids=${cleanId}&fields=first_name,last_name,screen_name`;
+    }
+    
+    const response = UrlFetchApp.fetch(
+      `https://api.vk.com/method/${apiMethod}?${apiParams}&v=${VK_API_VERSION}&access_token=${userToken}`,
+      {
+        muteHttpExceptions: true,
+        timeout: 8000
+      }
+    );
+    
+    const data = JSON.parse(response.getContentText());
+    
+    if (data.error) {
+      logEvent("WARN", "vk_name_api_error", "server", 
+               `Group ID: ${groupId}, Error: ${data.error.error_code} - ${data.error.error_msg}`);
+      return null;
+    }
+    
+    if (data.response && data.response.length > 0) {
+      const obj = data.response[0];
+      let name;
+      
+      if (isGroup) {
+        name = obj.name;
+      } else {
+        name = `${obj.first_name || ''} ${obj.last_name || ''}`.trim();
+      }
+      
+      logEvent("INFO", "vk_name_retrieved", "server", 
+               `Group ID: ${groupId} -> Name: "${name}"`);
+      
+      return name || `Unknown ${isGroup ? 'Group' : 'User'}`;
+    }
+    
+    logEvent("WARN", "vk_name_not_found", "server", `Group ID: ${groupId}`);
+    return null;
+    
+  } catch (error) {
+    logEvent("ERROR", "vk_name_request_error", "server", 
+             `Group ID: ${groupId}, Error: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Получает название Telegram чата/канала по chat_id
+ */
+function getTelegramChatName(chatId) {
+  try {
+    const botToken = PropertiesService.getScriptProperties().getProperty("BOT_TOKEN");
+    
+    if (!botToken) {
+      logEvent("WARN", "tg_token_missing_for_name", "server", `Chat ID: ${chatId}`);
+      return null;
+    }
+    
+    logEvent("DEBUG", "tg_name_request_start", "server", `Chat ID: ${chatId}`);
+    
+    const response = UrlFetchApp.fetch(`https://api.telegram.org/bot${botToken}/getChat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      payload: JSON.stringify({ chat_id: chatId }),
+      muteHttpExceptions: true,
+      timeout: 8000
+    });
+    
+    const result = JSON.parse(response.getContentText());
+    
+    if (result.ok) {
+      const chat = result.result;
+      let name;
+      
+      // Определяем название в зависимости от типа чата
+      if (chat.title) {
+        // Группа, супергруппа или канал
+        name = chat.title;
+      } else if (chat.first_name || chat.last_name) {
+        // Личный чат
+        name = `${chat.first_name || ''} ${chat.last_name || ''}`.trim();
+      } else if (chat.username) {
+        // Fallback на username
+        name = '@' + chat.username;
+      } else {
+        name = 'Unknown Chat';
+      }
+      
+      logEvent("INFO", "tg_name_retrieved", "server", 
+               `Chat ID: ${chatId} -> Name: "${name}", Type: ${chat.type}`);
+      
+      return name;
+    } else {
+      logEvent("WARN", "tg_name_api_error", "server", 
+               `Chat ID: ${chatId}, Error: ${result.description}`);
+      return null;
+    }
+    
+  } catch (error) {
+    logEvent("ERROR", "tg_name_request_error", "server", 
+             `Chat ID: ${chatId}, Error: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Получает кешированное название или запрашивает новое
+ */
+function getCachedVkGroupName(groupId) {
+  try {
+    const cache = PropertiesService.getScriptProperties();
+    const cacheKey = `vk_name_${groupId}`;
+    
+    let cachedName = cache.getProperty(cacheKey);
+    
+    if (cachedName) {
+      logEvent("DEBUG", "vk_name_from_cache", "server", 
+               `${groupId} -> ${cachedName} (cached)`);
+      return cachedName;
+    }
+    
+    // Если не в кеше - запрашиваем и кешируем
+    const freshName = getVkGroupName(groupId);
+    if (freshName) {
+      cache.setProperty(cacheKey, freshName);
+      return freshName;
+    }
+    
+    return `VK:${groupId}`; // Fallback отображение
+    
+  } catch (error) {
+    logEvent("ERROR", "cached_vk_name_error", "server", error.message);
+    return `VK:${groupId}`;
+  }
+}
+
+/**
+ * Получает кешированное название Telegram чата или запрашивает новое
+ */
+function getCachedTelegramChatName(chatId) {
+  try {
+    const cache = PropertiesService.getScriptProperties();
+    const cacheKey = `tg_name_${chatId}`;
+    
+    let cachedName = cache.getProperty(cacheKey);
+    
+    if (cachedName) {
+      logEvent("DEBUG", "tg_name_from_cache", "server", 
+               `${chatId} -> ${cachedName} (cached)`);
+      return cachedName;
+    }
+    
+    // Если не в кеше - запрашиваем и кешируем
+    const freshName = getTelegramChatName(chatId);
+    if (freshName) {
+      cache.setProperty(cacheKey, freshName);
+      return freshName;
+    }
+    
+    return chatId.toString(); // Fallback отображение
+    
+  } catch (error) {
+    logEvent("ERROR", "cached_tg_name_error", "server", error.message);
+    return chatId.toString();
+  }
+}
+
+/**
+ * НОВАЯ ФУНКЦИЯ: Получает связки пользователя с названиями групп/каналов
+ */
+function getUserBindingsWithNames(licenseKey) {
+  try {
+    const sheet = getSheet("Bindings");
+    const data = sheet.getDataRange().getValues();
+    const bindings = [];
+    
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][1] === licenseKey) {
+        const vkGroupUrl = data[i][3];
+        const tgChatId = data[i][4];
+        
+        let vkGroupName = vkGroupUrl;
+        let tgChatName = tgChatId;
+        
+        // Получаем названия
+        try {
+          if (vkGroupUrl) {
+            const vkGroupId = extractVkGroupId(vkGroupUrl);
+            vkGroupName = getCachedVkGroupName(vkGroupId);
+          }
+        } catch (vkError) {
+          logEvent("WARN", "binding_vk_name_error", licenseKey, 
+                   `URL: ${vkGroupUrl}, Error: ${vkError.message}`);
+        }
+        
+        try {
+          if (tgChatId) {
+            tgChatName = getCachedTelegramChatName(tgChatId);
+          }
+        } catch (tgError) {
+          logEvent("WARN", "binding_tg_name_error", licenseKey, 
+                   `Chat ID: ${tgChatId}, Error: ${tgError.message}`);
+        }
+        
+        bindings.push({
+          id: data[i][0],
+          vkGroupUrl: vkGroupUrl,
+          vkGroupName: vkGroupName, // Добавляем название
+          tgChatId: tgChatId,
+          tgChatName: tgChatName,   // Добавляем название
+          status: data[i][5],
+          createdAt: data[i][6],
+          lastCheck: data[i][7]
+        });
+      }
+    }
+    
+    logEvent("INFO", "bindings_with_names_loaded", licenseKey, 
+             `Total bindings: ${bindings.length}`);
+    
+    return bindings;
+    
+  } catch (error) {
+    logEvent("ERROR", "get_bindings_with_names_error", licenseKey, error.message);
+    return [];
+  }
+}
+
+/**
+ * Обработчик получения постов VK с server-side access token
+ */
+function handleGetVkPosts(payload, clientIp) {
+  try {
+    const { license_key, group_id, count = 50 } = payload;
+    
+    // Проверяем лицензию
+    const licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    const licenseData = JSON.parse(licenseCheck.getContent());
+    
+    if (!licenseData.success) {
+      return licenseCheck;
+    }
+    
+    // Проверяем наличие VK User Access Token
+    const userToken = PropertiesService.getScriptProperties()
+      .getProperty("VK_USER_ACCESS_TOKEN");
+    
+    if (!userToken) {
+      logEvent("ERROR", "vk_token_missing", license_key, 
+               `No VK_USER_ACCESS_TOKEN configured, Group: ${group_id}`);
+      return jsonResponse({
+        success: false,
+        error: "VK User Access Token not configured on server. Please configure VK_USER_ACCESS_TOKEN in server settings."
+      }, 500);
+    }
+    
+    logEvent("INFO", "vk_posts_request", license_key, 
+             `Group: ${group_id}, Count: ${count}, IP: ${clientIp}`);
+    
+    // Формируем запрос к VK API
+    const url = `https://api.vk.com/method/wall.get?owner_id=${encodeURIComponent(group_id)}&count=${encodeURIComponent(count)}&v=${VK_API_VERSION}&access_token=${userToken}`;
+    
+    const response = UrlFetchApp.fetch(url, {
+      muteHttpExceptions: true,
+      timeout: 15000
+    });
+    
+    const data = JSON.parse(response.getContentText());
+    
+    logEvent("DEBUG", "vk_api_response", license_key, 
+             `Group: ${group_id}, Status: ${response.getResponseCode()}, Has error: ${!!data.error}`);
+    
+    if (data.error) {
+      logEvent("ERROR", "vk_api_error", license_key,
+               `Group: ${group_id}, Error code: ${data.error.error_code}, Message: ${data.error.error_msg}`);
+      
+      // Возвращаем информативную ошибку
+      let errorMessage = `VK API Error: ${data.error.error_msg}`;
+      
+      if (data.error.error_code === 5) {
+        errorMessage = "User authorization failed: VK Access Token is invalid or expired";
+      } else if (data.error.error_code === 15) {
+        errorMessage = "Access denied: Unable to access VK group posts";
+      } else if (data.error.error_code === 100) {
+        errorMessage = "Invalid VK group ID";
+      }
+      
+      return jsonResponse({
+        success: false,
+        error: errorMessage,
+        vk_error_code: data.error.error_code
+      }, 400);
+    }
+    
+    if (!data.response || !data.response.items) {
+      logEvent("WARN", "no_vk_posts", license_key, `Group: ${group_id}`);
+      return jsonResponse({
+        success: true,
+        posts: []
+      });
+    }
+    
+    // Извлекаем и форматируем посты
+    const posts = data.response.items.map(post => ({
+      id: post.id,
+      text: post.text || "",
+      date: post.date,
+      attachments: post.attachments || [],
+      from_id: post.from_id || post.owner_id
+    }));
+    
+    logEvent("INFO", "vk_posts_retrieved", license_key,
+             `Group: ${group_id}, Posts count: ${posts.length}`);
+    
+    return jsonResponse({
+      success: true,
+      posts: posts,
+      total_count: data.response.count || posts.length
+    });
+    
+  } catch (error) {
+    logEvent("ERROR", "vk_posts_error", payload.license_key || "unknown",
+             `Group: ${payload.group_id}, Error: ${error.message}`);
+    return jsonResponse({ 
+      success: false, 
+      error: "Failed to fetch VK posts: " + error.message 
+    }, 500);
+  }
+}
+
+// ============================================
+// ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ И УЛУЧШЕНИЯ  
+// ============================================
+
+// Rate limiting для Telegram API
+const RATE_LIMIT_DELAY = 100; // мс между запросами
+
+/**
+ * ИСПРАВЛЕННАЯ функция извлечения ID группы ВК с поддержкой всех форматов
+ */
+function extractVkGroupId(url) {
+  if (!url || typeof url !== 'string') {
+    throw new Error('Пустая или неверная ссылка ВК');
+  }
+
+  const cleanInput = url.trim().toLowerCase();
+
+  // Если уже ID (число или -число)
+  if (/^-?\d+$/.test(cleanInput)) {
+    return cleanInput.startsWith('-') ? cleanInput : '-' + cleanInput;
+  }
+
+  // Извлекаем screen_name из ссылки
+  let screenName = null;
+
+  // vk.com/public123, vk.com/club123, vk.com/id123, vk.com/username
+  const patterns = [
+    /vk\.com\/(public|club)(\d+)/i,
+    /vk\.com\/([a-z0-9_]+)/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = cleanInput.match(pattern);
+    if (match) {
+      screenName = match[2] || match[1];
+      break;
+    }
+  }
+
+  if (!screenName) {
+    throw new Error('Не удалось извлечь ID из ссылки: ' + url);
+  }
+
+  // Если это numeric ID
+  if (/^\d+$/.test(screenName)) {
+    return '-' + screenName;
+  }
+
+  // Если это screen_name - нужно резолвить через API
+  return resolveVkScreenName(screenName);
+}
+
+/**
+ * Резолвит screen_name в ID через VK API
+ */
+function resolveVkScreenName(screenName) {
+  try {
+    const userToken = PropertiesService.getScriptProperties()
+      .getProperty("VK_USER_ACCESS_TOKEN");
+        
+    if (!userToken) {
+      throw new Error("VK token не настроен");
+    }
+        
+    const response = UrlFetchApp.fetch(
+      `https://api.vk.com/method/utils.resolveScreenName?screen_name=${screenName}&v=${VK_API_VERSION}&access_token=${userToken}`,
+      { muteHttpExceptions: true, timeout: 10000 }
+    );
+        
+    const data = JSON.parse(response.getContentText());
+        
+    if (data.error) {
+      throw new Error(`VK API Error: ${data.error.error_msg}`);
+    }
+        
+    if (!data.response || !data.response.object_id) {
+      throw new Error(`Группа/страница не найдена: ${screenName}`);
+    }
+        
+    const objectId = data.response.object_id;
+    const type = data.response.type;
+        
+    // Для групп и страниц добавляем минус
+    return (type === 'group' || type === 'page') ? `-${objectId}` : objectId.toString();
+      
+  } catch (error) {
+    throw new Error(`Не удалось резолвить ${screenName}: ${error.message}`);
+  }
+}
+
+/**
+ * ИСПРАВЛЕННАЯ функция извлечения chat_id Telegram
+ */
+function extractTelegramChatId(input) {
+  if (!input || typeof input !== 'string') {
+    throw new Error('Пустая или неверная ссылка Telegram');
+  }
+
+  const cleanInput = input.trim();
+
+  // Если уже chat_id (число с минусом)
+  if (/^-?\d+$/.test(cleanInput)) {
+    return cleanInput;
+  }
+
+  // t.me/username или @username
+  const patterns = [
+    /t\.me\/([a-z0-9_]+)/i,
+    /@([a-z0-9_]+)/i,
+    /^([a-z0-9_]+)$/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = cleanInput.match(pattern);
+    if (match) {
+      const username = match[1];
+      return '@' + username;
+    }
+  }
+
+  throw new Error('Не удалось извлечь chat_id из: ' + input);
+}
+
+/**
+ * Очистка старых логов (более 30 дней)
+ */
+function cleanOldLogs() {
+  try {
+    const logsSheet = getSheet("Logs");
+    const data = logsSheet.getDataRange().getValues();
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    
+    let deletedCount = 0;
+    
+    for (let i = data.length - 1; i >= 1; i--) {
+      const logDate = new Date(data[i][0]);
+      if (logDate < thirtyDaysAgo) {
+        logsSheet.deleteRow(i + 1);
+        deletedCount++;
+      }
+    }
+    
+    logEvent("INFO", "logs_cleaned", "system", `Deleted ${deletedCount} old log entries`);
+    return deletedCount;
+    
+  } catch (error) {
+    logEvent("ERROR", "log_cleanup_error", "system", error.message);
+    return 0;
+  }
 }
 
 // ============================================
