@@ -288,7 +288,7 @@ function getBindings() {
     logEvent("DEBUG", "get_bindings_request", "client", `License: ${license.key.substring(0, 20)}...`);
     
     const payload = {
-      event: "get_bindings",
+      event: "get_user_bindings_with_names",
       license_key: license.key
     };
     
@@ -303,11 +303,34 @@ function getBindings() {
     const result = JSON.parse(response.getContentText());
     
     if (result.success) {
-      logEvent("INFO", "bindings_loaded", "client", `Total bindings: ${result.bindings?.length || 0}`);
+      logEvent("INFO", "bindings_with_names_loaded", "client", `Total bindings: ${result.bindings?.length || 0}`);
       return result;
     } else {
-      logEvent("WARN", "get_bindings_failed", "client", result.error);
-      return result;
+      // Fallback to old API if new one is not available
+      logEvent("WARN", "get_bindings_with_names_failed", "client", `${result.error}, falling back to regular bindings`);
+      
+      const fallbackPayload = {
+        event: "get_bindings",
+        license_key: license.key
+      };
+      
+      const fallbackResponse = UrlFetchApp.fetch(SERVER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        payload: JSON.stringify(fallbackPayload),
+        muteHttpExceptions: true,
+        timeout: REQUEST_TIMEOUT
+      });
+      
+      const fallbackResult = JSON.parse(fallbackResponse.getContentText());
+      
+      if (fallbackResult.success) {
+        logEvent("INFO", "bindings_loaded_fallback", "client", `Total bindings: ${fallbackResult.bindings?.length || 0}`);
+        return fallbackResult;
+      } else {
+        logEvent("WARN", "get_bindings_fallback_failed", "client", fallbackResult.error);
+        return fallbackResult;
+      }
     }
     
   } catch (error) {
@@ -585,43 +608,57 @@ function getVkPosts(groupId) {
   try {
     logEvent("DEBUG", "get_vk_posts_start", "client", `VK Group ID: ${groupId}`);
     
-    // ⚠️ ВАЖНО: Здесь мы просто извлекаем посты с VK через общедоступный API (без токена)
-    // Полная информация о постах будет на сервере
+    // Получаем лицензию для аутентификации на сервере
+    const license = getLicense();
+    if (!license) {
+      logEvent("ERROR", "no_license_for_vk_posts", "client", `Group: ${groupId}`);
+      return [];
+    }
     
-    const url = `https://api.vk.com/method/wall.get?owner_id=${groupId}&count=${MAX_POSTS_CHECK}&v=5.131`;
+    // Теперь делаем запрос к серверу вместо прямого обращения к VK API
+    const payload = {
+      event: "get_vk_posts",
+      license_key: license.key,
+      group_id: groupId,
+      count: MAX_POSTS_CHECK
+    };
     
-    logEvent("DEBUG", "vk_api_request", "client", `URL: ${url}`);
+    logEvent("DEBUG", "server_vk_request", "client", `Group: ${groupId}, Count: ${MAX_POSTS_CHECK}`);
     
-    const response = UrlFetchApp.fetch(url, {
+    const response = UrlFetchApp.fetch(SERVER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      payload: JSON.stringify(payload),
       muteHttpExceptions: true,
-      timeout: 15000
+      timeout: REQUEST_TIMEOUT
     });
     
     const data = JSON.parse(response.getContentText());
     
-    logEvent("DEBUG", "vk_api_response", "client", 
-             `Status: ${response.getResponseCode()}, Has error: ${!!data.error}, Has response: ${!!data.response}`);
+    logEvent("DEBUG", "server_vk_response", "client", 
+             `Group: ${groupId}, Success: ${!!data.success}, Status: ${response.getResponseCode()}`);
     
-    if (data.error) {
-      logEvent("ERROR", "vk_api_error", "client",
-               `Group: ${groupId}, Error code: ${data.error.error_code}, Message: ${data.error.error_msg}`);
+    if (!data.success) {
+      const errorMsg = data.error || "Unknown server error";
+      logEvent("ERROR", "server_vk_error", "client",
+               `Group: ${groupId}, Server error: ${errorMsg}`);
+      
+      // Возвращаем информативную ошибку в зависимости от типа
+      if (errorMsg.includes("VK User Access Token not configured")) {
+        logEvent("WARN", "vk_token_not_configured", "client", `Group: ${groupId}`);
+      } else if (errorMsg.includes("User authorization failed")) {
+        logEvent("WARN", "vk_token_invalid", "client", `Group: ${groupId}`);
+      } else if (errorMsg.includes("Access denied")) {
+        logEvent("WARN", "vk_access_denied", "client", `Group: ${groupId}`);
+      }
+      
       return [];
     }
     
-    if (!data.response || !data.response.items) {
-      logEvent("WARN", "no_vk_posts", "client", `Group: ${groupId}`);
-      return [];
-    }
+    const posts = data.posts || [];
     
-    const posts = data.response.items.map(post => ({
-      id: post.id,
-      text: post.text || "",
-      date: post.date,
-      attachments: post.attachments || []
-    }));
-    
-    logEvent("INFO", "vk_posts_extracted", "client",
-             `Group: ${groupId}, Posts count: ${posts.length}`);
+    logEvent("INFO", "vk_posts_retrieved", "client",
+             `Group: ${groupId}, Posts count: ${posts.length}, Total available: ${data.total_count || 'unknown'}`);
     
     return posts;
     
@@ -686,9 +723,47 @@ function getLicense() {
       return null;
     }
     
-    logEvent("DEBUG", "license_retrieved", "client", `License: ${licenseKey.substring(0, 20)}...`);
+    logEvent("DEBUG", "license_key_found", "client", `License: ${licenseKey.substring(0, 20)}...`);
     
-    return { key: licenseKey };
+    // Получаем полную информацию о лицензии с сервера
+    try {
+      const payload = {
+        event: "check_license",
+        license_key: licenseKey
+      };
+      
+      const response = UrlFetchApp.fetch(SERVER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true,
+        timeout: REQUEST_TIMEOUT
+      });
+      
+      const result = JSON.parse(response.getContentText());
+      
+      if (result.success && result.license) {
+        logEvent("DEBUG", "license_details_retrieved", "client", 
+                 `Type: ${result.license.type}, Max Groups: ${result.license.maxGroups}`);
+        
+        return {
+          key: licenseKey,
+          type: result.license.type,
+          maxGroups: result.license.maxGroups,
+          expires: result.license.expires
+        };
+      } else {
+        logEvent("WARN", "license_verification_failed", "client", result.error || "Unknown error");
+        // Возвращаем только ключ если сервер недоступен
+        return { key: licenseKey };
+      }
+      
+    } catch (serverError) {
+      logEvent("WARN", "license_server_error", "client", 
+               `Server request failed: ${serverError.message}, returning local key only`);
+      // Возвращаем только ключ если сервер недоступен
+      return { key: licenseKey };
+    }
     
   } catch (error) {
     logEvent("ERROR", "get_license_error", "client", error.message);
@@ -748,12 +823,56 @@ function isPostAlreadySent(vkGroupId, postId) {
 function markPostAsSent(vkGroupId, postId, tgChatId) {
   try {
     const sheet = getOrCreatePublishedPostsSheet(vkGroupId);
-    sheet.appendRow([postId, new Date().toISOString(), tgChatId, "sent"]);
+    const now = new Date().toISOString();
     
-    logEvent("DEBUG", "post_marked_sent", "client", `Post: ${postId}, VK Group: ${vkGroupId}`);
+    // Расширенная информация о посте
+    sheet.appendRow([
+      postId, 
+      now, 
+      tgChatId, 
+      "sent",
+      CLIENT_VERSION,  // версия клиента
+      "auto"          // источник отправки
+    ]);
+    
+    // Дополнительное логирование в Logs лист
+    logEvent("INFO", "post_sent_successfully", "client", 
+             `VK Post: ${postId} sent to TG: ${tgChatId}, VK Group: ${vkGroupId}, Timestamp: ${now}`);
+    
+    // Обновляем статистику отправленных постов
+    updatePostStatistics(vkGroupId, postId);
     
   } catch (error) {
-    logEvent("ERROR", "mark_post_sent_error", "client", error.message);
+    logEvent("ERROR", "mark_post_sent_error", "client", 
+             `Post: ${postId}, VK Group: ${vkGroupId}, Error: ${error.message}`);
+  }
+}
+
+function updatePostStatistics(vkGroupId, postId) {
+  try {
+    const props = PropertiesService.getUserProperties();
+    const today = new Date().toDateString();
+    const statsKey = `post_stats_${today}`;
+    
+    let todayStats = props.getProperty(statsKey);
+    if (todayStats) {
+      todayStats = JSON.parse(todayStats);
+    } else {
+      todayStats = { date: today, totalPosts: 0, groups: {} };
+    }
+    
+    todayStats.totalPosts++;
+    todayStats.groups[vkGroupId] = (todayStats.groups[vkGroupId] || 0) + 1;
+    todayStats.lastPostTime = new Date().toISOString();
+    todayStats.lastPostId = postId;
+    
+    props.setProperty(statsKey, JSON.stringify(todayStats));
+    
+    logEvent("DEBUG", "post_stats_updated", "client", 
+             `Today: ${todayStats.totalPosts} posts, Group ${vkGroupId}: ${todayStats.groups[vkGroupId]} posts`);
+    
+  } catch (error) {
+    logEvent("WARN", "update_stats_error", "client", error.message);
   }
 }
 
@@ -765,15 +884,23 @@ function getOrCreatePublishedPostsSheet(vkGroupId) {
   
   if (!sheet) {
     sheet = ss.insertSheet(sheetName);
-    sheet.appendRow(["Post ID", "Sent At", "TG Chat ID", "Status"]);
+    sheet.appendRow(["Post ID", "Sent At", "TG Chat ID", "Status", "Client Version", "Source"]);
     
-    const headerRange = sheet.getRange(1, 1, 1, 4);
+    const headerRange = sheet.getRange(1, 1, 1, 6);
     headerRange.setBackground("#10b981");
     headerRange.setFontColor("white");
     headerRange.setFontWeight("bold");
     sheet.setFrozenRows(1);
     
-    logEvent("INFO", "published_sheet_created", "client", `Sheet: ${sheetName}`);
+    // Устанавливаем ширину колонок для лучшего отображения
+    sheet.setColumnWidth(1, 80);  // Post ID
+    sheet.setColumnWidth(2, 150); // Sent At
+    sheet.setColumnWidth(3, 150); // TG Chat ID
+    sheet.setColumnWidth(4, 80);  // Status
+    sheet.setColumnWidth(5, 100); // Client Version
+    sheet.setColumnWidth(6, 80);  // Source
+    
+    logEvent("INFO", "published_sheet_created", "client", `Sheet: ${sheetName} with enhanced tracking`);
   }
   
   return sheet;
@@ -1159,9 +1286,28 @@ function getMainPanelHtml() {
         licenseInputForm.style.display = "none";
         licenseInfo.style.display = "block";
         
-        licenseTypeDisplay.textContent = "✅ " + appState.license.type;
-        licenseDetailsDisplay.innerHTML = "<strong>Максимум групп:</strong> " + appState.license.maxGroups + "<br>" +
-          "<strong>Действительна до:</strong> " + new Date(appState.license.expires).toLocaleDateString();
+        // Safe handling of license properties with fallbacks
+        const licenseType = appState.license.type || "UNKNOWN";
+        const maxGroups = appState.license.maxGroups || "N/A";
+        const expires = appState.license.expires;
+        
+        licenseTypeDisplay.textContent = "✅ " + licenseType;
+        
+        let expiresText = "N/A";
+        if (expires) {
+          try {
+            const expiresDate = new Date(expires);
+            if (!isNaN(expiresDate.getTime())) {
+              expiresText = expiresDate.toLocaleDateString();
+            }
+          } catch (e) {
+            logMessageToConsole("Error parsing expires date: " + e.message);
+          }
+        }
+        
+        licenseDetailsDisplay.innerHTML = "<strong>Максимум групп:</strong> " + maxGroups + "<br>" +
+          "<strong>Действительна до:</strong> " + expiresText + "<br>" +
+          "<strong>Ключ:</strong> " + (appState.license.key ? appState.license.key.substring(0, 20) + "..." : "N/A");
         
         document.getElementById("bindings-section").style.display = "block";
         document.getElementById("status-section").style.display = "block";
