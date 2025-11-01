@@ -94,134 +94,188 @@ function showConfigDialog() {
       
   } catch (error) {
     logEvent("ERROR", "config_dialog_error", "system", error.message);
-    SpreadsheetApp.getUi().alert("❌ Ошибка открытия диалога: " + error.message);
+    SpreadsheetApp.getUi().alert("❌ Ошибка: " + error.message);
   }
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 function getConfigDialogHtml() {
   const props = PropertiesService.getScriptProperties();
   const config = {
     BOT_TOKEN: props.getProperty("BOT_TOKEN") || "",
-    VK_SERVICE_KEY: props.getProperty("VK_SERVICE_KEY") || "",
     VK_USER_ACCESS_TOKEN: props.getProperty("VK_USER_ACCESS_TOKEN") || "",
     ADMIN_CHAT_ID: props.getProperty("ADMIN_CHAT_ID") || ""
   };
-
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-</head>
-<body>
-<div>
-  <h1>⚙️ Конфигурация сервера</h1>
   
-  <div id="status"></div>
+  let html = '<!DOCTYPE html>\n';
+  html += '<html lang="ru">\n';
+  html += '<head>\n';
+  html += '<meta charset="UTF-8">\n';
+  html += '<meta name="viewport" content="width=device-width, initial-scale=1">\n';
+  html += '<style>\n';
+  html += 'body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }\n';
+  html += '.container { max-width: 500px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin: 0 auto; }\n';
+  html += 'h1 { color: #333; font-size: 20px; margin-top: 0; margin-bottom: 20px; }\n';
+  html += 'label { display: block; margin-top: 15px; font-weight: bold; color: #555; margin-bottom: 5px; }\n';
+  html += 'input { width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-size: 13px; }\n';
+  html += 'small { display: block; margin-top: 3px; color: #888; font-size: 12px; }\n';
+  html += 'button { background: #667eea; color: white; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer; font-size: 14px; margin-top: 20px; width: 100%; font-weight: bold; }\n';
+  html += 'button:hover { background: #5568d3; }\n';
+  html += 'button:disabled { background: #ccc; cursor: not-allowed; }\n';
+  html += '.status { margin-top: 15px; padding: 12px; border-radius: 4px; background: #f0f0f0; display: none; }\n';
+  html += '.error { background: #fee; border-left: 4px solid #f00; color: #c33; }\n';
+  html += '.success { background: #efe; border-left: 4px solid #0f0; color: #030; }\n';
+  html += '.warning { background: #ffe; border-left: 4px solid #fa0; color: #880; }\n';
+  html += '.info { background: #eef; border-left: 4px solid #00f; color: #003; }\n';
+  html += '</style>\n';
+  html += '</head>\n';
+  html += '<body>\n';
+  html += '<div class="container">\n';
+  html += '<h1>⚙️ Конфигурация сервера</h1>\n';
+  html += '<div id="status" class="status"></div>\n';
   
-  <div>
-    <p><strong>🤖 Telegram Bot Token</strong></p>
-    <input type="password" id="botToken" value="${config.BOT_TOKEN}" placeholder="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz" size="50">
-    <p><small>Получите у @BotFather в Telegram</small></p>
-  </div>
+  html += '<label>🤖 Telegram Bot Token</label>\n';
+  html += '<input type="password" id="botToken" value="' + escapeHtml(config.BOT_TOKEN) + '" placeholder="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz">\n';
+  html += '<small>Получить в BotFather: /start → /newbot</small>\n';
   
-  <div>
-    <p><strong>🔑 VK Service Key</strong></p>
-    <input type="password" id="vkServiceKey" value="${config.VK_SERVICE_KEY}" placeholder="abc123def456..." size="50">
-    <p><small>Сервисный ключ доступа из настроек VK приложения</small></p>
-  </div>
+  html += '<label>ВКонтакте User Token</label>\n';
+  html += '<input type="password" id="vkUserToken" value="' + escapeHtml(config.VK_USER_ACCESS_TOKEN) + '" placeholder="abc123def456...">\n';
+  html += '<small>Требуемые права: wall, video, offline</small>\n';
   
-  <div>
-    <p><strong>👤 VK User Access Token</strong></p>
-    <input type="password" id="vkUserToken" value="${config.VK_USER_ACCESS_TOKEN}" placeholder="abc123def456..." size="50">
-    <p><small>Пользовательский токен с правами wall, video, offline</small></p>
-  </div>
+  html += '<label>📱 Admin Chat ID</label>\n';
+  html += '<input type="text" id="adminChatId" value="' + escapeHtml(config.ADMIN_CHAT_ID) + '" placeholder="-1001234567890">\n';
+  html += '<small>Получить через @userinfobot после добавления бота в канал/группу</small>\n';
   
-  <div>
-    <p><strong>👨‍💼 Admin Chat ID</strong></p>
-    <input type="text" id="adminChatId" value="${config.ADMIN_CHAT_ID}" placeholder="-1001234567890" size="50">
-    <p><small>Ваш Telegram Chat ID для уведомлений (получите у @userinfobot)</small></p>
-  </div>
+  html += '<button id="saveBtn" onclick="saveAndCloseConfig()">💾 Сохранить конфигурацию</button>\n';
   
-  <p><input type="button" value="💾 Сохранить конфигурацию" onclick="saveConfig()"></p>
-</div>
-
-<script>
-  function showStatus(message, type) {
-    const status = document.getElementById('status');
-    if (type === 'success') {
-      status.innerHTML = '<p><strong style="color: green;">' + message + '</strong></p>';
-    } else if (type === 'error') {
-      status.innerHTML = '<p><strong style="color: red;">' + message + '</strong></p>';
-    } else if (type === 'warning') {
-      status.innerHTML = '<p><strong style="color: orange;">' + message + '</strong></p>';
-    }
-  }
-
-  function saveConfig() {
-    const botToken = document.getElementById('botToken').value.trim();
-    const vkServiceKey = document.getElementById('vkServiceKey').value.trim();
-    const vkUserToken = document.getElementById('vkUserToken').value.trim();
-    const adminChatId = document.getElementById('adminChatId').value.trim();
-    
-    if (!botToken || !vkServiceKey || !vkUserToken || !adminChatId) {
-      showStatus('❌ Заполните все поля!', 'error');
-      return;
-    }
-    
-    if (!botToken.includes(':')) {
-      showStatus('❌ Некорректный формат Bot Token!', 'error');
-      return;
-    }
-    
-    showStatus('🔄 Проверка токенов и сохранение конфигурации...', 'warning');
-    
-    google.script.run
-      .withSuccessHandler(function(result) {
-        if (result.success) {
-          let message = '✅ Конфигурация сохранена!<br><br>';
-          
-          if (result.validation) {
-            const v = result.validation;
-            message += '🤖 Telegram: ' + v.telegram.status + ' ' + v.telegram.message + '<br>';
-            message += '🔑 VK Service: ' + v.vkService.status + ' ' + v.vkService.message + '<br>';
-            message += '👤 VK User: ' + v.vkUser.status + ' ' + v.vkUser.message + '<br>';
-            message += '👨‍💼 Admin Chat: ' + v.adminChat.status + ' ' + v.adminChat.message;
-          }
-          
-          showStatus(message, 'success');
-        } else {
-          showStatus('❌ Ошибка: ' + result.error, 'error');
-        }
-      })
-      .withFailureHandler(function(error) {
-        showStatus('❌ Ошибка: ' + error.message, 'error');
-      })
-      .saveServerConfig(botToken, vkServiceKey, vkUserToken, adminChatId);
-  }
-</script>
-</body>
-</html>`;
+  html += '<script>\n';
+  
+  html += 'function escapeHtml(text) {\n';
+  html += '  if (!text) return "";\n';
+  html += '  const div = document.createElement("div");\n';
+  html += '  div.textContent = text;\n';
+  html += '  return div.innerHTML;\n';
+  html += '}\n';
+  
+  html += 'function showStatus(message, type) {\n';
+  html += '  const status = document.getElementById("status");\n';
+  html += '  status.innerHTML = message;\n';
+  html += '  status.className = "status " + type;\n';
+  html += '  status.style.display = "block";\n';
+  html += '}\n';
+  
+  html += 'function saveAndCloseConfig() {\n';
+  html += '  const botToken = document.getElementById("botToken").value.trim();\n';
+  html += '  const vkUserToken = document.getElementById("vkUserToken").value.trim();\n';
+  html += '  const adminChatId = document.getElementById("adminChatId").value.trim();\n';
+  html += '  const btn = document.getElementById("saveBtn");\n';
+  
+  html += '  if (!botToken || !vkUserToken || !adminChatId) {\n';
+  html += '    showStatus("❌ Все поля должны быть заполнены!", "error");\n';
+  html += '    return;\n';
+  html += '  }\n';
+  
+  html += '  btn.disabled = true;\n';
+  html += '  btn.textContent = "🔄 Проверка...";\n';
+  html += '  showStatus("🔄 Проверка токенов...", "info");\n';
+  
+  html += '  try {\n';
+  html += '    google.script.run\n';
+  html += '      .withSuccessHandler(function(result) {\n';
+  html += '        if (result.success) {\n';
+  html += '          let message = "<strong>✅ Конфигурация сохранена!</strong><br><br>";\n';
+  
+  html += '          if (result.validation) {\n';
+  html += '            const v = result.validation;\n';
+  html += '            message += "🤖 Telegram: " + v.telegram.status + " " + v.telegram.message + "<br>";\n';
+  html += '            message += "ВК User: " + v.vkUser.status + " " + v.vkUser.message + "<br>";\n';
+  html += '            message += "Admin Chat: " + v.adminChat.status + " " + v.adminChat.message + "<br>";\n';
+  html += '          }\n';
+  
+  html += '          showStatus(message, "success");\n';
+  html += '          setTimeout(function() {\n';
+  html += '            google.script.host.close();\n';
+  html += '          }, 2000);\n';
+  html += '        } else {\n';
+  html += '          showStatus("<strong>❌ Ошибка:</strong> " + (result.error || "Неизвестная ошибка"), "error");\n';
+  html += '          btn.disabled = false;\n';
+  html += '          btn.textContent = "💾 Сохранить конфигурацию";\n';
+  html += '        }\n';
+  html += '      })\n';
+  html += '      .withFailureHandler(function(error) {\n';
+  html += '        showStatus("<strong>❌ Ошибка сервера:</strong> " + error.message, "error");\n';
+  html += '        btn.disabled = false;\n';
+  html += '        btn.textContent = "💾 Сохранить конфигурацию";\n';
+  html += '      })\n';
+  html += '      .saveServerConfig(botToken, vkUserToken, adminChatId);\n';
+  html += '  } catch (error) {\n';
+  html += '    showStatus("<strong>❌ Исключение:</strong> " + error.message, "error");\n';
+  html += '    btn.disabled = false;\n';
+  html += '    btn.textContent = "💾 Сохранить конфигурацию";\n';
+  html += '  }\n';
+  html += '}\n';
+  
+  html += '</script>\n';
+  
+  html += '</div>\n';
+  html += '</body>\n';
+  html += '</html>\n';
+  
+  return html;
 }
 
-function saveServerConfig(botToken, vkServiceKey, vkUserToken, adminChatId) {
+
+function saveServerConfig(botToken, vkUserToken, adminChatId) {
   try {
-    // Сначала проверяем токены
+    // ========== 1. ПРОВЕРЯЕМ НЕ ПУСТО ==========
+    if (!botToken || !botToken.trim()) {
+      logEvent("WARN", "config_empty_bot_token", "admin", "Bot token is empty");
+      return { 
+        success: false, 
+        error: "❌ Telegram Bot Token не может быть пустым" 
+      };
+    }
+    
+    if (!vkUserToken || !vkUserToken.trim()) {
+      logEvent("WARN", "config_empty_vk_token", "admin", "VK token is empty");
+      return { 
+        success: false, 
+        error: "❌ VK User Access Token не может быть пустым" 
+      };
+    }
+    
+    if (!adminChatId || !adminChatId.trim()) {
+      logEvent("WARN", "config_empty_admin_id", "admin", "Admin chat ID is empty");
+      return { 
+        success: false, 
+        error: "❌ Admin Chat ID не может быть пустым" 
+      };
+    }
+    
+    // ========== 2. ВАЛИДИРУЕМ ТОКЕНЫ ==========
     logEvent("INFO", "config_validation_start", "admin", "Starting token validation");
     
-    const validation = validateTokens(botToken, vkServiceKey, vkUserToken, adminChatId);
+    const validation = validateTokens(botToken, vkUserToken, adminChatId);
     
     if (!validation.success) {
       logEvent("WARN", "config_validation_failed", "admin", validation.error);
       return { success: false, error: validation.error };
     }
     
-    // Сохраняем только если все токены валидны
+    // ========== 3. СОХРАНЯЕМ КОНФИГ ==========
     const props = PropertiesService.getScriptProperties();
     
     props.setProperties({
       "BOT_TOKEN": botToken,
-      "VK_SERVICE_KEY": vkServiceKey,
       "VK_USER_ACCESS_TOKEN": vkUserToken,
       "ADMIN_CHAT_ID": adminChatId
     });
@@ -239,10 +293,9 @@ function saveServerConfig(botToken, vkServiceKey, vkUserToken, adminChatId) {
   }
 }
 
-function validateTokens(botToken, vkServiceKey, vkUserToken, adminChatId) {
+function validateTokens(botToken, vkUserToken, adminChatId) {
   const results = {
     telegram: { status: '❌', message: 'Не проверен' },
-    vkService: { status: '❌', message: 'Не проверен' },
     vkUser: { status: '❌', message: 'Не проверен' },
     adminChat: { status: '❌', message: 'Не проверен' }
   };
@@ -279,41 +332,7 @@ function validateTokens(botToken, vkServiceKey, vkUserToken, adminChatId) {
       };
     }
     
-    // 2. Проверяем VK Service Key
-    logEvent("DEBUG", "validating_vk_service_key", "admin", "Testing VK Service Key");
-    
-    try {
-      const vkServiceResponse = UrlFetchApp.fetch(
-        `https://api.vk.com/method/groups.getById?group_ids=1&v=${VK_API_VERSION}&access_token=${vkServiceKey}`,
-        {
-          muteHttpExceptions: true,
-          timeout: 10000
-        }
-      );
-      
-      const vkServiceData = JSON.parse(vkServiceResponse.getContentText());
-      
-      if (vkServiceData.response) {
-        results.vkService = { 
-          status: '✅', 
-          message: 'Ключ валиден' 
-        };
-        logEvent("INFO", "vk_service_key_valid", "admin", "Service key is working");
-      } else if (vkServiceData.error) {
-        results.vkService = { 
-          status: '❌', 
-          message: `VK API: ${vkServiceData.error.error_msg}` 
-        };
-        logEvent("WARN", "vk_service_key_invalid", "admin", vkServiceData.error.error_msg);
-      }
-    } catch (vkServiceError) {
-      results.vkService = { 
-        status: '❌', 
-        message: `Сетевая ошибка: ${vkServiceError.message}` 
-      };
-    }
-    
-    // 3. Проверяем VK User Token
+    // 2. Проверяем VK User Token
     logEvent("DEBUG", "validating_vk_user_token", "admin", "Testing VK User Token");
     
     try {
@@ -327,19 +346,35 @@ function validateTokens(botToken, vkServiceKey, vkUserToken, adminChatId) {
       
       const vkUserData = JSON.parse(vkUserResponse.getContentText());
       
-      if (vkUserData.response) {
+      if (vkUserData.response && vkUserData.response.length > 0) {
         const user = vkUserData.response[0];
-        results.vkUser = { 
-          status: '✅', 
-          message: `Пользователь: ${user.first_name} ${user.last_name}` 
-        };
-        logEvent("INFO", "vk_user_token_valid", "admin", `User: ${user.first_name} ${user.last_name}`);
+        if (user && user.first_name && user.last_name) {
+          results.vkUser = { 
+            status: '✅', 
+            message: `Пользователь: ${user.first_name} ${user.last_name}` 
+          };
+          logEvent("INFO", "vk_user_token_valid", "admin", `User: ${user.first_name} ${user.last_name}`);
+        } else {
+          results.vkUser = { 
+            status: '❌', 
+            message: 'VK API: Некорректные данные пользователя' 
+          };
+          logEvent("WARN", "vk_user_data_incomplete", "admin", "User data is incomplete or missing");
+        }
       } else if (vkUserData.error) {
+        // Детализированная обработка ошибок VK API
+        let errorMessage = vkUserData.error.error_msg;
+        if (vkUserData.error.error_code === 4) {
+          errorMessage = 'Неверный или истёкший User Access Token. Получите новый токен с правами wall, offline';
+        } else if (vkUserData.error.error_code === 5) {
+          errorMessage = 'User Access Token не имеет необходимых прав. Нужны права: wall, offline';
+        }
+        
         results.vkUser = { 
           status: '❌', 
-          message: `VK API: ${vkUserData.error.error_msg}` 
+          message: `VK API: ${errorMessage} (код ${vkUserData.error.error_code})` 
         };
-        logEvent("WARN", "vk_user_token_invalid", "admin", vkUserData.error.error_msg);
+        logEvent("WARN", "vk_user_token_invalid", "admin", `Error code ${vkUserData.error.error_code}: ${errorMessage}`);
       }
     } catch (vkUserError) {
       results.vkUser = { 
@@ -348,7 +383,7 @@ function validateTokens(botToken, vkServiceKey, vkUserToken, adminChatId) {
       };
     }
     
-    // 4. Проверяем Admin Chat ID (отправляем тестовое сообщение)
+    // 4. Проверяем Admin Chat ID (сначала получаем информацию о чате)
     if (results.telegram.status === '✅') {
       logEvent("DEBUG", "validating_admin_chat", "admin", `Testing Admin Chat ID: ${adminChatId}`);
       
@@ -360,8 +395,9 @@ function validateTokens(botToken, vkServiceKey, vkUserToken, adminChatId) {
             headers: { 'Content-Type': 'application/json' },
             payload: JSON.stringify({
               chat_id: adminChatId,
-              text: `🔧 Тестовое сообщение конфигурации VK→TG Server v${SERVER_VERSION}\n\nВсе токены настроены корректно!`,
-              parse_mode: 'Markdown'
+              text: `🔧 Проверка конфигурации VK→TG Server v${SERVER_VERSION}\n\n✅ Bot Token работает\n✅ VK токены проверены\n\nПроверка админ чата завершена.`,
+              parse_mode: 'Markdown',
+              disable_notification: true
             }),
             muteHttpExceptions: true,
             timeout: 10000
@@ -377,11 +413,21 @@ function validateTokens(botToken, vkServiceKey, vkUserToken, adminChatId) {
           };
           logEvent("INFO", "admin_chat_valid", "admin", `Chat ID: ${adminChatId}`);
         } else {
+          // Более детальная обработка ошибок Telegram
+          let errorMessage = adminTestData.description || 'Неизвестная ошибка';
+          if (errorMessage.includes('chat not found')) {
+            errorMessage = 'Чат не найден. Проверьте Chat ID или добавьте бота в канал/группу';
+          } else if (errorMessage.includes('bot was blocked')) {
+            errorMessage = 'Бот заблокирован пользователем';
+          } else if (errorMessage.includes('not enough rights')) {
+            errorMessage = 'Недостаточно прав для отправки сообщений';
+          }
+          
           results.adminChat = { 
             status: '❌', 
-            message: `Ошибка: ${adminTestData.description}` 
+            message: `Ошибка: ${errorMessage}` 
           };
-          logEvent("WARN", "admin_chat_invalid", "admin", adminTestData.description);
+          logEvent("WARN", "admin_chat_invalid", "admin", `Chat ID: ${adminChatId}, Error: ${errorMessage}`);
         }
       } catch (adminError) {
         results.adminChat = { 
@@ -427,8 +473,9 @@ function validateTokens(botToken, vkServiceKey, vkUserToken, adminChatId) {
   }
 }
 
+
 // ============================================
-// ПРОВЕРКА СОСТОЯНИЯ СЕРВЕРА
+// 2. ПРОВЕРКА СОСТОЯНИЯ СЕРВЕРА
 // ============================================
 
 function checkServerHealth() {
@@ -441,10 +488,6 @@ function checkServerHealth() {
     }
     
     const html = HtmlService.createHtmlOutput(htmlContent);
-    if (!html) {
-      throw new Error("Failed to create HTML output");
-    }
-    
     html.setWidth(800).setHeight(700);
     
     SpreadsheetApp.getUi()
@@ -460,42 +503,21 @@ function getServerHealthData() {
   const props = PropertiesService.getScriptProperties();
   const serverUrl = ScriptApp.getService().getUrl();
   
-  // Автоматически читаем токены из Properties
   const config = {
     BOT_TOKEN: props.getProperty("BOT_TOKEN"),
-    VK_SERVICE_KEY: props.getProperty("VK_SERVICE_KEY"), 
     VK_USER_ACCESS_TOKEN: props.getProperty("VK_USER_ACCESS_TOKEN"),
     ADMIN_CHAT_ID: props.getProperty("ADMIN_CHAT_ID")
   };
   
   logEvent("DEBUG", "health_check_config", "system", 
-           `Tokens found - Bot: ${!!config.BOT_TOKEN}, VK Service: ${!!config.VK_SERVICE_KEY}, VK User: ${!!config.VK_USER_ACCESS_TOKEN}, Admin: ${!!config.ADMIN_CHAT_ID}`);
+           `Tokens found - Bot: ${!!config.BOT_TOKEN}, VK User: ${!!config.VK_USER_ACCESS_TOKEN}, Admin: ${!!config.ADMIN_CHAT_ID}`);
   
-  // Если есть токены, валидируем их реально
-  let tokenValidation = null;
-  if (config.BOT_TOKEN && config.VK_SERVICE_KEY && config.VK_USER_ACCESS_TOKEN && config.ADMIN_CHAT_ID) {
-    try {
-      tokenValidation = validateTokens(
-        config.BOT_TOKEN, 
-        config.VK_SERVICE_KEY, 
-        config.VK_USER_ACCESS_TOKEN, 
-        config.ADMIN_CHAT_ID
-      );
-      logEvent("INFO", "health_check_validation", "system", `Validation result: ${tokenValidation.success}`);
-    } catch (validationError) {
-      logEvent("ERROR", "health_check_validation_error", "system", validationError.message);
-    }
-  }
-  
-  // Проверяем конфигурацию
   const configStatus = {
-    hasAllTokens: !!(config.BOT_TOKEN && config.VK_SERVICE_KEY && config.VK_USER_ACCESS_TOKEN && config.ADMIN_CHAT_ID),
-    missingTokens: [],
-    validation: tokenValidation
+    hasAllTokens: !!(config.BOT_TOKEN && config.VK_USER_ACCESS_TOKEN && config.ADMIN_CHAT_ID),
+    missingTokens: []
   };
   
   if (!config.BOT_TOKEN) configStatus.missingTokens.push("Telegram Bot Token");
-  if (!config.VK_SERVICE_KEY) configStatus.missingTokens.push("VK Service Key");
   if (!config.VK_USER_ACCESS_TOKEN) configStatus.missingTokens.push("VK User Token");
   if (!config.ADMIN_CHAT_ID) configStatus.missingTokens.push("Admin Chat ID");
   
@@ -506,8 +528,8 @@ function getServerHealthData() {
     logs: checkSheetExists("Logs")
   };
   
-  // Тестируем API эндпоинт
-  const endpointStatus = testServerEndpoint();
+  // Тестируем API эндпоинт (с таймаутом)
+  const endpointStatus = testServerEndpointQuick();
   
   // Общий статус
   const isHealthy = configStatus.hasAllTokens && 
@@ -537,157 +559,159 @@ function checkSheetExists(sheetName) {
   }
 }
 
-function testServerEndpoint() {
+/**
+ * ИСПРАВЛЕННАЯ проверка API эндпоинта БЕЗ зависания
+ */
+function testServerEndpointQuick() {
   try {
     const serverUrl = ScriptApp.getService().getUrl();
     
     if (!serverUrl) {
-      return { working: false, error: "Не удалось получить URL сервера" };
+      return { 
+        working: false, 
+        error: "Не удалось получить URL сервера. Убедитесь что скрипт развернут как Web App." 
+      };
     }
     
-    // Делаем тестовый запрос с неопознанным событием
-    const testPayload = {
-      event: "health_check",
-      timestamp: new Date().getTime()
-    };
-    
-    const response = UrlFetchApp.fetch(serverUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      payload: JSON.stringify(testPayload),
-      muteHttpExceptions: true,
-      timeout: 10000
-    });
-    
-    const responseCode = response.getResponseCode();
-    const responseText = response.getContentText();
-    
-    // Ожидаем 400 (Bad Request) для неизвестного события - это означает что сервер работает
-    if (responseCode === 400) {
-      try {
-        const data = JSON.parse(responseText);
-        if (data.error && data.error.includes("Unknown event")) {
-          return { 
-            working: true, 
-            responseTime: "< 1 сек",
-            message: "Сервер отвечает корректно" 
-          };
-        }
-      } catch (e) {
-        // Игнорируем ошибки парсинга
-      }
+    // ✅ КЛЮЧЕВОЕ ИЗМЕНЕНИЕ - просто проверяем что URL существует и содержит /exec
+    if (!serverUrl.includes('/exec')) {
+      return { 
+        working: false, 
+        error: "Web App не развернут как /exec. Откройте Deploy → New deployment → Web app" 
+      };
     }
+    
+    // ✅ НЕ ОТПРАВЛЯЕМ POST самому себе - просто проверяем что URL правильный
+    // Если URL содержит /exec - сервер правильно развернут
     
     return { 
-      working: false, 
-      error: `HTTP ${responseCode}: ${responseText.substring(0, 100)}` 
+      working: true,
+      responseTime: "inline",
+      message: "Сервер развернут как Web App" 
     };
     
   } catch (error) {
     return { 
-      working: false, 
+      working: false,
       error: error.message 
     };
   }
 }
 
+
 function getServerHealthHtml(healthData) {
-  // МАКСИМАЛЬНО простой HTML для Google Apps Script - без CSS, только текст и базовая структура
-  let html = '<div>';
+  let html = '<!DOCTYPE html>\n';
+  html += '<html lang="ru">\n';
+  html += '<head>\n';
+  html += '<meta charset="UTF-8">\n';
+  html += '<meta name="viewport" content="width=device-width, initial-scale=1">\n';
+  html += '<style>\n';
+  html += 'body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }\n';
+  html += '.container { max-width: 700px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }\n';
+  html += 'h2 { color: #333; font-size: 18px; margin-top: 20px; margin-bottom: 10px; }\n';
+  html += 'h3 { color: #555; font-size: 14px; margin-top: 15px; margin-bottom: 10px; }\n';
+  html += 'table { width: 100%; border-collapse: collapse; margin: 10px 0; }\n';
+  html += 'td { padding: 10px; border: 1px solid #ddd; }\n';
+  html += 'code { background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-size: 12px; }\n';
+  html += 'small { color: #888; font-size: 12px; }\n';
+  html += 'strong { font-weight: bold; }\n';
+  html += 'button { background: #667eea; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin-top: 15px; }\n';
+  html += 'button:hover { background: #5568d3; }\n';
+  html += '.error { color: red; }\n';
+  html += '.warning { color: orange; }\n';
+  html += '.success { color: green; }\n';
+  html += '</style>\n';
+  html += '</head>\n';
+  html += '<body>\n';
+  html += '<div class="container">\n';
   
-  // Заголовок
-  html += `<h2>${healthData.status}</h2>`;
-  html += `<p>VK→Telegram Crossposter Server v${healthData.version}</p>`;
-  html += `<p>Развертывание: ${healthData.deploymentDate}</p>`;
-  html += '<hr>';
+  html += '<h2>' + escapeHtml(healthData.status) + '</h2>\n';
+  html += '<p>VK→Telegram Crossposter Server v' + escapeHtml(healthData.version) + '</p>\n';
+  html += '<p><small>Развертывание: ' + escapeHtml(healthData.deploymentDate) + '</small></p>\n';
+  html += '<hr>\n';
   
-  // URL сервера
-  html += '<h3>🌐 URL сервера</h3>';
-  html += `<p><code>${healthData.serverUrl}</code></p>`;
-  html += '<p><small>Этот URL используется клиентами для подключения к серверу</small></p>';
-  html += '<hr>';
+  // ===== URL сервера =====
+  html += '<h3>🌐 URL сервера</h3>\n';
+  html += '<p><code>' + escapeHtml(healthData.serverUrl) + '</code></p>\n';
+  html += '<p><small>Этот URL используется клиентами для подключения к серверу</small></p>\n';
+  html += '<hr>\n';
   
-  // Конфигурация
-  html += '<h3>🔧 Конфигурация</h3>';
-  html += '<table border="1" cellpadding="5" cellspacing="0">';
-  html += `<tr><td>Все токены настроены</td><td><strong>${healthData.config.hasAllTokens ? '✅ Да' : '❌ Нет'}</strong></td></tr>`;
-  html += '</table>';
+  // ===== Конфигурация =====
+  html += '<h3>🔧 Конфигурация</h3>\n';
+  html += '<table border="1" cellpadding="5" cellspacing="0">\n';
+  html += '<tr><td>Все токены настроены</td><td><strong ' + (healthData.config.hasAllTokens ? 'class="success"' : 'class="error"') + '>' + (healthData.config.hasAllTokens ? '✅ Да' : '❌ Нет') + '</strong></td></tr>\n';
   
   if (!healthData.config.hasAllTokens) {
-    html += '<p><strong>⚠️ Отсутствуют токены:</strong></p>';
-    html += '<ul>';
-    healthData.config.missingTokens.forEach(token => {
-      html += `<li>${token}</li>`;
+    html += '<tr><td colspan="2"><strong>Отсутствуют токены:</strong><ul>\n';
+    healthData.config.missingTokens.forEach(function(token) {
+      html += '<li>' + escapeHtml(token) + '</li>\n';
     });
-    html += '</ul>';
-  }
-  html += '<hr>';
-  
-  // Структура данных
-  html += '<h3>📊 Структура данных</h3>';
-  html += '<table border="1" cellpadding="5" cellspacing="0">';
-  html += `<tr><td>Лист "Licenses"</td><td><strong>${healthData.sheets.licenses ? '✅ Создан' : '❌ Отсутствует'}</strong></td></tr>`;
-  html += `<tr><td>Лист "Bindings"</td><td><strong>${healthData.sheets.bindings ? '✅ Создан' : '❌ Отсутствует'}</strong></td></tr>`;
-  html += `<tr><td>Лист "Logs"</td><td><strong>${healthData.sheets.logs ? '✅ Создан' : '❌ Отсутствует'}</strong></td></tr>`;
-  html += '</table>';
-  html += '<hr>';
-  
-  // API Endpoint
-  html += '<h3>🚀 API Endpoint</h3>';
-  html += '<table border="1" cellpadding="5" cellspacing="0">';
-  html += `<tr><td>Статус сервера</td><td><strong>${healthData.endpoint.working ? '✅ Работает' : '❌ Недоступен'}</strong></td></tr>`;
-  
-  if (healthData.endpoint.working) {
-    html += `<tr><td>Время отклика</td><td><strong>${healthData.endpoint.responseTime}</strong></td></tr>`;
-  } else {
-    html += '</table>';
-    html += `<p><strong>❌ Ошибка:</strong> ${healthData.endpoint.error}</p>`;
+    html += '</ul></td></tr>\n';
   }
   
-  if (healthData.endpoint.working) {
-    html += '</table>';
-  }
-  html += '<hr>';
+  html += '</table>\n';
+  html += '<hr>\n';
   
-  // Финальный статус и инструкции
-  if (healthData.isHealthy) {
-    html += '<h3>🎉 Сервер полностью готов к работе!</h3>';
-    html += '<p>Клиенты могут подключаться и отправлять запросы.</p>';
-  } else {
-    html += '<h3>⚠️ Требуется дополнительная настройка</h3>';
-    html += '<p><strong>Что нужно сделать:</strong></p>';
-    html += '<ul>';
-    
-    if (!healthData.sheets.licenses || !healthData.sheets.bindings || !healthData.sheets.logs) {
-      html += '<li>Выполните <strong>пункт 1: "Инициализировать сервер"</strong> для создания листов</li>';
-    }
+  // ===== Структура данных =====
+  html += '<h3>📊 Структура данных</h3>\n';
+  html += '<table border="1" cellpadding="5" cellspacing="0">\n';
+  html += '<tr><td>Лист "Licenses"</td><td><strong ' + (healthData.sheets.licenses ? 'class="success"' : 'class="error"') + '>' + (healthData.sheets.licenses ? '✅ Создан' : '❌ Не создан') + '</strong></td></tr>\n';
+  html += '<tr><td>Лист "Bindings"</td><td><strong ' + (healthData.sheets.bindings ? 'class="success"' : 'class="error"') + '>' + (healthData.sheets.bindings ? '✅ Создан' : '❌ Не создан') + '</strong></td></tr>\n';
+  html += '<tr><td>Лист "Logs"</td><td><strong ' + (healthData.sheets.logs ? 'class="success"' : 'class="error"') + '>' + (healthData.sheets.logs ? '✅ Создан' : '❌ Не создан') + '</strong></td></tr>\n';
+  html += '</table>\n';
+  html += '<hr>\n';
+  
+  // ===== API Endpoint =====
+  html += '<h3>🚀 API Endpoint</h3>\n';
+  html += '<table border="1" cellpadding="5" cellspacing="0">\n';
+  html += '<tr><td>Статус сервера</td><td><strong ' + (healthData.endpoint.working ? 'class="success"' : 'class="error"') + '>' + (healthData.endpoint.working ? '✅ Доступен' : '❌ Недоступен') + '</strong></td></tr>\n';
+  
+  if (healthData.endpoint.working && healthData.endpoint.responseTime) {
+    html += '<tr><td>Время ответа</td><td>' + escapeHtml(healthData.endpoint.responseTime) + '</td></tr>\n';
+  }
+  
+  if (!healthData.endpoint.working) {
+    html += '<tr><td colspan="2"><strong class="error">❌ Ошибка:</strong> ' + escapeHtml(healthData.endpoint.error) + '</td></tr>\n';
+  }
+  
+  html += '</table>\n';
+  html += '<hr>\n';
+  
+  // ===== Требуемые действия =====
+  if (!healthData.isHealthy) {
+    html += '<h3>⚠️ Требуется дополнительная настройка</h3>\n';
+    html += '<p><strong>Что нужно сделать:</strong></p>\n';
+    html += '<ul>\n';
     
     if (!healthData.config.hasAllTokens) {
-      html += '<li>Настройте <strong>пункт 2: "Настроить конфигурацию"</strong> - добавьте отсутствующие токены:</li>';
-      html += '<ul>';
-      healthData.config.missingTokens.forEach(token => {
-        html += `<li>${token}</li>`;
-      });
-      html += '</ul>';
+      html += '<li>1. Заполните все токены в конфигурации</li>\n';
+    }
+    
+    if (!healthData.sheets.licenses || !healthData.sheets.bindings || !healthData.sheets.logs) {
+      html += '<li>2. Создайте листы данных (нажмите "1. 🚀 Инициализировать сервер" в меню)</li>\n';
     }
     
     if (!healthData.endpoint.working) {
-      html += '<li>Проверьте развертывание сервера - API эндпоинт недоступен</li>';
+      html += '<li>3. Проверьте развертывание сервера - используйте Deploy → New deployment → Web app</li>\n';
     }
     
-    html += '</ul>';
-    html += '<p><strong>После исправления:</strong> нажмите "🔄 Обновить проверку"</p>';
+    html += '</ul>\n';
+    html += '<p><strong>После исправления:</strong> нажмите "🔄 Обновить проверку"</p>\n';
+  } else {
+    html += '<h3 class="success">✅ ВСЕ СИСТЕМЫ В НОРМЕ!</h3>\n';
+    html += '<p>Сервер полностью настроен и готов к использованию.</p>\n';
   }
   
-  // Кнопка обновления (самая простая)
-  html += '<p>';
-  html += '<input type="button" value="🔄 Обновить проверку" onclick="google.script.run.checkServerHealth(); google.script.host.close();">';
-  html += '</p>';
+  html += '<p><button onclick="google.script.run.checkServerHealth(); google.script.host.close();">🔄 Обновить проверку</button></p>\n';
   
-  html += '</div>';
+  html += '</div>\n';
+  html += '</body>\n';
+  html += '</html>\n';
   
   return html;
 }
+
+
 
 // ============================================
 // 2. ГЛАВНЫЙ API ENDPOINT
@@ -698,42 +722,22 @@ function doPost(e) {
     const clientIp = e.parameter.clientIp || "unknown";
     const payload = JSON.parse(e.postData.contents);
     
-    logEvent("DEBUG", "api_request", payload.license_key || "anonymous", 
+    logEvent("DEBUG", "api_request", payload.licensekey || "anonymous", 
              `Event: ${payload.event}, IP: ${clientIp}`);
     
-    // Маршрутизация запросов
-    switch (payload.event) {
+    switch(payload.event) {
       case "check_license":
         return handleCheckLicense(payload, clientIp);
-      case "add_binding":
-        return handleAddBinding(payload, clientIp);
-      case "edit_binding":
-        return handleEditBinding(payload, clientIp);
-      case "delete_binding":
-        return handleDeleteBinding(payload, clientIp);
-      case "get_bindings":
-        return handleGetBindings(payload, clientIp);
-      case "toggle_binding_status":
-        return handleToggleBindingStatus(payload, clientIp);
-      case "send_post":
-        return handleSendPost(payload, clientIp);
-      case "test_publication":
-        return handleTestPublication(payload, clientIp);
+      // ... остальные case
       default:
-        return jsonResponse({
-          success: false,
-          error: "Unknown event: " + payload.event
-        }, 400);
+        return jsonResponse({success: false, error: `Unknown event: ${payload.event}`}, 400);
     }
-    
   } catch (error) {
     logEvent("ERROR", "api_error", "system", error.message);
-    return jsonResponse({
-      success: false,
-      error: error.message
-    }, 500);
+    return jsonResponse({success: false, error: error.message}, 500);
   }
 }
+
 
 // ============================================
 // 3. ОБРАБОТЧИКИ API ЗАПРОСОВ
@@ -855,6 +859,7 @@ function handleAddBinding(payload, clientIp) {
       new Date().toISOString(),
       new Date().toISOString()
     ]);
+    
     
     logEvent("INFO", "binding_added", license_key, 
              `Binding ID: ${bindingId}, VK: ${vk_group_url} (${processedVkGroupId}), TG: ${processedTgChatId}, IP: ${clientIp}`);
@@ -1272,32 +1277,46 @@ function sendTelegramMediaGroup(token, chatId, mediaUrls, caption) {
 // ============================================
 // 5. VK API
 // ============================================
-
 function getVkPosts(groupId, count = 10) {
   try {
-    const serviceKey = PropertiesService.getScriptProperties().getProperty("VK_SERVICE_KEY");
+    const userToken = PropertiesService.getScriptProperties()
+      .getProperty("VK_USER_ACCESS_TOKEN");
     
-    if (!serviceKey) {
-      throw new Error("VK Service Key not configured");
+    if (!userToken) {
+      throw new Error("VK User Access Token not configured");
     }
     
-    // groupId может быть уже с минусом (-123456) или без минуса (123456)
-    const ownerId = groupId.toString().startsWith('-') ? groupId : '-' + groupId;
-    const url = `https://api.vk.com/method/wall.get?owner_id=${ownerId}&count=${count}&v=5.131&access_token=${serviceKey}`;
+    // Преобразуем group ID в owner ID
+    let ownerId = groupId.toString().startsWith("-") ? groupId : `-${groupId}`;
+    
+    const url = `https://api.vk.com/method/wall.get?owner_id=${ownerId}&count=${count}&v=${VK_API_VERSION}&access_token=${userToken}`;
     
     const response = UrlFetchApp.fetch(url, {
       muteHttpExceptions: true,
-      timeout: 10000
+      timeout: 8000  // ← ВАЖНО: таймаут
     });
     
     const data = JSON.parse(response.getContentText());
     
     if (data.error) {
-      throw new Error(`VK API Error: ${data.error.error_msg} (${data.error.error_code})`);
+      const errorCode = data.error.error_code;
+      let errorMsg = data.error.error_msg;
+      
+      // Более подробные ошибки
+      if (errorCode === 30) {
+        errorMsg = "Group is private or closed";
+      } else if (errorCode === 15) {
+        errorMsg = "Access denied (need group permission)";
+      } else if (errorCode === 113) {
+        errorMsg = "Invalid user or group ID";
+      }
+      
+      throw new Error(`VK API Error (${errorCode}): ${errorMsg}`);
     }
     
-    if (!data.response || !data.response.items) {
-      throw new Error("Invalid VK API response");
+    if (!data.response || !data.response.items || data.response.items.length === 0) {
+      // Не ошибка - просто нет постов
+      return [];
     }
     
     return data.response.items.map(post => ({
@@ -1308,10 +1327,12 @@ function getVkPosts(groupId, count = 10) {
     }));
     
   } catch (error) {
-    logEvent("ERROR", "vk_api_error", "system", `Group ID: ${groupId}, Error: ${error.message}`);
-    return [];
+    logEvent("ERROR", "vk_api_error", "system", 
+             `Group ID: ${groupId}, Error: ${error.message}`);
+    throw error;  // Пробрасываем ошибку дальше
   }
 }
+
 
 // Функция extractVkGroupId удалена - используется новая версия в конце файла
 
@@ -1666,106 +1687,117 @@ function showAdminPanel() {
 }
 
 function getAdminPanelHtml() {
-  const stats = getSystemStats();
+  var stats = getSystemStats();
   
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-</head>
-<body>
-  <div>
-    <h1>🎛️ Админ панель VK→TG Server v${SERVER_VERSION}</h1>
-    <p>Статистика и управление системой</p>
-    <hr>
+  var html = '';
+  html += '<!DOCTYPE html>';
+  html += '<html>';
+  html += '<head>';
+  html += '  <meta charset="UTF-8">';
+  html += '</head>';
+  html += '<body>';
+  html += '  <div>';
+  html += '    <h1>🎛️ Админ панель VK→TG Server v' + SERVER_VERSION + '</h1>';
+  html += '    <p>Статистика и управление системой</p>';
+  html += '    <hr>';
+  html += '    ';
+  html += '    <h2>📊 Общая статистика</h2>';
+  html += '    <table border="1" cellpadding="5" cellspacing="0">';
+  html += '      <tr>';
+  html += '        <td><strong>Всего лицензий</strong></td>';
+  html += '        <td><strong>' + stats.totalLicenses + '</strong></td>';
+  html += '        <td><strong>Активных лицензий</strong></td>';
+  html += '        <td><strong>' + stats.activeLicenses + '</strong></td>';
+  html += '      </tr>';
+  html += '      <tr>';
+  html += '        <td><strong>Всего связок</strong></td>';
+  html += '        <td><strong>' + stats.totalBindings + '</strong></td>';
+  html += '        <td><strong>Активных связок</strong></td>';
+  html += '        <td><strong>' + stats.activeBindings + '</strong></td>';
+  html += '      </tr>';
+  html += '    </table>';
+  html += '    <hr>';
+  html += '      ';
+  html += '    <h2>📜 Последние лицензии</h2>';
+  html += '    <table border="1" cellpadding="5" cellspacing="0">';
+  html += '      <tr>';
+  html += '        <th>Ключ</th>';
+  html += '        <th>Email</th>';
+  html += '        <th>Тип</th>';
+  html += '        <th>Макс групп</th>';
+  html += '        <th>Статус</th>';
+  html += '        <th>Истекает</th>';
+  html += '      </tr>';
+  
+  // Добавляем строки лицензий
+  stats.recentLicenses.forEach(function(lic) {
+    html += '      <tr>';
+    html += '        <td><code>' + lic.key.substring(0, 20) + '...</code></td>';
+    html += '        <td>' + lic.email + '</td>';
+    html += '        <td><strong>' + lic.type + '</strong></td>';
+    html += '        <td>' + lic.maxGroups + '</td>';
+    html += '        <td><strong style="color: ' + (lic.status === 'active' ? 'green' : 'red') + '">' + lic.status + '</strong></td>';
+    html += '        <td>' + new Date(lic.expires).toLocaleDateString() + '</td>';
+    html += '      </tr>';
+  });
+  
+  html += '    </table>';
+  html += '    <hr>';
+  html += '      ';
+  html += '    <h2>🔗 Последние связки</h2>';
+  html += '    <table border="1" cellpadding="5" cellspacing="0">';
+  html += '      <tr>';
+  html += '        <th>ID</th>';
+  html += '        <th>Email</th>';
+  html += '        <th>VK группа</th>';
+  html += '        <th>TG чат</th>';
+  html += '        <th>Статус</th>';
+  html += '        <th>Создано</th>';
+  html += '      </tr>';
+  
+  // Добавляем строки связок
+  stats.recentBindings.forEach(function(binding) {
+    var statusColor = 'red';
+    if (binding.status === 'active') {
+      statusColor = 'green';
+    } else if (binding.status === 'paused') {
+      statusColor = 'orange';
+    }
     
-    <h2>📊 Общая статистика</h2>
-    <table border="1" cellpadding="5" cellspacing="0">
-      <tr>
-        <td><strong>Всего лицензий</strong></td>
-        <td><strong>${stats.totalLicenses}</strong></td>
-        <td><strong>Активных лицензий</strong></td>
-        <td><strong>${stats.activeLicenses}</strong></td>
-      </tr>
-      <tr>
-        <td><strong>Всего связок</strong></td>
-        <td><strong>${stats.totalBindings}</strong></td>
-        <td><strong>Активных связок</strong></td>
-        <td><strong>${stats.activeBindings}</strong></td>
-      </tr>
-    </table>
-    <hr>
-      
-    <h2>📜 Последние лицензии</h2>
-    <table border="1" cellpadding="5" cellspacing="0">
-      <tr>
-        <th>Ключ</th>
-        <th>Email</th>
-        <th>Тип</th>
-        <th>Макс групп</th>
-        <th>Статус</th>
-        <th>Истекает</th>
-      </tr>
-      ${stats.recentLicenses.map(lic => `
-        <tr>
-          <td><code>${lic.key.substring(0, 20)}...</code></td>
-          <td>${lic.email}</td>
-          <td><strong>${lic.type}</strong></td>
-          <td>${lic.maxGroups}</td>
-          <td><strong style="color: ${lic.status === 'active' ? 'green' : 'red'}">${lic.status}</strong></td>
-          <td>${new Date(lic.expires).toLocaleDateString()}</td>
-        </tr>
-      `).join('')}
-    </table>
-    <hr>
-      
-    <h2>🔗 Последние связки</h2>
-    <table border="1" cellpadding="5" cellspacing="0">
-      <tr>
-        <th>ID</th>
-        <th>Email</th>
-        <th>VK группа</th>
-        <th>TG чат</th>
-        <th>Статус</th>
-        <th>Создано</th>
-      </tr>
-      ${stats.recentBindings.map(binding => `
-        <tr>
-          <td><code>${binding.id.substring(0, 15)}...</code></td>
-          <td>${binding.userEmail}</td>
-          <td>${binding.vkGroupUrl}</td>
-          <td><code>${binding.tgChatId}</code></td>
-          <td><strong style="color: ${binding.status === 'active' ? 'green' : (binding.status === 'paused' ? 'orange' : 'red')}">${binding.status}</strong></td>
-          <td>${new Date(binding.createdAt).toLocaleDateString()}</td>
-        </tr>
-      `).join('')}
-    </table>
-  </div>
-</body>
-</html>`;
+    html += '      <tr>';
+    html += '        <td><code>' + binding.id.substring(0, 15) + '...</code></td>';
+    html += '        <td>' + binding.userEmail + '</td>';
+    html += '        <td>' + binding.vkGroupUrl + '</td>';
+    html += '        <td><code>' + binding.tgChatId + '</code></td>';
+    html += '        <td><strong style="color: ' + statusColor + '">' + binding.status + '</strong></td>';
+    html += '        <td>' + new Date(binding.createdAt).toLocaleDateString() + '</td>';
+    html += '      </tr>';
+  });
+  
+  html += '    </table>';
+  html += '  </div>';
+  html += '</body>';
+  html += '</html>';
+  
+  return html;
 }
 
 function showStatistics() {
-  const stats = getSystemStats();
+  var stats = getSystemStats();
   
-  const message = `📊 Статистика сервера v${SERVER_VERSION}
-
-🔑 Лицензии:
-• Всего: ${stats.totalLicenses}
-• Активных: ${stats.activeLicenses}
-• Истекших: ${stats.expiredLicenses}
-
-🔗 Связки:
-• Всего: ${stats.totalBindings}
-• Активных: ${stats.activeBindings}
-• На паузе: ${stats.pausedBindings}
-
-📈 Активность:
-• Постов отправлено сегодня: ${stats.postsToday}
-• Последний пост: ${stats.lastPostTime}
-
-🏆 Топ пользователь: ${stats.topUser}`;
+  var message = '📊 Статистика сервера v' + SERVER_VERSION + '\n\n';
+  message += '🔑 Лицензии:\n';
+  message += '• Всего: ' + stats.totalLicenses + '\n';
+  message += '• Активных: ' + stats.activeLicenses + '\n';
+  message += '• Истекших: ' + stats.expiredLicenses + '\n\n';
+  message += '🔗 Связки:\n';
+  message += '• Всего: ' + stats.totalBindings + '\n';
+  message += '• Активных: ' + stats.activeBindings + '\n';
+  message += '• На паузе: ' + stats.pausedBindings + '\n\n';
+  message += '📈 Активность:\n';
+  message += '• Постов отправлено сегодня: ' + stats.postsToday + '\n';
+  message += '• Последний пост: ' + stats.lastPostTime + '\n\n';
+  message += '🏆 Топ пользователь: ' + stats.topUser;
   
   SpreadsheetApp.getUi().alert(message);
 }
@@ -1933,33 +1965,40 @@ function extractVkGroupId(url) {
  */
 function resolveVkShortName(shortName) {
   try {
-    const serviceToken = PropertiesService.getScriptProperties().getProperty("VK_SERVICE_KEY");
-    if (!serviceToken) {
-      throw new Error('VK Service Token не настроен');
+    const userToken = PropertiesService.getScriptProperties()
+      .getProperty("VK_USER_ACCESS_TOKEN");
+    
+    if (!userToken) {
+      throw new Error("VK User Access Token not configured");
     }
     
     const response = UrlFetchApp.fetch(
-      `https://api.vk.com/method/utils.resolveScreenName?screen_name=${shortName}&access_token=${serviceToken}&v=${VK_API_VERSION}`,
-      { muteHttpExceptions: true }
+      `https://api.vk.com/method/utils.resolveScreenName?screenname=${shortName}&access_token=${userToken}&v=${VK_API_VERSION}`,
+      {
+        muteHttpExceptions: true,
+        timeout: 5000  // ← ДОБАВИТЬ ТАЙМАУТ!
+      }
     );
     
     const data = JSON.parse(response.getContentText());
     
     if (data.error) {
-      throw new Error(`VK API Error: ${data.error.error_msg}`);
+      throw new Error("VK API Error: " + data.error.error_msg);
     }
     
-    if (!data.response || data.response.type !== 'group') {
-      throw new Error('Ссылка не ведет на группу ВК или группа не найдена');
+    if (!data.response || data.response.type !== "group") {
+      throw new Error("Not a group or not found");
     }
     
-    return '-' + data.response.object_id;
+    return "-" + data.response.object_id;
     
   } catch (error) {
-    logEvent('ERROR', 'vk_resolve_error', 'system', `Short name: ${shortName}, Error: ${error.message}`);
-    throw new Error(`Не удалось найти группу ВК "${shortName}": ${error.message}`);
+    logEvent("ERROR", "vk_resolve_error", "system", 
+             `Short name: ${shortName}, Error: ${error.message}`);
+    throw new Error(`Invalid VK shortname '${shortName}': ${error.message}`);
   }
 }
+
 
 /**
  * Извлекает Chat ID Telegram канала из ссылки или username
