@@ -414,6 +414,81 @@ function testPublication(bindingId) {
   }
 }
 
+function setGlobalSetting(settingKey, settingValue) {
+  try {
+    const license = getLicense();
+    if (!license) return { success: false, error: "❌ Лицензия не найдена" };
+    
+    logEvent("INFO", "set_global_setting_start", "client", `Setting: ${settingKey}, Value: ${settingValue}`);
+    
+    const payload = {
+      event: "set_global_setting",
+      license_key: license.key,
+      setting_key: settingKey,
+      setting_value: settingValue
+    };
+    
+    const response = UrlFetchApp.fetch(SERVER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
+      timeout: REQUEST_TIMEOUT
+    });
+    
+    const result = JSON.parse(response.getContentText());
+    
+    if (result.success) {
+      logEvent("INFO", "global_setting_saved", "client", `Setting: ${settingKey} = ${settingValue}`);
+    } else {
+      logEvent("WARN", "set_global_setting_failed", "client", result.error);
+    }
+    
+    return result;
+    
+  } catch (error) {
+    logEvent("ERROR", "set_global_setting_error", "client", error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+function getGlobalSetting(settingKey) {
+  try {
+    const license = getLicense();
+    if (!license) return { success: false, error: "❌ Лицензия не найдена" };
+    
+    logEvent("DEBUG", "get_global_setting_start", "client", `Setting: ${settingKey}`);
+    
+    const payload = {
+      event: "get_global_setting", 
+      license_key: license.key,
+      setting_key: settingKey
+    };
+    
+    const response = UrlFetchApp.fetch(SERVER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
+      timeout: REQUEST_TIMEOUT
+    });
+    
+    const result = JSON.parse(response.getContentText());
+    
+    if (result.success) {
+      logEvent("DEBUG", "global_setting_loaded", "client", `Setting: ${settingKey} = ${result.value}`);
+    } else {
+      logEvent("WARN", "get_global_setting_failed", "client", result.error);
+    }
+    
+    return result;
+    
+  } catch (error) {
+    logEvent("ERROR", "get_global_setting_error", "client", error.message);
+    return { success: false, error: error.message };
+  }
+}
+
 // ============================================
 // 3. ПРОВЕРКА И ОТПРАВКА ПОСТОВ
 // ============================================
@@ -481,11 +556,22 @@ function checkNewPosts() {
           continue;
         }
         
-        const posts = getVkPosts(vkGroupId);
+        const posts = getVkPosts(binding.vkGroupUrl);
         logEvent("DEBUG", "vk_posts_fetched", "client", `VK Group: ${vkGroupId}, Posts: ${posts?.length || 0}`);
         
         if (!posts || posts.length === 0) {
-          logEvent("DEBUG", "no_posts_in_group", "client", `VK Group: ${vkGroupId}`);
+          logEvent("DEBUG", "no_posts_in_group", "client", `VK Group: ${vkGroupId}. This might be due to missing VK token or API error.`);
+          
+          // Если это первая связка и постов нет, возможно проблема с конфигурацией
+          if (newPostsFound === 0 && postsSent === 0) {
+            const configError = "Не удалось получить посты из VK. Возможные причины:\n" +
+              "1. VK User Access Token не настроен на сервере\n" +
+              "2. Токен истек или недействителен\n" +
+              "3. Нет доступа к группе\n" +
+              "4. Группа не найдена\n\n" +
+              "Проверьте настройки сервера и права доступа.";
+            return { success: false, error: configError };
+          }
           continue;
         }
         
@@ -604,14 +690,14 @@ function sendPostToServer(licenseKey, bindingId, vkPost) {
 // 4. VK API ФУНКЦИИ
 // ============================================
 
-function getVkPosts(groupId) {
+function getVkPosts(vkGroupUrl) {
   try {
-    logEvent("DEBUG", "get_vk_posts_start", "client", `VK Group ID: ${groupId}`);
+    logEvent("DEBUG", "get_vk_posts_start", "client", `VK Group URL: ${vkGroupUrl}`);
     
     // Получаем лицензию для аутентификации на сервере
     const license = getLicense();
     if (!license) {
-      logEvent("ERROR", "no_license_for_vk_posts", "client", `Group: ${groupId}`);
+      logEvent("ERROR", "no_license_for_vk_posts", "client", `Group: ${vkGroupUrl}`);
       return [];
     }
     
@@ -619,11 +705,11 @@ function getVkPosts(groupId) {
     const payload = {
       event: "get_vk_posts",
       license_key: license.key,
-      group_id: groupId,
+      vk_group_url: vkGroupUrl,
       count: MAX_POSTS_CHECK
     };
     
-    logEvent("DEBUG", "server_vk_request", "client", `Group: ${groupId}, Count: ${MAX_POSTS_CHECK}`);
+    logEvent("DEBUG", "server_vk_request", "client", `Group: ${vkGroupUrl}, Count: ${MAX_POSTS_CHECK}`);
     
     const response = UrlFetchApp.fetch(SERVER_URL, {
       method: 'POST',
@@ -636,20 +722,20 @@ function getVkPosts(groupId) {
     const data = JSON.parse(response.getContentText());
     
     logEvent("DEBUG", "server_vk_response", "client", 
-             `Group: ${groupId}, Success: ${!!data.success}, Status: ${response.getResponseCode()}`);
+             `Group: ${vkGroupUrl}, Success: ${!!data.success}, Status: ${response.getResponseCode()}`);
     
     if (!data.success) {
       const errorMsg = data.error || "Unknown server error";
       logEvent("ERROR", "server_vk_error", "client",
-               `Group: ${groupId}, Server error: ${errorMsg}`);
+               `Group: ${vkGroupUrl}, Server error: ${errorMsg}`);
       
       // Возвращаем информативную ошибку в зависимости от типа
       if (errorMsg.includes("VK User Access Token not configured")) {
-        logEvent("WARN", "vk_token_not_configured", "client", `Group: ${groupId}`);
+        logEvent("WARN", "vk_token_not_configured", "client", `Group: ${vkGroupUrl}`);
       } else if (errorMsg.includes("User authorization failed")) {
-        logEvent("WARN", "vk_token_invalid", "client", `Group: ${groupId}`);
+        logEvent("WARN", "vk_token_invalid", "client", `Group: ${vkGroupUrl}`);
       } else if (errorMsg.includes("Access denied")) {
-        logEvent("WARN", "vk_access_denied", "client", `Group: ${groupId}`);
+        logEvent("WARN", "vk_access_denied", "client", `Group: ${vkGroupUrl}`);
       }
       
       return [];
@@ -658,13 +744,13 @@ function getVkPosts(groupId) {
     const posts = data.posts || [];
     
     logEvent("INFO", "vk_posts_retrieved", "client",
-             `Group: ${groupId}, Posts count: ${posts.length}, Total available: ${data.total_count || 'unknown'}`);
+             `Group: ${vkGroupUrl}, Posts count: ${posts.length}, Total available: ${data.total_count || 'unknown'}`);
     
     return posts;
     
   } catch (error) {
     logEvent("ERROR", "vk_posts_error", "client",
-             `Group: ${groupId}, Error: ${error.message}`);
+             `Group: ${vkGroupUrl}, Error: ${error.message}`);
     return [];
   }
 }
@@ -831,7 +917,6 @@ function markPostAsSent(vkGroupId, postId, tgChatId) {
       now, 
       tgChatId, 
       "sent",
-      CLIENT_VERSION,  // версия клиента
       "auto"          // источник отправки
     ]);
     
@@ -921,8 +1006,7 @@ function logEvent(level, event, source, details) {
       level,
       event,
       source || "client",
-      details || "",
-      CLIENT_VERSION
+      details || ""
     ]);
     
     console.log(`[${level}] ${event} (${source}): ${details}`);
@@ -1158,6 +1242,38 @@ function getMainPanelHtml() {
           <input type="text" id="modal-tg-chat" placeholder="-1001234567890 или @channel_name" required>
           <div class="hint">ID чата (с минусом для групп) или @имя_канала</div>
         </div>
+        
+        <!-- Настройки форматирования -->
+        <div style="border-top: 1px solid #f0f0f0; margin: 20px 0; padding-top: 20px;">
+          <label style="font-size: 16px; color: #333; margin-bottom: 15px; display: block;">⚙️ Настройки форматирования</label>
+          
+          <div class="form-group" style="margin-bottom: 15px;">
+            <label style="display: flex; align-items: center; font-weight: normal; cursor: pointer;">
+              <input type="checkbox" id="modal-bold-first-line" checked style="width: auto; margin-right: 10px;">
+              <strong>Первая строчка выделить жирным</strong>
+            </label>
+            <div class="hint">Первое предложение поста будет выделено жирным шрифтом</div>
+          </div>
+          
+          <div class="form-group" style="margin-bottom: 15px;">
+            <label style="display: flex; align-items: center; font-weight: normal; cursor: pointer;">
+              <input type="checkbox" id="modal-bold-uppercase" checked style="width: auto; margin-right: 10px;">
+              <strong>ВСЕ ЗАГЛАВНЫЕ БУКВЫ ВЫДЕЛИТЬ ЖИРНЫМ</strong>
+            </label>
+            <div class="hint">Слова, написанные заглавными буквами, будут выделены жирным</div>
+          </div>
+          
+          <div class="form-group" style="margin-bottom: 15px;">
+            <label>Синхронизировать последние посты</label>
+            <select id="modal-sync-posts" style="width: 100%;">
+              <option value="1">Только последний пост</option>
+              <option value="3">Последние 3 поста</option>
+              <option value="5">Последние 5 постов</option>
+              <option value="10">Последние 10 постов</option>
+            </select>
+            <div class="hint">Количество постов для синхронизации при первой настройке</div>
+          </div>
+        </div>
         <div class="modal-buttons">
           <button type="button" class="btn-secondary" onclick="closeModal()">❌ Отмена</button>
           <button type="submit" class="btn-primary" id="submit-binding-btn">✅ Сохранить</button>
@@ -1213,6 +1329,15 @@ function getMainPanelHtml() {
         </div>
       </div>
 
+      <!-- Глобальные настройки -->
+      <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #e9ecef;">
+        <label style="display: flex; align-items: center; font-weight: normal; cursor: pointer; color: #495057;">
+          <input type="checkbox" id="disable-all-stores" style="width: auto; margin-right: 12px;" onchange="toggleAllStores()">
+          <span style="font-size: 14px;"><strong>🏪 Выключить все магазины</strong></span>
+        </label>
+        <div class="hint" style="margin-top: 8px; margin-left: 24px;">При включении этой опции посты о товарах в магазинах ВК не будут пересылаться в Telegram</div>
+      </div>
+
       <div id="bindings-list" class="bindings-list"></div>
       <button class="btn-secondary" id="add-binding-btn" onclick="showAddBindingDialog()" style="margin-top: 16px;">➕ Добавить связку</button>
     </div>
@@ -1256,6 +1381,10 @@ function getMainPanelHtml() {
             appState.license = data.license;
             appState.bindings = data.bindings || [];
             updateUI();
+            
+            // Загружаем глобальные настройки
+            loadGlobalSettings();
+            
             logMessageToConsole("UI updated successfully");
           } else {
             showMessage("license", "error", data.error || "Ошибка загрузки");
@@ -1469,6 +1598,12 @@ function getMainPanelHtml() {
       document.getElementById("modal-title").textContent = "➕ Добавить связку";
       document.getElementById("modal-vk-url").value = "";
       document.getElementById("modal-tg-chat").value = "";
+      
+      // Настройки форматирования по умолчанию
+      document.getElementById("modal-bold-first-line").checked = true;
+      document.getElementById("modal-bold-uppercase").checked = true;
+      document.getElementById("modal-sync-posts").value = "1";
+      
       document.getElementById("submit-binding-btn").textContent = "✅ Добавить";
       clearModalMessage();
       openModal();
@@ -1486,6 +1621,12 @@ function getMainPanelHtml() {
       document.getElementById("modal-title").textContent = "✏️ Редактировать связку";
       document.getElementById("modal-vk-url").value = binding.vkGroupUrl || binding.vk_group_url || "";
       document.getElementById("modal-tg-chat").value = binding.tgChatId || binding.tg_chat_id || "";
+      
+      // Загружаем настройки форматирования (с значениями по умолчанию если не заданы)
+      document.getElementById("modal-bold-first-line").checked = binding.formatSettings?.boldFirstLine !== false;
+      document.getElementById("modal-bold-uppercase").checked = binding.formatSettings?.boldUppercase !== false;
+      document.getElementById("modal-sync-posts").value = binding.formatSettings?.syncPostsCount || "1";
+      
       document.getElementById("submit-binding-btn").textContent = "✅ Сохранить";
       clearModalMessage();
       openModal();
@@ -1495,6 +1636,17 @@ function getMainPanelHtml() {
     function submitBinding() {
       const vkUrl = document.getElementById("modal-vk-url").value.trim();
       const tgChat = document.getElementById("modal-tg-chat").value.trim();
+      
+      // Получаем настройки форматирования
+      const boldFirstLine = document.getElementById("modal-bold-first-line").checked;
+      const boldUppercase = document.getElementById("modal-bold-uppercase").checked;
+      const syncPosts = document.getElementById("modal-sync-posts").value;
+      
+      const formatSettings = {
+        boldFirstLine: boldFirstLine,
+        boldUppercase: boldUppercase,
+        syncPostsCount: parseInt(syncPosts, 10)
+      };
 
       if (!vkUrl || !tgChat) {
         showModalMessage("error", "❌ Заполните все поля");
@@ -1507,8 +1659,8 @@ function getMainPanelHtml() {
       const isEdit = !!appState.currentEditingId;
       const action = isEdit ? "editBinding" : "addBinding";
       const params = isEdit 
-        ? [appState.currentEditingId, vkUrl, tgChat] 
-        : [vkUrl, tgChat];
+        ? [appState.currentEditingId, vkUrl, tgChat, formatSettings] 
+        : [vkUrl, tgChat, formatSettings];
 
       google.script.run
         .withSuccessHandler(function(result) {
@@ -1756,6 +1908,74 @@ function getMainPanelHtml() {
       } else {
         loader.classList.remove("show");
         logMessageToConsole("Loader hidden");
+      }
+    }
+
+    // ============================================
+    // GLOBAL SETTINGS FUNCTIONS
+    // ============================================
+    
+    function loadGlobalSettings() {
+      if (!appState.license) return;
+      
+      logMessageToConsole("Loading global settings...");
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            // Устанавливаем состояние чекбокса "Выключить все магазины"
+            const disableAllStores = result.value === true || result.value === "true";
+            document.getElementById("disable-all-stores").checked = disableAllStores;
+            logMessageToConsole("Global settings loaded: disable_all_stores = " + disableAllStores);
+          } else {
+            // По умолчанию магазины включены
+            document.getElementById("disable-all-stores").checked = false;
+            logMessageToConsole("Failed to load global settings, using defaults");
+          }
+        })
+        .withFailureHandler(function(error) {
+          // По умолчанию магазины включены
+          document.getElementById("disable-all-stores").checked = false;
+          logMessageToConsole("Global settings load error: " + error.message);
+        })
+        .getGlobalSetting("disable_all_stores");
+    }
+    
+    function toggleAllStores() {
+      const checkbox = document.getElementById("disable-all-stores");
+      const isDisabled = checkbox.checked;
+      
+      showMessage("bindings", "loading", "🔄 Сохранение настройки...");
+      logMessageToConsole("Toggling all stores disabled: " + isDisabled);
+      
+      // Сохраняем в Properties Service
+      try {
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result && result.success) {
+              const message = isDisabled ? 
+                "🏪 Все магазины выключены! Посты о товарах не будут пересылаться." : 
+                "🏪 Магазины включены! Все посты будут пересылаться нормально.";
+              showMessage("bindings", "success", message);
+              logMessageToConsole("All stores toggle saved successfully");
+            } else {
+              showMessage("bindings", "error", "❌ Ошибка сохранения настройки");
+              logMessageToConsole("Failed to save all stores setting");
+              // Отменяем изменение чекбокса
+              checkbox.checked = !isDisabled;
+            }
+          })
+          .withFailureHandler(function(error) {
+            showMessage("bindings", "error", "❌ Ошибка: " + error.message);
+            logMessageToConsole("All stores toggle error: " + error.message);
+            // Отменяем изменение чекбокса
+            checkbox.checked = !isDisabled;
+          })
+          .setGlobalSetting("disable_all_stores", isDisabled);
+      } catch (error) {
+        showMessage("bindings", "error", "❌ Ошибка: " + error.message);
+        logMessageToConsole("All stores toggle exception: " + error.message);
+        checkbox.checked = !isDisabled;
       }
     }
 
