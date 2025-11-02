@@ -161,19 +161,24 @@ function saveLicenseWithCheck(licenseKey) {
   }
 }
 
-function addBinding(vkGroupUrl, tgChatId) {
+function addBinding(vkGroupUrl, tgChatId, formatSettings) {
   try {
     const license = getLicense();
     if (!license) return { success: false, error: "❌ Лицензия не найдена" };
     
     logEvent("INFO", "add_binding_start", "client", 
-             `VK URL: ${vkGroupUrl}, TG Chat: ${tgChatId}`);
+             `VK URL: ${vkGroupUrl}, TG Chat: ${tgChatId}, Format settings: ${JSON.stringify(formatSettings || {})}`);
     
     const payload = {
       event: "add_binding",
       license_key: license.key,
       vk_group_url: vkGroupUrl,
-      tg_chat_id: tgChatId
+      tg_chat_id: tgChatId,
+      format_settings: formatSettings || {
+        boldFirstLine: true,
+        boldUppercase: true,
+        syncPostsCount: 1
+      }
     };
     
     logEvent("DEBUG", "add_binding_payload", "client", JSON.stringify(payload).substring(0, 200));
@@ -190,7 +195,7 @@ function addBinding(vkGroupUrl, tgChatId) {
     
     if (result.success) {
       logEvent("INFO", "binding_added", "client",
-               `Binding ID: ${result.binding_id}, VK Group: ${result.converted.vk_group_id}`);
+               `Binding ID: ${result.binding_id}, VK Group: ${result.converted.vk_group_id}, Sync posts: ${formatSettings?.syncPostsCount || 1}`);
       return result;
     } else {
       logEvent("WARN", "add_binding_failed", "client", result.error);
@@ -203,20 +208,25 @@ function addBinding(vkGroupUrl, tgChatId) {
   }
 }
 
-function editBinding(bindingId, vkGroupUrl, tgChatId) {
+function editBinding(bindingId, vkGroupUrl, tgChatId, formatSettings) {
   try {
     const license = getLicense();
     if (!license) return { success: false, error: "❌ Лицензия не найдена" };
     
     logEvent("INFO", "edit_binding_start", "client",
-             `Binding ID: ${bindingId}, New VK URL: ${vkGroupUrl}`);
+             `Binding ID: ${bindingId}, New VK URL: ${vkGroupUrl}, Format settings: ${JSON.stringify(formatSettings || {})}`);
     
     const payload = {
       event: "edit_binding",
       license_key: license.key,
       binding_id: bindingId,
       vk_group_url: vkGroupUrl,
-      tg_chat_id: tgChatId
+      tg_chat_id: tgChatId,
+      format_settings: formatSettings || {
+        boldFirstLine: true,
+        boldUppercase: true,
+        syncPostsCount: 1
+      }
     };
     
     const response = UrlFetchApp.fetch(SERVER_URL, {
@@ -230,7 +240,7 @@ function editBinding(bindingId, vkGroupUrl, tgChatId) {
     const result = JSON.parse(response.getContentText());
     
     if (result.success) {
-      logEvent("INFO", "binding_edited", "client", `Binding ID: ${bindingId}`);
+      logEvent("INFO", "binding_edited", "client", `Binding ID: ${bindingId}, Sync posts: ${formatSettings?.syncPostsCount || 1}`);
     } else {
       logEvent("WARN", "edit_binding_failed", "client", result.error);
     }
@@ -489,6 +499,86 @@ function getGlobalSetting(settingKey) {
   }
 }
 
+function getTelegramChatName(chatId) {
+  try {
+    const license = getLicense();
+    if (!license) {
+      logEvent("WARN", "no_license_for_tg_name", "client", `Chat ID: ${chatId}`);
+      return null;
+    }
+    
+    logEvent("DEBUG", "get_tg_chat_name_start", "client", `Chat ID: ${chatId}`);
+    
+    const payload = {
+      event: "get_telegram_chat_name",
+      license_key: license.key,
+      chat_id: chatId
+    };
+    
+    const response = UrlFetchApp.fetch(SERVER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
+      timeout: REQUEST_TIMEOUT
+    });
+    
+    const result = JSON.parse(response.getContentText());
+    
+    if (result.success && result.chat_name) {
+      logEvent("INFO", "tg_chat_name_retrieved", "client", `Chat ID: ${chatId}, Name: ${result.chat_name}`);
+      return result.chat_name;
+    } else {
+      logEvent("WARN", "get_tg_chat_name_failed", "client", `Chat ID: ${chatId}, Error: ${result.error || 'Unknown'}`);
+      return null;
+    }
+    
+  } catch (error) {
+    logEvent("ERROR", "get_tg_chat_name_error", "client", `Chat ID: ${chatId}, Error: ${error.message}`);
+    return null;
+  }
+}
+
+function getVkGroupName(groupUrl) {
+  try {
+    const license = getLicense();
+    if (!license) {
+      logEvent("WARN", "no_license_for_vk_name", "client", `Group URL: ${groupUrl}`);
+      return null;
+    }
+    
+    logEvent("DEBUG", "get_vk_group_name_start", "client", `Group URL: ${groupUrl}`);
+    
+    const payload = {
+      event: "get_vk_group_name",
+      license_key: license.key,
+      vk_group_url: groupUrl
+    };
+    
+    const response = UrlFetchApp.fetch(SERVER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
+      timeout: REQUEST_TIMEOUT
+    });
+    
+    const result = JSON.parse(response.getContentText());
+    
+    if (result.success && result.group_name) {
+      logEvent("INFO", "vk_group_name_retrieved", "client", `Group URL: ${groupUrl}, Name: ${result.group_name}`);
+      return result.group_name;
+    } else {
+      logEvent("WARN", "get_vk_group_name_failed", "client", `Group URL: ${groupUrl}, Error: ${result.error || 'Unknown'}`);
+      return null;
+    }
+    
+  } catch (error) {
+    logEvent("ERROR", "get_vk_group_name_error", "client", `Group URL: ${groupUrl}, Error: ${error.message}`);
+    return null;
+  }
+}
+
 // ============================================
 // 3. ПРОВЕРКА И ОТПРАВКА ПОСТОВ
 // ============================================
@@ -593,7 +683,12 @@ function checkNewPosts() {
           const sendResult = sendPostToServer(license.key, binding.id, post);
           
           if (sendResult.success) {
-            markPostAsSent(vkGroupId, post.id, binding.tgChatId);
+            // Получаем названия VK группы и TG чата для Published листов
+            const vkGroupName = getVkGroupName(binding.vkGroupUrl);
+            const tgChatName = getTelegramChatName(binding.tgChatId);
+            
+            // Передаем расширенную информацию в markPostAsSent
+            markPostAsSent(vkGroupId, post.id, binding.tgChatId, post.text, vkGroupName, tgChatName);
             postsSent++;
             
             logEvent("INFO", "post_sent_to_telegram", "client",
@@ -906,23 +1001,40 @@ function isPostAlreadySent(vkGroupId, postId) {
   }
 }
 
-function markPostAsSent(vkGroupId, postId, tgChatId) {
+function markPostAsSent(vkGroupId, postId, tgChatId, postText, vkGroupName, tgChatName) {
   try {
-    const sheet = getOrCreatePublishedPostsSheet(vkGroupId);
-    const now = new Date().toISOString();
+    const sheet = getOrCreatePublishedPostsSheet(vkGroupId, vkGroupName);
     
-    // Расширенная информация о посте
+    // НОВЫЙ формат даты DD.MM.YYYY, HH:mm (RU)
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('ru-RU', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric' 
+    });
+    const timeStr = now.toLocaleTimeString('ru-RU', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+    const formattedDateTime = `${dateStr}, ${timeStr}`;
+    
+    // Превью поста (первые 200 символов)
+    const postPreview = (postText || '').substring(0, 200) + 
+      (postText && postText.length > 200 ? '...' : '');
+    
+    // Расширенная информация о посте с новыми колонками
     sheet.appendRow([
       postId, 
-      now, 
-      tgChatId, 
+      formattedDateTime,           // НОВЫЙ формат даты
+      tgChatName || tgChatId,      // Название чата вместо ID
       "sent",
-      "auto"          // источник отправки
+      "auto",                      // источник отправки
+      postPreview                  // НОВОЕ поле - превью поста
     ]);
     
     // Дополнительное логирование в Logs лист
     logEvent("INFO", "post_sent_successfully", "client", 
-             `VK Post: ${postId} sent to TG: ${tgChatId}, VK Group: ${vkGroupId}, Timestamp: ${now}`);
+             `VK Post: ${postId} sent to TG: ${tgChatName || tgChatId}, VK Group: ${vkGroupName || vkGroupId}, Timestamp: ${formattedDateTime}`);
     
     // Обновляем статистику отправленных постов
     updatePostStatistics(vkGroupId, postId);
@@ -961,15 +1073,28 @@ function updatePostStatistics(vkGroupId, postId) {
   }
 }
 
-function getOrCreatePublishedPostsSheet(vkGroupId) {
+function getOrCreatePublishedPostsSheet(vkGroupId, vkGroupName) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheetName = `Published_${vkGroupId}`;
+  
+  // Используем название группы вместо ID (если доступно)
+  let sheetName;
+  if (vkGroupName) {
+    // Безопасное имя: удаляем небезопасные символы и ограничиваем длину
+    const safeName = vkGroupName
+      .replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '')
+      .replace(/\s+/g, '_')
+      .substring(0, 20);
+    sheetName = `Published_${safeName}`;
+  } else {
+    sheetName = `Published_${vkGroupId}`;
+  }
   
   let sheet = ss.getSheetByName(sheetName);
   
   if (!sheet) {
     sheet = ss.insertSheet(sheetName);
-    sheet.appendRow(["Post ID", "Sent At", "TG Chat ID", "Status", "Client Version", "Source"]);
+    // Новые колонки: Post ID, Sent At, TG Chat Name, Status, Source, Post Preview
+    sheet.appendRow(["Post ID", "Sent At", "TG Chat Name", "Status", "Source", "Post Preview"]);
     
     const headerRange = sheet.getRange(1, 1, 1, 6);
     headerRange.setBackground("#10b981");
@@ -979,13 +1104,14 @@ function getOrCreatePublishedPostsSheet(vkGroupId) {
     
     // Устанавливаем ширину колонок для лучшего отображения
     sheet.setColumnWidth(1, 80);  // Post ID
-    sheet.setColumnWidth(2, 150); // Sent At
-    sheet.setColumnWidth(3, 150); // TG Chat ID
+    sheet.setColumnWidth(2, 120); // Sent At (DD.MM.YYYY, HH:mm)
+    sheet.setColumnWidth(3, 150); // TG Chat Name (вместо ID)
     sheet.setColumnWidth(4, 80);  // Status
-    sheet.setColumnWidth(5, 100); // Client Version
-    sheet.setColumnWidth(6, 80);  // Source
+    sheet.setColumnWidth(5, 80);  // Source
+    sheet.setColumnWidth(6, 250); // Post Preview (НОВОЕ)
     
-    logEvent("INFO", "published_sheet_created", "client", `Sheet: ${sheetName} with enhanced tracking`);
+    logEvent("INFO", "published_sheet_created", "client", 
+             `Sheet: ${sheetName} (Group: ${vkGroupName || vkGroupId}) with enhanced tracking`);
   }
   
   return sheet;
