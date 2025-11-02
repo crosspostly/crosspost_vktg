@@ -1,0 +1,37 @@
+/**
+ * TODO: VK → Telegram Markdown link conversion (server-side)
+ * Дата: 2025-11-02
+ *
+ * Цель: Конвертировать VK-гиперссылки в корректный Telegram Markdown без подмены на ссылку на пост.
+ */
+
+// Правила:
+// 1) VK: [screen_name|Title] → TG: [Title](https://vk.com/screen_name)
+//    Примеры: [durov|Павел Дуров] → [Павел Дуров](https://vk.com/durov)
+// 2) VK: [club123456|Название] / [public123456|Название] / [id123456|Имя]
+//    → TG: [Название](https://vk.com/club123456)
+// 3) VK: vk.com/screen_name — оставить как есть либо TG: [screen_name](https://vk.com/screen_name)
+// 4) VK: vk.com/wall-<id>_<postId> — допустимо как [Пост VK](...) но НЕ подменяет [screen_name|Title]
+// 5) VK: vk.cc/short — желательно резолвить в исходный https://vk.com/... (опционально)
+// 6) Внешние ссылки: [https://example.com|Текст] → [Текст](https://example.com)
+// 7) В Title допускается @, пунктуация и подчёркивания — сохранять как есть
+
+// Техническая реализация (server.gs → formatVkTextForTelegram):
+// - Рег. выражение для [screen_name|Title]: /\[([^\]|]+)\|([^\]]+)\]/g
+// - Внутри: screen = group 1, title = group 2 → Markdown: [title](https://vk.com/screen)
+// - Экранировать спецсимволы Markdown в title при необходимости
+// - Не генерировать ссылки вида: "Title (https://vk.com/screen)"
+// - Поддержать [https://example.com|Text]
+
+// Тест-кейсы:
+//  - [durov|Павел Дуров] → [Павел Дуров](https://vk.com/durov)
+//  - [club123456|VK Dev] → [VK Dev](https://vk.com/club123456)
+//  - [daoqub|@daoqub] → [@daoqub](https://vk.com/daoqub)
+//  - [durov|Павел Дуров (VK)] → [Павел Дуров (VK)](https://vk.com/durov)
+//  - https://vk.com/wall-123_456 → [Пост VK](https://vk.com/wall-123_456)
+//  - [https://example.com|Сайт] → [Сайт](https://example.com)
+
+// Задачи:
+//  - [ ] Обновить formatVkTextForTelegram согласно правилам
+//  - [ ] Добавить unit-like тесты в testNameRetrieval/testUrlExtraction
+//  - [ ] Прогнать на реальных кейсах с кириллицей/пунктуацией/подчёркиванием
