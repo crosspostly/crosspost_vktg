@@ -55,6 +55,13 @@ This PR implements critical improvements to `client.gs` as specified in `UNIFIED
 - Passes post text to `markPostAsSent()` for preview generation
 - Enhanced tracking with meaningful data in Published sheets
 
+### 6. **Improved Logging System**
+- **Newest logs at top:** New log entries now appear immediately at row 2 (below header)
+- **Russian date format:** DD.MM.YYYY HH:mm:ss instead of ISO format for better readability
+- **Auto-cleanup:** Automatically maintains last 5000 log records
+- **Log rotation:** Old records deleted automatically when limit exceeded
+- Better UX: Fresh logs visible without scrolling to bottom
+
 ## 📊 Technical Details
 
 ### Code Quality
