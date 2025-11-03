@@ -161,19 +161,26 @@ function saveLicenseWithCheck(licenseKey) {
   }
 }
 
-function addBinding(vkGroupUrl, tgChatId) {
+function addBinding(bindingName, bindingDescription, vkGroupUrl, tgChatId, formatSettings) {
   try {
     const license = getLicense();
     if (!license) return { success: false, error: "❌ Лицензия не найдена" };
     
     logEvent("INFO", "add_binding_start", "client", 
-             `VK URL: ${vkGroupUrl}, TG Chat: ${tgChatId}`);
+             `Name: ${bindingName}, VK URL: ${vkGroupUrl}, TG Chat: ${tgChatId}`);
     
     const payload = {
       event: "add_binding",
       license_key: license.key,
+      binding_name: bindingName,
+      binding_description: bindingDescription || "",
       vk_group_url: vkGroupUrl,
-      tg_chat_id: tgChatId
+      tg_chat_id: tgChatId,
+      format_settings: formatSettings || {
+        boldFirstLine: true,
+        boldUppercase: true,
+        syncPostsCount: 1
+      }
     };
     
     logEvent("DEBUG", "add_binding_payload", "client", JSON.stringify(payload).substring(0, 200));
@@ -190,7 +197,7 @@ function addBinding(vkGroupUrl, tgChatId) {
     
     if (result.success) {
       logEvent("INFO", "binding_added", "client",
-               `Binding ID: ${result.binding_id}, VK Group: ${result.converted.vk_group_id}`);
+               `Binding ID: ${result.binding_id}, Name: ${bindingName}, VK Group: ${result.converted?.vk_group_id || 'N/A'}`);
       return result;
     } else {
       logEvent("WARN", "add_binding_failed", "client", result.error);
@@ -203,20 +210,27 @@ function addBinding(vkGroupUrl, tgChatId) {
   }
 }
 
-function editBinding(bindingId, vkGroupUrl, tgChatId) {
+function editBinding(bindingId, bindingName, bindingDescription, vkGroupUrl, tgChatId, formatSettings) {
   try {
     const license = getLicense();
     if (!license) return { success: false, error: "❌ Лицензия не найдена" };
     
     logEvent("INFO", "edit_binding_start", "client",
-             `Binding ID: ${bindingId}, New VK URL: ${vkGroupUrl}`);
+             `Binding ID: ${bindingId}, Name: ${bindingName}, VK URL: ${vkGroupUrl}`);
     
     const payload = {
       event: "edit_binding",
       license_key: license.key,
       binding_id: bindingId,
+      binding_name: bindingName,
+      binding_description: bindingDescription || "",
       vk_group_url: vkGroupUrl,
-      tg_chat_id: tgChatId
+      tg_chat_id: tgChatId,
+      format_settings: formatSettings || {
+        boldFirstLine: true,
+        boldUppercase: true,
+        syncPostsCount: 1
+      }
     };
     
     const response = UrlFetchApp.fetch(SERVER_URL, {
@@ -230,7 +244,7 @@ function editBinding(bindingId, vkGroupUrl, tgChatId) {
     const result = JSON.parse(response.getContentText());
     
     if (result.success) {
-      logEvent("INFO", "binding_edited", "client", `Binding ID: ${bindingId}`);
+      logEvent("INFO", "binding_edited", "client", `Binding ID: ${bindingId}, Name: ${bindingName}`);
     } else {
       logEvent("WARN", "edit_binding_failed", "client", result.error);
     }
@@ -377,17 +391,18 @@ function toggleBindingStatus(bindingId) {
   }
 }
 
-function testPublication(bindingId) {
+function publishLastPost(bindingId) {
   try {
     const license = getLicense();
     if (!license) return { success: false, error: "❌ Лицензия не найдена" };
     
-    logEvent("INFO", "test_publication_start", "client", `Binding ID: ${bindingId}`);
+    logEvent("INFO", "publish_last_post_start", "client", `Binding ID: ${bindingId}`);
     
     const payload = {
-      event: "test_publication",
+      event: "send_post",  // Используем send_post БЕЗ vk_post — сервер опубликует последний пост
       license_key: license.key,
       binding_id: bindingId
+      // vk_post НЕ передаем — сервер сам возьмет последний или N постов по настройке
     };
     
     const response = UrlFetchApp.fetch(SERVER_URL, {
@@ -401,17 +416,22 @@ function testPublication(bindingId) {
     const result = JSON.parse(response.getContentText());
     
     if (result.success) {
-      logEvent("INFO", "test_publication_success", "client", `Binding ID: ${bindingId}`);
+      logEvent("INFO", "publish_last_post_success", "client", `Binding ID: ${bindingId}, Message ID: ${result.message_id || 'N/A'}`);
     } else {
-      logEvent("WARN", "test_publication_failed", "client", result.error);
+      logEvent("WARN", "publish_last_post_failed", "client", result.error);
     }
     
     return result;
     
   } catch (error) {
-    logEvent("ERROR", "test_publication_error", "client", error.message);
+    logEvent("ERROR", "publish_last_post_error", "client", error.message);
     return { success: false, error: error.message };
   }
+}
+
+// Alias для обратной совместимости
+function testPublication(bindingId) {
+  return publishLastPost(bindingId);
 }
 
 function setGlobalSetting(settingKey, settingValue) {
@@ -489,6 +509,9 @@ function getGlobalSetting(settingKey) {
   }
 }
 
+// УДАЛЕНО: Медленные функции getTelegramChatName() и getVkGroupName()
+// Причина: Замедляли работу на 20-25 секунд. Используем bindingName вместо них.
+
 // ============================================
 // 3. ПРОВЕРКА И ОТПРАВКА ПОСТОВ
 // ============================================
@@ -556,7 +579,8 @@ function checkNewPosts() {
           continue;
         }
         
-        const posts = getVkPosts(binding.vkGroupUrl);
+        // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: передаем ID, а не URL!
+        const posts = getVkPosts(vkGroupId);
         logEvent("DEBUG", "vk_posts_fetched", "client", `VK Group: ${vkGroupId}, Posts: ${posts?.length || 0}`);
         
         if (!posts || posts.length === 0) {
@@ -593,7 +617,13 @@ function checkNewPosts() {
           const sendResult = sendPostToServer(license.key, binding.id, post);
           
           if (sendResult.success) {
-            markPostAsSent(vkGroupId, post.id, binding.tgChatId);
+            // УБРАЛИ МЕДЛЕННЫЕ ВЫЗОВЫ - используем имена из binding напрямую
+            // Названия теперь хранятся в самой связке (bindingName, не путать с vkGroupName)
+            const bindingName = binding.bindingName || binding.binding_name || null;
+            const tgChatId = binding.tgChatId || binding.tg_chat_id;
+            
+            // Передаем информацию в markPostAsSent БЕЗ запросов к серверу
+            markPostAsSent(vkGroupId, post.id, tgChatId, post.text, bindingName, null);
             postsSent++;
             
             logEvent("INFO", "post_sent_to_telegram", "client",
@@ -690,26 +720,26 @@ function sendPostToServer(licenseKey, bindingId, vkPost) {
 // 4. VK API ФУНКЦИИ
 // ============================================
 
-function getVkPosts(vkGroupUrl) {
+function getVkPosts(vkGroupId) {
   try {
-    logEvent("DEBUG", "get_vk_posts_start", "client", `VK Group URL: ${vkGroupUrl}`);
+    logEvent("DEBUG", "get_vk_posts_start", "client", `VK Group ID: ${vkGroupId}`);
     
     // Получаем лицензию для аутентификации на сервере
     const license = getLicense();
     if (!license) {
-      logEvent("ERROR", "no_license_for_vk_posts", "client", `Group: ${vkGroupUrl}`);
+      logEvent("ERROR", "no_license_for_vk_posts", "client", `Group: ${vkGroupId}`);
       return [];
     }
     
-    // Теперь делаем запрос к серверу вместо прямого обращения к VK API
+    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: отправляем vk_group_id, а не vk_group_url
     const payload = {
       event: "get_vk_posts",
       license_key: license.key,
-      vk_group_url: vkGroupUrl,
+      vk_group_id: vkGroupId,  // Отправляем ID напрямую!
       count: MAX_POSTS_CHECK
     };
     
-    logEvent("DEBUG", "server_vk_request", "client", `Group: ${vkGroupUrl}, Count: ${MAX_POSTS_CHECK}`);
+    logEvent("DEBUG", "server_vk_request", "client", `Group ID: ${vkGroupId}, Count: ${MAX_POSTS_CHECK}`);
     
     const response = UrlFetchApp.fetch(SERVER_URL, {
       method: 'POST',
@@ -722,20 +752,20 @@ function getVkPosts(vkGroupUrl) {
     const data = JSON.parse(response.getContentText());
     
     logEvent("DEBUG", "server_vk_response", "client", 
-             `Group: ${vkGroupUrl}, Success: ${!!data.success}, Status: ${response.getResponseCode()}`);
+             `Group ID: ${vkGroupId}, Success: ${!!data.success}, Status: ${response.getResponseCode()}`);
     
     if (!data.success) {
       const errorMsg = data.error || "Unknown server error";
       logEvent("ERROR", "server_vk_error", "client",
-               `Group: ${vkGroupUrl}, Server error: ${errorMsg}`);
+               `Group ID: ${vkGroupId}, Server error: ${errorMsg}`);
       
       // Возвращаем информативную ошибку в зависимости от типа
       if (errorMsg.includes("VK User Access Token not configured")) {
-        logEvent("WARN", "vk_token_not_configured", "client", `Group: ${vkGroupUrl}`);
+        logEvent("WARN", "vk_token_not_configured", "client", `Group ID: ${vkGroupId}`);
       } else if (errorMsg.includes("User authorization failed")) {
-        logEvent("WARN", "vk_token_invalid", "client", `Group: ${vkGroupUrl}`);
+        logEvent("WARN", "vk_token_invalid", "client", `Group ID: ${vkGroupId}`);
       } else if (errorMsg.includes("Access denied")) {
-        logEvent("WARN", "vk_access_denied", "client", `Group: ${vkGroupUrl}`);
+        logEvent("WARN", "vk_access_denied", "client", `Group ID: ${vkGroupId}`);
       }
       
       return [];
@@ -744,13 +774,13 @@ function getVkPosts(vkGroupUrl) {
     const posts = data.posts || [];
     
     logEvent("INFO", "vk_posts_retrieved", "client",
-             `Group: ${vkGroupUrl}, Posts count: ${posts.length}, Total available: ${data.total_count || 'unknown'}`);
+             `Group ID: ${vkGroupId}, Posts count: ${posts.length}, Total available: ${data.total_count || 'unknown'}`);
     
     return posts;
     
   } catch (error) {
     logEvent("ERROR", "vk_posts_error", "client",
-             `Group: ${vkGroupUrl}, Error: ${error.message}`);
+             `Group ID: ${vkGroupId}, Error: ${error.message}`);
     return [];
   }
 }
@@ -762,7 +792,9 @@ function extractVkGroupId(url) {
       return null;
     }
     
+    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Удаляем query параметры (?from=groups) и якоря (#section)
     url = url.trim().toLowerCase();
+    url = url.split('?')[0].split('#')[0]; // Убираем всё после ? и #
     
     // public123456
     const publicMatch = url.match(/public(\d+)/);
@@ -906,23 +938,45 @@ function isPostAlreadySent(vkGroupId, postId) {
   }
 }
 
-function markPostAsSent(vkGroupId, postId, tgChatId) {
+function markPostAsSent(vkGroupId, postId, tgChatId, postText, bindingName, tgChatName) {
   try {
-    const sheet = getOrCreatePublishedPostsSheet(vkGroupId);
-    const now = new Date().toISOString();
+    // Используем bindingName для названия листа
+    const sheet = getOrCreatePublishedPostsSheet(bindingName, vkGroupId);
     
-    // Расширенная информация о посте
+    // НОВЫЙ формат даты DD.MM.YYYY, HH:mm (RU)
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('ru-RU', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric' 
+    });
+    const timeStr = now.toLocaleTimeString('ru-RU', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+    const formattedDateTime = `${dateStr}, ${timeStr}`;
+    
+    // Превью поста (первые 200 символов)
+    const postPreview = (postText || '').substring(0, 200) + 
+      (postText && postText.length > 200 ? '...' : '');
+    
+    // VK ссылка на пост
+    const vkPostUrl = `https://vk.com/wall${vkGroupId}_${postId}`;
+    
+    // Расширенная информация о посте с новыми колонками
     sheet.appendRow([
       postId, 
-      now, 
-      tgChatId, 
+      formattedDateTime,           // НОВЫЙ формат даты
+      tgChatName || tgChatId,      // Название чата вместо ID
       "sent",
-      "auto"          // источник отправки
+      "auto",                      // источник отправки
+      postPreview,                 // НОВОЕ поле - превью поста
+      vkPostUrl                    // НОВОЕ поле - ссылка на VK пост
     ]);
     
     // Дополнительное логирование в Logs лист
     logEvent("INFO", "post_sent_successfully", "client", 
-             `VK Post: ${postId} sent to TG: ${tgChatId}, VK Group: ${vkGroupId}, Timestamp: ${now}`);
+             `VK Post: ${postId} sent to TG: ${tgChatName || tgChatId}, Binding: ${bindingName || 'N/A'}, Timestamp: ${formattedDateTime}`);
     
     // Обновляем статистику отправленных постов
     updatePostStatistics(vkGroupId, postId);
@@ -961,17 +1015,30 @@ function updatePostStatistics(vkGroupId, postId) {
   }
 }
 
-function getOrCreatePublishedPostsSheet(vkGroupId) {
+function getOrCreatePublishedPostsSheet(bindingName, vkGroupId) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheetName = `Published_${vkGroupId}`;
+  
+  // Используем bindingName (название связки) для имени листа
+  let sheetName;
+  if (bindingName) {
+    // Безопасное имя: удаляем небезопасные символы и ограничиваем длину до 30 символов
+    sheetName = bindingName
+      .replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '')  // Удаляем небезопасные символы
+      .replace(/\s+/g, '_')                  // Заменяем пробелы на подчеркивания
+      .substring(0, 30);                     // Ограничиваем длину (макс 31 символ в Google Sheets)
+  } else {
+    // Fallback: если bindingName не задано, используем VK Group ID
+    sheetName = `Published_${vkGroupId}`;
+  }
   
   let sheet = ss.getSheetByName(sheetName);
   
   if (!sheet) {
     sheet = ss.insertSheet(sheetName);
-    sheet.appendRow(["Post ID", "Sent At", "TG Chat ID", "Status", "Client Version", "Source"]);
+    // Новые колонки: Post ID, Sent At, TG Chat Name, Status, Source, Post Preview, VK Post URL
+    sheet.appendRow(["Post ID", "Sent At", "TG Chat Name", "Status", "Source", "Post Preview", "VK Post URL"]);
     
-    const headerRange = sheet.getRange(1, 1, 1, 6);
+    const headerRange = sheet.getRange(1, 1, 1, 7);  // 7 колонок теперь
     headerRange.setBackground("#10b981");
     headerRange.setFontColor("white");
     headerRange.setFontWeight("bold");
@@ -979,13 +1046,15 @@ function getOrCreatePublishedPostsSheet(vkGroupId) {
     
     // Устанавливаем ширину колонок для лучшего отображения
     sheet.setColumnWidth(1, 80);  // Post ID
-    sheet.setColumnWidth(2, 150); // Sent At
-    sheet.setColumnWidth(3, 150); // TG Chat ID
+    sheet.setColumnWidth(2, 120); // Sent At (DD.MM.YYYY, HH:mm)
+    sheet.setColumnWidth(3, 150); // TG Chat Name (вместо ID)
     sheet.setColumnWidth(4, 80);  // Status
-    sheet.setColumnWidth(5, 100); // Client Version
-    sheet.setColumnWidth(6, 80);  // Source
+    sheet.setColumnWidth(5, 80);  // Source
+    sheet.setColumnWidth(6, 250); // Post Preview
+    sheet.setColumnWidth(7, 200); // VK Post URL (НОВАЯ КОЛОНКА)
     
-    logEvent("INFO", "published_sheet_created", "client", `Sheet: ${sheetName} with enhanced tracking`);
+    logEvent("INFO", "published_sheet_created", "client", 
+             `Sheet: ${sheetName} (Binding: ${bindingName || 'N/A'}, VK Group: ${vkGroupId}) with enhanced tracking`);
   }
   
   return sheet;
@@ -1001,13 +1070,50 @@ function logEvent(level, event, source, details) {
     
     const sheet = getOrCreateLogsSheet();
     
-    sheet.appendRow([
-      new Date().toISOString(),
+    // Вставляем новую запись СРАЗУ ПОСЛЕ ЗАГОЛОВКА (строка 2)
+    // Это делает свежие логи видимыми сверху
+    sheet.insertRowAfter(1);
+    
+    // Форматируем дату и время в читаемом виде
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('ru-RU', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric' 
+    });
+    const timeStr = now.toLocaleTimeString('ru-RU', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      second: '2-digit'
+    });
+    const timestamp = `${dateStr} ${timeStr}`;
+    
+    const logRange = sheet.getRange(2, 1, 1, 5);
+    
+    // Устанавливаем значения
+    logRange.setValues([[
+      timestamp,
       level,
       event,
       source || "client",
       details || ""
-    ]);
+    ]]);
+    
+    // ВАЖНО: Устанавливаем обычное форматирование (черный текст, белый фон, не жирный)
+    logRange.setBackground("white");
+    logRange.setFontColor("black");
+    logRange.setFontWeight("normal");
+    
+    // Авточистка: оставляем только последние 5000 записей
+    const MAX_LOG_RECORDS = 5000;
+    const lastRow = sheet.getLastRow();
+    
+    if (lastRow > MAX_LOG_RECORDS + 1) { // +1 для заголовка
+      const rowsToDelete = lastRow - MAX_LOG_RECORDS - 1;
+      sheet.deleteRows(MAX_LOG_RECORDS + 2, rowsToDelete);
+      
+      console.log(`Log rotation: deleted ${rowsToDelete} old records, kept last ${MAX_LOG_RECORDS}`);
+    }
     
     console.log(`[${level}] ${event} (${source}): ${details}`);
     
@@ -1036,8 +1142,49 @@ function getOrCreateLogsSheet() {
 }
 
 // ============================================
-// 7. УПРАВЛЕНИЕ ТРИГГЕРАМИ
+// 7. УПРАВЛЕНИЕ ТРИГГЕРАМИ И РАЗРЕШЕНИЯМИ
 // ============================================
+
+/**
+ * Функция для первичной активации разрешений ScriptApp
+ * Пользователь должен запустить её вручную из редактора Apps Script
+ */
+function doFirstAuth() {
+  try {
+    logEvent("INFO", "first_auth_start", "client", "User manually requested authorization");
+    
+    // Пытаемся получить доступ к триггерам (требует авторизации)
+    const triggers = ScriptApp.getProjectTriggers();
+    
+    logEvent("INFO", "first_auth_success", "client", `Authorization granted, ${triggers.length} triggers found`);
+    
+    SpreadsheetApp.getUi().alert(
+      "✅ Разрешения активированы!\n\n" +
+      "Теперь вы можете настроить автопроверку из панели управления."
+    );
+    
+    return { success: true, message: "Authorization granted" };
+    
+  } catch (error) {
+    logEvent("ERROR", "first_auth_error", "client", error.message);
+    SpreadsheetApp.getUi().alert("❌ Ошибка авторизации: " + error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Проверяет, есть ли у скрипта разрешения ScriptApp
+ */
+function checkScriptAppPermissions() {
+  try {
+    ScriptApp.getProjectTriggers();
+    logEvent("DEBUG", "scriptapp_permissions_ok", "client", "ScriptApp permissions available");
+    return { success: true, hasPermissions: true };
+  } catch (error) {
+    logEvent("WARN", "scriptapp_permissions_missing", "client", error.message);
+    return { success: true, hasPermissions: false, error: error.message };
+  }
+}
 
 function setupTrigger() {
   try {
@@ -1068,7 +1215,22 @@ function setupTrigger() {
     
   } catch (error) {
     logEvent("ERROR", "trigger_setup_error", "client", error.message);
-    SpreadsheetApp.getUi().alert("❌ Ошибка установки триггера: " + error.message);
+    
+    // Если ошибка связана с разрешениями, показываем подробное сообщение
+    if (error.message.includes("Authorization") || error.message.includes("permission")) {
+      SpreadsheetApp.getUi().alert(
+        "❌ Ошибка: Недостаточно разрешений!\n\n" +
+        "Для настройки автопроверки нужно активировать разрешения ScriptApp.\n\n" +
+        "Инструкция:\n" +
+        "1. Откройте редактор Apps Script (Расширения → Apps Script)\n" +
+        "2. Найдите функцию 'doFirstAuth' в файле client.gs\n" +
+        "3. Нажмите кнопку 'Выполнить' (▶️)\n" +
+        "4. Разрешите доступ к ScriptApp\n" +
+        "5. Вернитесь сюда и повторите попытку"
+      );
+    } else {
+      SpreadsheetApp.getUi().alert("❌ Ошибка установки триггера: " + error.message);
+    }
   }
 }
 
@@ -1216,6 +1378,15 @@ function getMainPanelHtml() {
     .modal-form { display: flex; flex-direction: column; gap: 20px; }
     .modal-buttons { display: flex; gap: 12px; margin-top: 20px; }
     .modal-buttons button { flex: 1; }
+    
+    /* Collapse/Expand styles */
+    .header-controls { position: absolute; top: 30px; right: 40px; }
+    .collapse-btn { background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.3s; }
+    .collapse-btn:hover { background: rgba(255,255,255,0.3); }
+    .content.collapsed { display: none; }
+    .mini-controls { display: none; padding: 20px 40px; background: #f5f7fa; border-top: 2px solid #667eea; }
+    .mini-controls.show { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+    .mini-info { flex: 1; font-size: 14px; color: #666; }
   </style>
 </head>
 <body>
@@ -1232,6 +1403,21 @@ function getMainPanelHtml() {
       </div>
       <div id="modal-message" class="message"></div>
       <form class="modal-form" onsubmit="event.preventDefault(); submitBinding();">
+        <!-- Название и описание связки -->
+        <div class="form-group">
+          <label>📝 Название связки <span style="color: red;">*</span></label>
+          <input type="text" id="modal-binding-name" placeholder="Например: Новости компании, Акции магазина..." required maxlength="100">
+          <div class="hint">Короткое название, чтобы легко отличать связки друг от друга</div>
+        </div>
+        
+        <div class="form-group">
+          <label>📄 Описание (необязательно)</label>
+          <textarea id="modal-binding-description" placeholder="Дополнительная информация о связке..." rows="2" style="width: 100%; padding: 12px; border: 2px solid #f0f0f0; border-radius: 8px; font-size: 14px; font-family: inherit; resize: vertical;" maxlength="500"></textarea>
+          <div class="hint">Дополнительные заметки, если нужны</div>
+        </div>
+        
+        <div style="border-top: 1px solid #f0f0f0; margin: 20px 0; padding-top: 20px;"></div>
+        
         <div class="form-group">
           <label>URL группы ВКонтакте</label>
           <input type="text" id="modal-vk-url" placeholder="https://vk.com/public123456 или club123456" required>
@@ -1283,8 +1469,23 @@ function getMainPanelHtml() {
   </div>
 
   <div class="header">
+    <div class="header-controls">
+      <button class="collapse-btn" onclick="togglePanel()">
+        <span id="toggle-icon">▼</span> <span id="toggle-text">Свернуть</span>
+      </button>
+    </div>
     <h1>VK→Telegram Manager</h1>
     <p>Кросспостинг из ВКонтакте в Telegram</p>
+  </div>
+  
+  <!-- Mini controls (shown when collapsed) -->
+  <div class="mini-controls" id="mini-controls">
+    <div class="mini-info">
+      <strong>VK→TG Manager:</strong> <span id="mini-status">Система готова к работе</span>
+    </div>
+    <button class="btn-primary" onclick="togglePanel()">
+      <span id="toggle-icon-mini">▲</span> Развернуть панель
+    </button>
   </div>
 
   <div class="content">
@@ -1474,15 +1675,31 @@ function getMainPanelHtml() {
       } else {
         bindingsList.innerHTML = bindings.map(binding => {
           const isPaused = binding.status === "paused";
+          
+          // Получаем название связки и описание
+          const bindingName = binding.bindingName || binding.binding_name || null;
+          const bindingDesc = binding.bindingDescription || binding.binding_description || null;
+          
+          // Получаем VK и TG данные
+          const vkUrl = binding.vkGroupUrl || binding.vk_group_url || 'N/A';
+          const tgChat = binding.tgChatId || binding.tg_chat_id || 'N/A';
+          
           return \`
             <div class="binding-item \${isPaused ? 'paused' : ''}" style="margin-bottom: 12px;">
               <div class="binding-header">
                 <div class="binding-info">
-                  <div class="binding-vk">📰 \${binding.vkGroupUrl || binding.vk_group_url || 'N/A'}</div>
-                  <div class="binding-tg">📱 \${binding.tgChatId || binding.tg_chat_id || 'N/A'}</div>
+                  <!-- Показываем название связки крупно -->
+                  \${bindingName ? \`<div class="binding-vk" style="font-size: 16px; color: #667eea; margin-bottom: 6px;">📌 \${bindingName}</div>\` : ''}
+                  \${bindingDesc ? \`<div style="font-size: 12px; color: #666; margin-bottom: 6px; font-style: italic;">\${bindingDesc}</div>\` : ''}
+                  
+                  <!-- VK и TG мельче -->
+                  <div style="font-size: 12px; color: #888; margin-top: 4px;">
+                    📰 VK: \${vkUrl}<br>
+                    📱 TG: \${tgChat}
+                  </div>
                 </div>
                 <div class="binding-actions">
-                  <button class="btn-small btn-success" onclick="testBinding('\${binding.id}')" title="Отправить тестовый пост">🧪</button>
+                  <button class="btn-small btn-success" onclick="publishBinding('\${binding.id}')" title="▶️ Опубликовать последний пост">▶️</button>
                   <button class="btn-small btn-warning" onclick="toggleBinding('\${binding.id}')" title="\${binding.status === 'active' ? 'Пауза' : 'Включить'}">\${binding.status === 'active' ? '⏸️' : '▶️'}</button>
                   <button class="btn-small btn-secondary" onclick="editBinding('\${binding.id}')" title="Редактировать">✏️</button>
                   <button class="btn-small btn-danger" onclick="deleteBinding('\${binding.id}')" title="Удалить">🗑️</button>
@@ -1634,6 +1851,9 @@ function getMainPanelHtml() {
     }
 
     function submitBinding() {
+      // Читаем название и описание
+      const bindingName = document.getElementById("modal-binding-name").value.trim();
+      const bindingDescription = document.getElementById("modal-binding-description").value.trim();
       const vkUrl = document.getElementById("modal-vk-url").value.trim();
       const tgChat = document.getElementById("modal-tg-chat").value.trim();
       
@@ -1648,8 +1868,9 @@ function getMainPanelHtml() {
         syncPostsCount: parseInt(syncPosts, 10)
       };
 
-      if (!vkUrl || !tgChat) {
-        showModalMessage("error", "❌ Заполните все поля");
+      // Валидация обязательных полей
+      if (!bindingName || !vkUrl || !tgChat) {
+        showModalMessage("error", "❌ Заполните все обязательные поля (название, VK URL, TG Chat)");
         return;
       }
 
@@ -1659,8 +1880,8 @@ function getMainPanelHtml() {
       const isEdit = !!appState.currentEditingId;
       const action = isEdit ? "editBinding" : "addBinding";
       const params = isEdit 
-        ? [appState.currentEditingId, vkUrl, tgChat, formatSettings] 
-        : [vkUrl, tgChat, formatSettings];
+        ? [appState.currentEditingId, bindingName, bindingDescription, vkUrl, tgChat, formatSettings] 
+        : [bindingName, bindingDescription, vkUrl, tgChat, formatSettings];
 
       google.script.run
         .withSuccessHandler(function(result) {
@@ -1686,30 +1907,35 @@ function getMainPanelHtml() {
         [action](...params);
     }
 
-    function testBinding(bindingId) {
-      if (!confirm("Отправить тестовый пост в Telegram?\\n\\nЭто поможет проверить настройки связки.")) {
+    function publishBinding(bindingId) {
+      if (!confirm("▶️ Опубликовать последний пост из VK в Telegram?\\n\\nПост будет отправлен в канал согласно настройкам связки.")) {
         return;
       }
 
-      showMessage("bindings", "loading", "🧪 Отправка тестового поста...");
-      logMessageToConsole("Testing binding: " + bindingId);
+      showMessage("bindings", "loading", "▶️ Публикация последнего поста...");
+      logMessageToConsole("Publishing last post for binding: " + bindingId);
 
       google.script.run
         .withSuccessHandler(function(result) {
           if (result && result.success) {
-            showMessage("bindings", "success", "✅ Тестовый пост отправлен!");
-            logMessageToConsole("Test binding successful for ID: " + bindingId);
+            showMessage("bindings", "success", "✅ Пост опубликован в Telegram!");
+            logMessageToConsole("Publish binding successful for ID: " + bindingId);
           } else {
-            const errorMsg = result?.error || "Ошибка тестирования";
+            const errorMsg = result?.error || "Ошибка публикации";
             showMessage("bindings", "error", "❌ " + errorMsg);
-            logMessageToConsole("Test binding failed: " + errorMsg);
+            logMessageToConsole("Publish binding failed: " + errorMsg);
           }
         })
         .withFailureHandler(function(error) {
           showMessage("bindings", "error", "❌ Ошибка: " + error.message);
-          logMessageToConsole("Test binding error: " + error.message);
+          logMessageToConsole("Publish binding error: " + error.message);
         })
-        .testPublication(bindingId);
+        .publishLastPost(bindingId);
+    }
+
+    // Alias для обратной совместимости
+    function testBinding(bindingId) {
+      return publishBinding(bindingId);
     }
 
     function toggleBinding(bindingId) {
@@ -1976,6 +2202,51 @@ function getMainPanelHtml() {
         showMessage("bindings", "error", "❌ Ошибка: " + error.message);
         logMessageToConsole("All stores toggle exception: " + error.message);
         checkbox.checked = !isDisabled;
+      }
+    }
+
+    // Collapse/Expand panel functionality
+    let isPanelCollapsed = false;
+    
+    function togglePanel() {
+      isPanelCollapsed = !isPanelCollapsed;
+      
+      const content = document.querySelector('.content');
+      const miniControls = document.getElementById('mini-controls');
+      const toggleIcon = document.getElementById('toggle-icon');
+      const toggleText = document.getElementById('toggle-text');
+      const toggleIconMini = document.getElementById('toggle-icon-mini');
+      
+      if (isPanelCollapsed) {
+        // Collapse
+        content.classList.add('collapsed');
+        miniControls.classList.add('show');
+        toggleIcon.textContent = '▲';
+        toggleText.textContent = 'Развернуть';
+        
+        // Update mini status based on app state
+        updateMiniStatus();
+        
+        logMessageToConsole('Panel collapsed');
+      } else {
+        // Expand
+        content.classList.remove('collapsed');
+        miniControls.classList.remove('show');
+        toggleIcon.textContent = '▼';
+        toggleText.textContent = 'Свернуть';
+        
+        logMessageToConsole('Panel expanded');
+      }
+    }
+    
+    function updateMiniStatus() {
+      const miniStatus = document.getElementById('mini-status');
+      if (!appState.license) {
+        miniStatus.textContent = 'Требуется активация лицензии';
+      } else if (appState.stats.active > 0) {
+        miniStatus.textContent = `Работает ${appState.stats.active} ${appState.stats.active === 1 ? 'связка' : 'связок'}`;
+      } else {
+        miniStatus.textContent = 'Нет активных связок';
       }
     }
 
