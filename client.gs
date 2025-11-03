@@ -1156,13 +1156,21 @@ function logEvent(level, event, source, details) {
     });
     const timestamp = `${dateStr} ${timeStr}`;
     
-    sheet.getRange(2, 1, 1, 5).setValues([[
+    const logRange = sheet.getRange(2, 1, 1, 5);
+    
+    // Устанавливаем значения
+    logRange.setValues([[
       timestamp,
       level,
       event,
       source || "client",
       details || ""
     ]]);
+    
+    // ВАЖНО: Устанавливаем обычное форматирование (черный текст, белый фон, не жирный)
+    logRange.setBackground("white");
+    logRange.setFontColor("black");
+    logRange.setFontWeight("normal");
     
     // Авточистка: оставляем только последние 5000 записей
     const MAX_LOG_RECORDS = 5000;
