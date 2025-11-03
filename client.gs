@@ -579,7 +579,8 @@ function checkNewPosts() {
           continue;
         }
         
-        const posts = getVkPosts(binding.vkGroupUrl);
+        // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: передаем ID, а не URL!
+        const posts = getVkPosts(vkGroupId);
         logEvent("DEBUG", "vk_posts_fetched", "client", `VK Group: ${vkGroupId}, Posts: ${posts?.length || 0}`);
         
         if (!posts || posts.length === 0) {
@@ -719,26 +720,26 @@ function sendPostToServer(licenseKey, bindingId, vkPost) {
 // 4. VK API ФУНКЦИИ
 // ============================================
 
-function getVkPosts(vkGroupUrl) {
+function getVkPosts(vkGroupId) {
   try {
-    logEvent("DEBUG", "get_vk_posts_start", "client", `VK Group URL: ${vkGroupUrl}`);
+    logEvent("DEBUG", "get_vk_posts_start", "client", `VK Group ID: ${vkGroupId}`);
     
     // Получаем лицензию для аутентификации на сервере
     const license = getLicense();
     if (!license) {
-      logEvent("ERROR", "no_license_for_vk_posts", "client", `Group: ${vkGroupUrl}`);
+      logEvent("ERROR", "no_license_for_vk_posts", "client", `Group: ${vkGroupId}`);
       return [];
     }
     
-    // Теперь делаем запрос к серверу вместо прямого обращения к VK API
+    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: отправляем vk_group_id, а не vk_group_url
     const payload = {
       event: "get_vk_posts",
       license_key: license.key,
-      vk_group_url: vkGroupUrl,
+      vk_group_id: vkGroupId,  // Отправляем ID напрямую!
       count: MAX_POSTS_CHECK
     };
     
-    logEvent("DEBUG", "server_vk_request", "client", `Group: ${vkGroupUrl}, Count: ${MAX_POSTS_CHECK}`);
+    logEvent("DEBUG", "server_vk_request", "client", `Group ID: ${vkGroupId}, Count: ${MAX_POSTS_CHECK}`);
     
     const response = UrlFetchApp.fetch(SERVER_URL, {
       method: 'POST',
@@ -751,20 +752,20 @@ function getVkPosts(vkGroupUrl) {
     const data = JSON.parse(response.getContentText());
     
     logEvent("DEBUG", "server_vk_response", "client", 
-             `Group: ${vkGroupUrl}, Success: ${!!data.success}, Status: ${response.getResponseCode()}`);
+             `Group ID: ${vkGroupId}, Success: ${!!data.success}, Status: ${response.getResponseCode()}`);
     
     if (!data.success) {
       const errorMsg = data.error || "Unknown server error";
       logEvent("ERROR", "server_vk_error", "client",
-               `Group: ${vkGroupUrl}, Server error: ${errorMsg}`);
+               `Group ID: ${vkGroupId}, Server error: ${errorMsg}`);
       
       // Возвращаем информативную ошибку в зависимости от типа
       if (errorMsg.includes("VK User Access Token not configured")) {
-        logEvent("WARN", "vk_token_not_configured", "client", `Group: ${vkGroupUrl}`);
+        logEvent("WARN", "vk_token_not_configured", "client", `Group ID: ${vkGroupId}`);
       } else if (errorMsg.includes("User authorization failed")) {
-        logEvent("WARN", "vk_token_invalid", "client", `Group: ${vkGroupUrl}`);
+        logEvent("WARN", "vk_token_invalid", "client", `Group ID: ${vkGroupId}`);
       } else if (errorMsg.includes("Access denied")) {
-        logEvent("WARN", "vk_access_denied", "client", `Group: ${vkGroupUrl}`);
+        logEvent("WARN", "vk_access_denied", "client", `Group ID: ${vkGroupId}`);
       }
       
       return [];
@@ -773,13 +774,13 @@ function getVkPosts(vkGroupUrl) {
     const posts = data.posts || [];
     
     logEvent("INFO", "vk_posts_retrieved", "client",
-             `Group: ${vkGroupUrl}, Posts count: ${posts.length}, Total available: ${data.total_count || 'unknown'}`);
+             `Group ID: ${vkGroupId}, Posts count: ${posts.length}, Total available: ${data.total_count || 'unknown'}`);
     
     return posts;
     
   } catch (error) {
     logEvent("ERROR", "vk_posts_error", "client",
-             `Group: ${vkGroupUrl}, Error: ${error.message}`);
+             `Group ID: ${vkGroupId}, Error: ${error.message}`);
     return [];
   }
 }
