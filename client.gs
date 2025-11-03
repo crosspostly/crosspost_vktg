@@ -1377,6 +1377,15 @@ function getMainPanelHtml() {
     .modal-form { display: flex; flex-direction: column; gap: 20px; }
     .modal-buttons { display: flex; gap: 12px; margin-top: 20px; }
     .modal-buttons button { flex: 1; }
+    
+    /* Collapse/Expand styles */
+    .header-controls { position: absolute; top: 30px; right: 40px; }
+    .collapse-btn { background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.3s; }
+    .collapse-btn:hover { background: rgba(255,255,255,0.3); }
+    .content.collapsed { display: none; }
+    .mini-controls { display: none; padding: 20px 40px; background: #f5f7fa; border-top: 2px solid #667eea; }
+    .mini-controls.show { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+    .mini-info { flex: 1; font-size: 14px; color: #666; }
   </style>
 </head>
 <body>
@@ -1459,8 +1468,23 @@ function getMainPanelHtml() {
   </div>
 
   <div class="header">
+    <div class="header-controls">
+      <button class="collapse-btn" onclick="togglePanel()">
+        <span id="toggle-icon">▼</span> <span id="toggle-text">Свернуть</span>
+      </button>
+    </div>
     <h1>VK→Telegram Manager</h1>
     <p>Кросспостинг из ВКонтакте в Telegram</p>
+  </div>
+  
+  <!-- Mini controls (shown when collapsed) -->
+  <div class="mini-controls" id="mini-controls">
+    <div class="mini-info">
+      <strong>VK→TG Manager:</strong> <span id="mini-status">Система готова к работе</span>
+    </div>
+    <button class="btn-primary" onclick="togglePanel()">
+      <span id="toggle-icon-mini">▲</span> Развернуть панель
+    </button>
   </div>
 
   <div class="content">
@@ -2177,6 +2201,51 @@ function getMainPanelHtml() {
         showMessage("bindings", "error", "❌ Ошибка: " + error.message);
         logMessageToConsole("All stores toggle exception: " + error.message);
         checkbox.checked = !isDisabled;
+      }
+    }
+
+    // Collapse/Expand panel functionality
+    let isPanelCollapsed = false;
+    
+    function togglePanel() {
+      isPanelCollapsed = !isPanelCollapsed;
+      
+      const content = document.querySelector('.content');
+      const miniControls = document.getElementById('mini-controls');
+      const toggleIcon = document.getElementById('toggle-icon');
+      const toggleText = document.getElementById('toggle-text');
+      const toggleIconMini = document.getElementById('toggle-icon-mini');
+      
+      if (isPanelCollapsed) {
+        // Collapse
+        content.classList.add('collapsed');
+        miniControls.classList.add('show');
+        toggleIcon.textContent = '▲';
+        toggleText.textContent = 'Развернуть';
+        
+        // Update mini status based on app state
+        updateMiniStatus();
+        
+        logMessageToConsole('Panel collapsed');
+      } else {
+        // Expand
+        content.classList.remove('collapsed');
+        miniControls.classList.remove('show');
+        toggleIcon.textContent = '▼';
+        toggleText.textContent = 'Свернуть';
+        
+        logMessageToConsole('Panel expanded');
+      }
+    }
+    
+    function updateMiniStatus() {
+      const miniStatus = document.getElementById('mini-status');
+      if (!appState.license) {
+        miniStatus.textContent = 'Требуется активация лицензии';
+      } else if (appState.stats.active > 0) {
+        miniStatus.textContent = `Работает ${appState.stats.active} ${appState.stats.active === 1 ? 'связка' : 'связок'}`;
+      } else {
+        miniStatus.textContent = 'Нет активных связок';
       }
     }
 
