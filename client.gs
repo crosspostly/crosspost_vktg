@@ -1127,13 +1127,42 @@ function logEvent(level, event, source, details) {
     
     const sheet = getOrCreateLogsSheet();
     
-    sheet.appendRow([
-      new Date().toISOString(),
+    // Вставляем новую запись СРАЗУ ПОСЛЕ ЗАГОЛОВКА (строка 2)
+    // Это делает свежие логи видимыми сверху
+    sheet.insertRowAfter(1);
+    
+    // Форматируем дату и время в читаемом виде
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('ru-RU', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric' 
+    });
+    const timeStr = now.toLocaleTimeString('ru-RU', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      second: '2-digit'
+    });
+    const timestamp = `${dateStr} ${timeStr}`;
+    
+    sheet.getRange(2, 1, 1, 5).setValues([[
+      timestamp,
       level,
       event,
       source || "client",
       details || ""
-    ]);
+    ]]);
+    
+    // Авточистка: оставляем только последние 5000 записей
+    const MAX_LOG_RECORDS = 5000;
+    const lastRow = sheet.getLastRow();
+    
+    if (lastRow > MAX_LOG_RECORDS + 1) { // +1 для заголовка
+      const rowsToDelete = lastRow - MAX_LOG_RECORDS - 1;
+      sheet.deleteRows(MAX_LOG_RECORDS + 2, rowsToDelete);
+      
+      console.log(`Log rotation: deleted ${rowsToDelete} old records, kept last ${MAX_LOG_RECORDS}`);
+    }
     
     console.log(`[${level}] ${event} (${source}): ${details}`);
     
