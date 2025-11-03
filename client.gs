@@ -785,6 +785,37 @@ function getVkPosts(vkGroupId) {
   }
 }
 
+function validateVkGroupId(id) {
+  try {
+    if (!id) {
+      logEvent("WARN", "vk_id_empty", "client", "VK Group ID is empty");
+      return false;
+    }
+    
+    // Должно быть: -123456 (для групп) или 123456 (для пользователей/страниц)
+    const isValid = /^-?\d+$/.test(id);
+    
+    if (!isValid) {
+      logEvent("ERROR", "invalid_vk_group_id_format", "client", `Invalid ID format: ${id}`);
+      return false;
+    }
+    
+    // Дополнительная проверка: ID не должен быть слишком коротким
+    const numericPart = id.replace('-', '');
+    if (numericPart.length < 4) {
+      logEvent("WARN", "vk_id_too_short", "client", `ID seems too short: ${id}`);
+      return false;
+    }
+    
+    logEvent("DEBUG", "vk_id_validated", "client", `ID is valid: ${id}`);
+    return true;
+    
+  } catch (error) {
+    logEvent("ERROR", "validate_vk_id_error", "client", `ID: ${id}, Error: ${error.message}`);
+    return false;
+  }
+}
+
 function extractVkGroupId(url) {
   try {
     if (!url || typeof url !== 'string') {
@@ -793,33 +824,43 @@ function extractVkGroupId(url) {
     }
     
     // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Удаляем query параметры (?from=groups) и якоря (#section)
+    const originalUrl = url;
     url = url.trim().toLowerCase();
     url = url.split('?')[0].split('#')[0]; // Убираем всё после ? и #
+    
+    logEvent("DEBUG", "vk_url_cleaned", "client", `Original: ${originalUrl} → Clean: ${url}`);
     
     // public123456
     const publicMatch = url.match(/public(\d+)/);
     if (publicMatch) {
       const id = "-" + publicMatch[1];
-      logEvent("DEBUG", "vk_url_parsed_public", "client", `URL: ${url}, ID: ${id}`);
-      return id;
+      if (validateVkGroupId(id)) {
+        logEvent("INFO", "vk_url_parsed_public", "client", `URL: ${url} → ID: ${id}`);
+        return id;
+      }
     }
     
     // club123456
     const clubMatch = url.match(/club(\d+)/);
     if (clubMatch) {
       const id = "-" + clubMatch[1];
-      logEvent("DEBUG", "vk_url_parsed_club", "client", `URL: ${url}, ID: ${id}`);
-      return id;
+      if (validateVkGroupId(id)) {
+        logEvent("INFO", "vk_url_parsed_club", "client", `URL: ${url} → ID: ${id}`);
+        return id;
+      }
     }
     
-    // просто число (уже ID)
+    // просто число (уже ID): -123456 или 123456
     const numMatch = url.match(/^-?\d+$/);
     if (numMatch) {
-      logEvent("DEBUG", "vk_url_parsed_numeric", "client", `URL: ${url}, ID: ${url}`);
-      return url;
+      const id = url; // Используем как есть
+      if (validateVkGroupId(id)) {
+        logEvent("INFO", "vk_url_parsed_numeric", "client", `URL: ${url} → ID: ${id}`);
+        return id;
+      }
     }
     
-    logEvent("WARN", "vk_url_not_extracted", "client", `URL: ${url}`);
+    logEvent("WARN", "vk_url_not_extracted", "client", `Could not extract valid ID from URL: ${url}`);
     return null;
     
   } catch (error) {
