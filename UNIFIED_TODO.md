@@ -1,13 +1,43 @@
 # 📋 Unified TODO — VK→Telegram Crossposter (Server + Client + Fixes + Code Samples)
 
-Обновлено: 2025-11-03 04:18 MSK
+Обновлено: 2025-11-03 04:31 MSK
 Назначение: ЕДИНЫЙ файл задач. Все прочие todo/readme/to_fix — удалить. Рабочая истина здесь.
+
+---
+
+## 🚨 КРИТИЧНЫЕ БАГИ (ИСПРАВИТЬ НЕМЕДЛЕННО)
+
+### 🐛 VK URL Parsing Bug - "Посты из левой группы"
+**Проблема:** https://vk.com/club96798355?from=groups → посты идут не из той группы!
+
+**CLIENT.GS исправления:**
+- [ ] В `checkNewPosts()`: передавать `vkGroupId` вместо `vkGroupUrl` в `getVkPosts()`
+- [ ] В `getVkPosts()`: принимать и использовать `vk_group_id` вместо `vk_group_url`
+- [ ] Добавить детальное логирование ID на каждом шаге
+- [ ] Убедиться что `extractVkGroupId()` корректно извлекает ID из URL с параметрами
+
+**SERVER.GS исправления:**
+- [ ] В `handleGetVkPosts()`: принимать `vk_group_id` вместо `vk_group_url` 
+- [ ] Валидация что получен корректный owner_id для VK API
+- [ ] Логировать реальный API запрос к VK для диагностики
+- [ ] Обработка edge cases: screen_name vs numeric ID
+
+**Диагностика:**
+```javascript
+// CLIENT: добавить в checkNewPosts()
+logEvent("DEBUG", "vk_id_extraction", "client", 
+         `URL: ${binding.vkGroupUrl} → ID: ${vkGroupId}`);
+
+// SERVER: добавить в handleGetVkPosts()  
+logEvent("DEBUG", "vk_api_request", "server",
+         `VK API URL: https://api.vk.com/method/wall.get?owner_id=${vk_group_id}`);
+```
 
 ---
 
 ## 🔧 SERVER (server.gs)
 
-### A. Рефакторинг (от простого к сложного)
+### A. Рефакторинг (от простого к сложному)
 1) API-обёртка и JSON парсер
 - [ ] makeApiRequest(service, url, options)
 - [ ] parseJsonSafe(text)
@@ -77,14 +107,21 @@
 15) Поддержка новых полей связок
 - [ ] **В handleAddBinding**: принимать binding_name, binding_description
 - [ ] **В handleEditBinding**: обновление binding_name, binding_description
-- [ ] **В Bindings листе**: добавить колонки Binding Name, Binding Description
+- [ ] **В Bindings листе**: добавить колонки "Binding Name", "Binding Description"
 - [ ] **В getUserBindingsWithNames**: возвращать название и описание связки
 - [ ] **Миграция данных**: автосоздание новых колонок при первом запуске
+- [ ] **В initializeServer**: обновить структуру Bindings листа
 
 16) Обратная совместимость
 - [ ] **Fallback логика**: если новые поля пустые → использовать VK Group Name
 - [ ] **Валидация**: обязательность binding_name при создании связки
 - [ ] **UI синхронизация**: клиент должен корректно отображать все поля с сервера
+
+17) handlePublishLastPost обработчик
+- [ ] **Новый case в doPost()**: "publish_last_post" → handlePublishLastPost()
+- [ ] **Реализация функции**: получить последний пост из VK + отправить в TG
+- [ ] **Логирование**: детальные логи публикации без передачи vk_post
+- [ ] **Интеграция с форматированием**: использовать настройки связки
 
 ---
 
@@ -142,16 +179,16 @@
 - [x] ✅ Отображение названий в карточках связок
 - [ ] **КРИТИЧНО**: server.gs должен поддерживать новые поля
 
-### E. 🚀 Оптимизация UI производительности  
-8) Ускорение операций с связками (КРИТИЧНО - 30сек → 5сек)
+### H. 🚀 Оптимизация UI производительности  
+12) Ускорение операций с связками (КРИТИЧНО - 30сек → 5сек)
 - [x] ✅ HTML-side кеширование названий (nameCache объект)
-- [x] ✅ loadBindingNamesAsync() с setTimeout разбросом
+- [x] ✅ loadBindingNamesAsync() с setTimeout разброс
 - [x] ✅ UI прогресс индикаторы (⏳ Обработка..., ✅ Готово, ❌ Ошибка)
 - [x] ✅ getCachedVkGroupName/getCachedTgChatName fallback функции
 - [ ] Убрать блокирующие API вызовы из критичных операций
 - [ ] Оптимизировать таймауты (FAST_TIMEOUT для простых операций)
 
-9) Фоновое обновление названий
+13) Фоновое обновление названий
 - [x] ✅ loadSingleBindingName() для асинхронной загрузки
 - [x] ✅ Разнесение запросов во времени (Math.random() * 1000)
 - [x] ✅ localStorage кеш в браузере с проверкой актуальности
@@ -182,50 +219,66 @@
 ## 🛠️ CODE SAMPLES (Cheat)
 
 ```javascript
-// Regex для VK-гиперссылок внутри []
-const rx = /\[([^\]|]+)\|([^\]]+)\]/g; // screen_name | Title
-text.replace(rx, (m, screen, title) => `[${title}](https://vk.com/${screen})`)
-
-// Безопасная отправка медиагруппы с caption split
-if (caption && caption.length > 1024) {
-  sendMediaGroupWithoutCaption(token, chatId, mediaUrls);
-  sendLongTextMessage(token, chatId, caption);
-} else {
-  sendMediaGroupWithCaption(token, chatId, mediaUrls, caption);
-}
-
-// Первая синхронизация N постов
-const count = sync_recent_enabled ? Math.min(sync_recent_count, 50) : 1;
-
-// Кеширование названий (Apps Script)
-function getCachedVkGroupName(groupUrl) {
-  const cache = PropertiesService.getScriptProperties();
-  const cacheKey = `vk_name_${Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, groupUrl, Utilities.Charset.UTF_8)}`;
+// ИСПРАВЛЕННЫЙ VK URL парсинг
+function extractVkGroupId(url) {
+  if (!url) throw new Error('Пустая ссылка ВК');
   
-  const cached = cache.getProperty(cacheKey);
-  if (cached) {
-    const data = JSON.parse(cached);
-    if (Date.now() - data.timestamp < 3600000) { // 1 час
-      return data.name;
+  // Убираем query параметры (?from=groups, #hash)
+  const cleanUrl = url.trim().toLowerCase().split('?')[0].split('#')[0];
+  
+  // Точные регулярки
+  const patterns = [
+    { regex: /vk\.com\/public(\d+)/i, prefix: '-' },  // public123
+    { regex: /vk\.com\/club(\d+)/i, prefix: '-' },    // club123
+    { regex: /vk\.com\/id(\d+)/i, prefix: '' },       // id123 (пользователи)
+    { regex: /^-?(\d+)$/, prefix: function(match) {   // прямой ID
+      return match[0].startsWith('-') ? '' : '-'; 
+    }}
+  ];
+
+  for (const pattern of patterns) {
+    const match = cleanUrl.match(pattern.regex);
+    if (match) {
+      const id = (typeof pattern.prefix === 'function') 
+        ? pattern.prefix(match) + match[1]
+        : pattern.prefix + match[1];
+      
+      logEvent("INFO", "vk_url_parsed", "client", `${url} → ${id}`);
+      return id;
     }
   }
-  return groupUrl; // fallback
+  
+  throw new Error(`Не удалось извлечь ID: ${url}`);
 }
 
-// HTML-side асинхронная загрузка названий
-function loadBindingNamesAsync() {
-  appState.bindings.forEach((binding, index) => {
-    setTimeout(() => {
-      google.script.run
-        .withSuccessHandler(name => {
-          if (name) document.getElementById(`vk-name-${binding.id}`).textContent = name;
-        })
-        .getCachedVkGroupName(binding.vkGroupUrl);
-    }, index * 200); // 200мс между запросами
-  });
+// CLIENT: исправить передачу ID вместо URL
+function checkNewPosts() {
+  for (const binding of activeBindings) {
+    const vkGroupId = extractVkGroupId(binding.vkGroupUrl);
+    const posts = getVkPosts(vkGroupId);  // ← ID вместо URL!
+  }
 }
 
-// SERVER: поддержка новых полей связок
+function getVkPosts(vkGroupId) {  // ← принимать ID
+  const payload = {
+    event: "get_vk_posts",
+    license_key: license.key,
+    vk_group_id: vkGroupId  // ← передать ID на сервер
+  };
+}
+
+// SERVER: обновить структуру Bindings листа
+function initializeServer() {
+  createSheet("Bindings", [
+    "Binding ID", "License Key", "User Email", 
+    "Binding Name",        // НОВОЕ поле
+    "Binding Description", // НОВОЕ поле
+    "VK Group URL", "TG Chat ID", "Status", 
+    "Created At", "Last Check", "Format Settings"
+  ]);
+}
+
+// SERVER: поддержка новых полей в handleAddBinding
 function handleAddBinding(payload, clientIp) {
   const { 
     license_key, 
@@ -244,7 +297,7 @@ function handleAddBinding(payload, clientIp) {
     }, 400);
   }
   
-  // Сохранение в Bindings с новыми полями
+  // Сохранение с новыми полями
   bindingsSheet.appendRow([
     bindingId,
     license_key,
@@ -258,6 +311,19 @@ function handleAddBinding(payload, clientIp) {
     new Date().toISOString(),
     formatSettingsString
   ]);
+}
+
+// HTML-side асинхронная загрузка названий
+function loadBindingNamesAsync() {
+  appState.bindings.forEach((binding, index) => {
+    setTimeout(() => {
+      google.script.run
+        .withSuccessHandler(name => {
+          if (name) document.getElementById(`vk-name-${binding.id}`).textContent = name;
+        })
+        .getCachedVkGroupName(binding.vkGroupUrl);
+    }, index * 200); // 200мс между запросами
+  });
 }
 
 // SIDEBAR интеграция
@@ -278,50 +344,13 @@ function openSidebar() {
 
 ---
 
-## 🚨 КРИТИЧЕСКИЕ ЗАДАЧИ ДЛЯ CLIENT-SERVER СИНХРОНИЗАЦИИ
-
-### 🔥 **НЕМЕДЛЕННО ИСПРАВИТЬ:**
-
-1) **Server.gs - обновить структуру Bindings листа:**
-```javascript
-// ТЕКУЩАЯ структура: ["Binding ID", "License Key", "User Email", "VK Group URL", "TG Chat ID", "Status", "Created At", "Last Check", "Format Settings"]
-
-// НОВАЯ структура:
-createSheet("Bindings", [
-  "Binding ID", "License Key", "User Email", 
-  "Binding Name",        // НОВОЕ поле  
-  "Binding Description", // НОВОЕ поле
-  "VK Group URL", "TG Chat ID", "Status", 
-  "Created At", "Last Check", "Format Settings"
-]);
-```
-
-2) **Все handleXXXBinding функции обновить:**
-- handleAddBinding() - поддержка binding_name, binding_description
-- handleEditBinding() - редактирование названий  
-- getUserBindingsWithNames() - возврат всех полей включая названия
-- findBindingById() - работа с новой структурой
-
-3) **Функция publishLastPost() должна быть на сервере:**
-```javascript
-// SERVER: добавить обработчик
-case "publish_last_post":
-  return handlePublishLastPost(payload, clientIp);
-
-function handlePublishLastPost(payload, clientIp) {
-  // Получить последний пост из VK и отправить в TG
-}
-```
-
----
-
 ## 📊 Статус реализации
 
 ### ✅ ВЫПОЛНЕНО (CLIENT):
 - Тестирование связок (кнопка 🧪)
 - Настройки форматирования в связках
 - Глобальное отключение магазинов
-- Автоматические триггеры 
+- Автоматические триггеры
 - Показ имен VK/TG групп в UI
 - Детальное логирование
 - Статистика и админ панель
@@ -338,15 +367,19 @@ function handlePublishLastPost(payload, clientIp) {
 - Валидация токенов при настройке
 - Пакетные операции с названиями групп
 
-### 🚧 В РАБОТЕ (КРИТИЧНО):
+### 🚨 КРИТИЧНО - НЕ РАБОТАЕТ:
+- **VK URL parsing bug** - посты из неправильных групп!
 - **Server.gs поддержка binding_name, binding_description**
 - **Миграция структуры Bindings листа**
 - **handlePublishLastPost обработчик**
-- Оптимизация производительности UI (30сек → 5сек)
+
+### 🚧 В РАБОТЕ:
 - Published-листы по названиям групп
+- Первая синхронизация N постов
+- Оптимизация производительности (30сек → 5сек)
 
 ### ⏳ ПЛАНИРУЕТСЯ:
 - API рефакторинг и утилиты
-- Строгие медиа-группы 
+- Строгие медиа-группы
 - Comprehensive error handling
 - Улучшенная обработка VK → TG ссылок
