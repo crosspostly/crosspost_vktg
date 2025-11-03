@@ -161,17 +161,19 @@ function saveLicenseWithCheck(licenseKey) {
   }
 }
 
-function addBinding(vkGroupUrl, tgChatId, formatSettings) {
+function addBinding(bindingName, bindingDescription, vkGroupUrl, tgChatId, formatSettings) {
   try {
     const license = getLicense();
     if (!license) return { success: false, error: "❌ Лицензия не найдена" };
     
     logEvent("INFO", "add_binding_start", "client", 
-             `VK URL: ${vkGroupUrl}, TG Chat: ${tgChatId}, Format settings: ${JSON.stringify(formatSettings || {})}`);
+             `Name: ${bindingName}, VK URL: ${vkGroupUrl}, TG Chat: ${tgChatId}`);
     
     const payload = {
       event: "add_binding",
       license_key: license.key,
+      binding_name: bindingName,
+      binding_description: bindingDescription || "",
       vk_group_url: vkGroupUrl,
       tg_chat_id: tgChatId,
       format_settings: formatSettings || {
@@ -195,7 +197,7 @@ function addBinding(vkGroupUrl, tgChatId, formatSettings) {
     
     if (result.success) {
       logEvent("INFO", "binding_added", "client",
-               `Binding ID: ${result.binding_id}, VK Group: ${result.converted.vk_group_id}, Sync posts: ${formatSettings?.syncPostsCount || 1}`);
+               `Binding ID: ${result.binding_id}, Name: ${bindingName}, VK Group: ${result.converted?.vk_group_id || 'N/A'}`);
       return result;
     } else {
       logEvent("WARN", "add_binding_failed", "client", result.error);
@@ -208,18 +210,20 @@ function addBinding(vkGroupUrl, tgChatId, formatSettings) {
   }
 }
 
-function editBinding(bindingId, vkGroupUrl, tgChatId, formatSettings) {
+function editBinding(bindingId, bindingName, bindingDescription, vkGroupUrl, tgChatId, formatSettings) {
   try {
     const license = getLicense();
     if (!license) return { success: false, error: "❌ Лицензия не найдена" };
     
     logEvent("INFO", "edit_binding_start", "client",
-             `Binding ID: ${bindingId}, New VK URL: ${vkGroupUrl}, Format settings: ${JSON.stringify(formatSettings || {})}`);
+             `Binding ID: ${bindingId}, Name: ${bindingName}, VK URL: ${vkGroupUrl}`);
     
     const payload = {
       event: "edit_binding",
       license_key: license.key,
       binding_id: bindingId,
+      binding_name: bindingName,
+      binding_description: bindingDescription || "",
       vk_group_url: vkGroupUrl,
       tg_chat_id: tgChatId,
       format_settings: formatSettings || {
@@ -240,7 +244,7 @@ function editBinding(bindingId, vkGroupUrl, tgChatId, formatSettings) {
     const result = JSON.parse(response.getContentText());
     
     if (result.success) {
-      logEvent("INFO", "binding_edited", "client", `Binding ID: ${bindingId}, Sync posts: ${formatSettings?.syncPostsCount || 1}`);
+      logEvent("INFO", "binding_edited", "client", `Binding ID: ${bindingId}, Name: ${bindingName}`);
     } else {
       logEvent("WARN", "edit_binding_failed", "client", result.error);
     }
@@ -387,17 +391,18 @@ function toggleBindingStatus(bindingId) {
   }
 }
 
-function testPublication(bindingId) {
+function publishLastPost(bindingId) {
   try {
     const license = getLicense();
     if (!license) return { success: false, error: "❌ Лицензия не найдена" };
     
-    logEvent("INFO", "test_publication_start", "client", `Binding ID: ${bindingId}`);
+    logEvent("INFO", "publish_last_post_start", "client", `Binding ID: ${bindingId}`);
     
     const payload = {
-      event: "test_publication",
+      event: "send_post",  // Используем send_post БЕЗ vk_post — сервер опубликует последний пост
       license_key: license.key,
       binding_id: bindingId
+      // vk_post НЕ передаем — сервер сам возьмет последний или N постов по настройке
     };
     
     const response = UrlFetchApp.fetch(SERVER_URL, {
@@ -411,17 +416,22 @@ function testPublication(bindingId) {
     const result = JSON.parse(response.getContentText());
     
     if (result.success) {
-      logEvent("INFO", "test_publication_success", "client", `Binding ID: ${bindingId}`);
+      logEvent("INFO", "publish_last_post_success", "client", `Binding ID: ${bindingId}, Message ID: ${result.message_id || 'N/A'}`);
     } else {
-      logEvent("WARN", "test_publication_failed", "client", result.error);
+      logEvent("WARN", "publish_last_post_failed", "client", result.error);
     }
     
     return result;
     
   } catch (error) {
-    logEvent("ERROR", "test_publication_error", "client", error.message);
+    logEvent("ERROR", "publish_last_post_error", "client", error.message);
     return { success: false, error: error.message };
   }
+}
+
+// Alias для обратной совместимости
+function testPublication(bindingId) {
+  return publishLastPost(bindingId);
 }
 
 function setGlobalSetting(settingKey, settingValue) {
@@ -683,12 +693,13 @@ function checkNewPosts() {
           const sendResult = sendPostToServer(license.key, binding.id, post);
           
           if (sendResult.success) {
-            // Получаем названия VK группы и TG чата для Published листов
-            const vkGroupName = getVkGroupName(binding.vkGroupUrl);
-            const tgChatName = getTelegramChatName(binding.tgChatId);
+            // УБРАЛИ МЕДЛЕННЫЕ ВЫЗОВЫ - используем имена из binding напрямую
+            // Названия теперь хранятся в самой связке (bindingName, не путать с vkGroupName)
+            const bindingName = binding.bindingName || binding.binding_name || null;
+            const tgChatId = binding.tgChatId || binding.tg_chat_id;
             
-            // Передаем расширенную информацию в markPostAsSent
-            markPostAsSent(vkGroupId, post.id, binding.tgChatId, post.text, vkGroupName, tgChatName);
+            // Передаем информацию в markPostAsSent БЕЗ запросов к серверу
+            markPostAsSent(vkGroupId, post.id, tgChatId, post.text, bindingName, null);
             postsSent++;
             
             logEvent("INFO", "post_sent_to_telegram", "client",
@@ -1191,8 +1202,49 @@ function getOrCreateLogsSheet() {
 }
 
 // ============================================
-// 7. УПРАВЛЕНИЕ ТРИГГЕРАМИ
+// 7. УПРАВЛЕНИЕ ТРИГГЕРАМИ И РАЗРЕШЕНИЯМИ
 // ============================================
+
+/**
+ * Функция для первичной активации разрешений ScriptApp
+ * Пользователь должен запустить её вручную из редактора Apps Script
+ */
+function doFirstAuth() {
+  try {
+    logEvent("INFO", "first_auth_start", "client", "User manually requested authorization");
+    
+    // Пытаемся получить доступ к триггерам (требует авторизации)
+    const triggers = ScriptApp.getProjectTriggers();
+    
+    logEvent("INFO", "first_auth_success", "client", `Authorization granted, ${triggers.length} triggers found`);
+    
+    SpreadsheetApp.getUi().alert(
+      "✅ Разрешения активированы!\n\n" +
+      "Теперь вы можете настроить автопроверку из панели управления."
+    );
+    
+    return { success: true, message: "Authorization granted" };
+    
+  } catch (error) {
+    logEvent("ERROR", "first_auth_error", "client", error.message);
+    SpreadsheetApp.getUi().alert("❌ Ошибка авторизации: " + error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Проверяет, есть ли у скрипта разрешения ScriptApp
+ */
+function checkScriptAppPermissions() {
+  try {
+    ScriptApp.getProjectTriggers();
+    logEvent("DEBUG", "scriptapp_permissions_ok", "client", "ScriptApp permissions available");
+    return { success: true, hasPermissions: true };
+  } catch (error) {
+    logEvent("WARN", "scriptapp_permissions_missing", "client", error.message);
+    return { success: true, hasPermissions: false, error: error.message };
+  }
+}
 
 function setupTrigger() {
   try {
@@ -1223,7 +1275,22 @@ function setupTrigger() {
     
   } catch (error) {
     logEvent("ERROR", "trigger_setup_error", "client", error.message);
-    SpreadsheetApp.getUi().alert("❌ Ошибка установки триггера: " + error.message);
+    
+    // Если ошибка связана с разрешениями, показываем подробное сообщение
+    if (error.message.includes("Authorization") || error.message.includes("permission")) {
+      SpreadsheetApp.getUi().alert(
+        "❌ Ошибка: Недостаточно разрешений!\n\n" +
+        "Для настройки автопроверки нужно активировать разрешения ScriptApp.\n\n" +
+        "Инструкция:\n" +
+        "1. Откройте редактор Apps Script (Расширения → Apps Script)\n" +
+        "2. Найдите функцию 'doFirstAuth' в файле client.gs\n" +
+        "3. Нажмите кнопку 'Выполнить' (▶️)\n" +
+        "4. Разрешите доступ к ScriptApp\n" +
+        "5. Вернитесь сюда и повторите попытку"
+      );
+    } else {
+      SpreadsheetApp.getUi().alert("❌ Ошибка установки триггера: " + error.message);
+    }
   }
 }
 
@@ -1387,6 +1454,21 @@ function getMainPanelHtml() {
       </div>
       <div id="modal-message" class="message"></div>
       <form class="modal-form" onsubmit="event.preventDefault(); submitBinding();">
+        <!-- Название и описание связки -->
+        <div class="form-group">
+          <label>📝 Название связки <span style="color: red;">*</span></label>
+          <input type="text" id="modal-binding-name" placeholder="Например: Новости компании, Акции магазина..." required maxlength="100">
+          <div class="hint">Короткое название, чтобы легко отличать связки друг от друга</div>
+        </div>
+        
+        <div class="form-group">
+          <label>📄 Описание (необязательно)</label>
+          <textarea id="modal-binding-description" placeholder="Дополнительная информация о связке..." rows="2" style="width: 100%; padding: 12px; border: 2px solid #f0f0f0; border-radius: 8px; font-size: 14px; font-family: inherit; resize: vertical;" maxlength="500"></textarea>
+          <div class="hint">Дополнительные заметки, если нужны</div>
+        </div>
+        
+        <div style="border-top: 1px solid #f0f0f0; margin: 20px 0; padding-top: 20px;"></div>
+        
         <div class="form-group">
           <label>URL группы ВКонтакте</label>
           <input type="text" id="modal-vk-url" placeholder="https://vk.com/public123456 или club123456" required>
@@ -1629,15 +1711,31 @@ function getMainPanelHtml() {
       } else {
         bindingsList.innerHTML = bindings.map(binding => {
           const isPaused = binding.status === "paused";
+          
+          // Получаем название связки и описание
+          const bindingName = binding.bindingName || binding.binding_name || null;
+          const bindingDesc = binding.bindingDescription || binding.binding_description || null;
+          
+          // Получаем VK и TG данные
+          const vkUrl = binding.vkGroupUrl || binding.vk_group_url || 'N/A';
+          const tgChat = binding.tgChatId || binding.tg_chat_id || 'N/A';
+          
           return \`
             <div class="binding-item \${isPaused ? 'paused' : ''}" style="margin-bottom: 12px;">
               <div class="binding-header">
                 <div class="binding-info">
-                  <div class="binding-vk">📰 \${binding.vkGroupUrl || binding.vk_group_url || 'N/A'}</div>
-                  <div class="binding-tg">📱 \${binding.tgChatId || binding.tg_chat_id || 'N/A'}</div>
+                  <!-- Показываем название связки крупно -->
+                  \${bindingName ? \`<div class="binding-vk" style="font-size: 16px; color: #667eea; margin-bottom: 6px;">📌 \${bindingName}</div>\` : ''}
+                  \${bindingDesc ? \`<div style="font-size: 12px; color: #666; margin-bottom: 6px; font-style: italic;">\${bindingDesc}</div>\` : ''}
+                  
+                  <!-- VK и TG мельче -->
+                  <div style="font-size: 12px; color: #888; margin-top: 4px;">
+                    📰 VK: \${vkUrl}<br>
+                    📱 TG: \${tgChat}
+                  </div>
                 </div>
                 <div class="binding-actions">
-                  <button class="btn-small btn-success" onclick="testBinding('\${binding.id}')" title="Отправить тестовый пост">🧪</button>
+                  <button class="btn-small btn-success" onclick="publishBinding('\${binding.id}')" title="▶️ Опубликовать последний пост">▶️</button>
                   <button class="btn-small btn-warning" onclick="toggleBinding('\${binding.id}')" title="\${binding.status === 'active' ? 'Пауза' : 'Включить'}">\${binding.status === 'active' ? '⏸️' : '▶️'}</button>
                   <button class="btn-small btn-secondary" onclick="editBinding('\${binding.id}')" title="Редактировать">✏️</button>
                   <button class="btn-small btn-danger" onclick="deleteBinding('\${binding.id}')" title="Удалить">🗑️</button>
@@ -1789,6 +1887,9 @@ function getMainPanelHtml() {
     }
 
     function submitBinding() {
+      // Читаем название и описание
+      const bindingName = document.getElementById("modal-binding-name").value.trim();
+      const bindingDescription = document.getElementById("modal-binding-description").value.trim();
       const vkUrl = document.getElementById("modal-vk-url").value.trim();
       const tgChat = document.getElementById("modal-tg-chat").value.trim();
       
@@ -1803,8 +1904,9 @@ function getMainPanelHtml() {
         syncPostsCount: parseInt(syncPosts, 10)
       };
 
-      if (!vkUrl || !tgChat) {
-        showModalMessage("error", "❌ Заполните все поля");
+      // Валидация обязательных полей
+      if (!bindingName || !vkUrl || !tgChat) {
+        showModalMessage("error", "❌ Заполните все обязательные поля (название, VK URL, TG Chat)");
         return;
       }
 
@@ -1814,8 +1916,8 @@ function getMainPanelHtml() {
       const isEdit = !!appState.currentEditingId;
       const action = isEdit ? "editBinding" : "addBinding";
       const params = isEdit 
-        ? [appState.currentEditingId, vkUrl, tgChat, formatSettings] 
-        : [vkUrl, tgChat, formatSettings];
+        ? [appState.currentEditingId, bindingName, bindingDescription, vkUrl, tgChat, formatSettings] 
+        : [bindingName, bindingDescription, vkUrl, tgChat, formatSettings];
 
       google.script.run
         .withSuccessHandler(function(result) {
@@ -1841,30 +1943,35 @@ function getMainPanelHtml() {
         [action](...params);
     }
 
-    function testBinding(bindingId) {
-      if (!confirm("Отправить тестовый пост в Telegram?\\n\\nЭто поможет проверить настройки связки.")) {
+    function publishBinding(bindingId) {
+      if (!confirm("▶️ Опубликовать последний пост из VK в Telegram?\\n\\nПост будет отправлен в канал согласно настройкам связки.")) {
         return;
       }
 
-      showMessage("bindings", "loading", "🧪 Отправка тестового поста...");
-      logMessageToConsole("Testing binding: " + bindingId);
+      showMessage("bindings", "loading", "▶️ Публикация последнего поста...");
+      logMessageToConsole("Publishing last post for binding: " + bindingId);
 
       google.script.run
         .withSuccessHandler(function(result) {
           if (result && result.success) {
-            showMessage("bindings", "success", "✅ Тестовый пост отправлен!");
-            logMessageToConsole("Test binding successful for ID: " + bindingId);
+            showMessage("bindings", "success", "✅ Пост опубликован в Telegram!");
+            logMessageToConsole("Publish binding successful for ID: " + bindingId);
           } else {
-            const errorMsg = result?.error || "Ошибка тестирования";
+            const errorMsg = result?.error || "Ошибка публикации";
             showMessage("bindings", "error", "❌ " + errorMsg);
-            logMessageToConsole("Test binding failed: " + errorMsg);
+            logMessageToConsole("Publish binding failed: " + errorMsg);
           }
         })
         .withFailureHandler(function(error) {
           showMessage("bindings", "error", "❌ Ошибка: " + error.message);
-          logMessageToConsole("Test binding error: " + error.message);
+          logMessageToConsole("Publish binding error: " + error.message);
         })
-        .testPublication(bindingId);
+        .publishLastPost(bindingId);
+    }
+
+    // Alias для обратной совместимости
+    function testBinding(bindingId) {
+      return publishBinding(bindingId);
     }
 
     function toggleBinding(bindingId) {
