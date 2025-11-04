@@ -79,20 +79,58 @@
 
 ---
 
-## 🛠️ CODE SAMPLES (актуализировано)
+## 🛠️ CODE SAMPLES (обновлено 2025-11-04)
 
 ```javascript
-// CLIENT: передача ID
-const vkGroupId = extractVkGroupId(binding.vkGroupUrl);
-const posts = getVkPosts(vkGroupId);
+// CLIENT: extractVkGroupId с удалением query параметров
+function extractVkGroupId(url) {
+  url = url.trim().toLowerCase();
+  url = url.split('?')[0].split('#')[0]; // Убираем query и якоря
+  
+  const publicMatch = url.match(/public(\d+)/);
+  if (publicMatch) return "-" + publicMatch[1];
+  
+  const clubMatch = url.match(/club(\d+)/);
+  if (clubMatch) return "-" + clubMatch[1];
+  
+  const numMatch = url.match(/^-?\d+$/);
+  if (numMatch) return url;
+  
+  return null;
+}
 
-// SERVER: чтение ID
-function handleGetVkPosts(payload) {
-  const { vk_group_id, count = 50 } = payload;
-  if (!/^-?\d+$/.test(vk_group_id)) return fail("Invalid vk_group_id");
-  const url = `https://api.vk.com/method/wall.get?owner_id=${vk_group_id}&count=${count}&v=${VK_API_VERSION}&access_token=${VK_TOKEN}`;
-  logApiCall('VK_API', url);
-  // ... fetch, handle errors
+// CLIENT: передача ID на сервер
+const vkGroupId = extractVkGroupId(binding.vkGroupUrl);
+const posts = getVkPosts(vkGroupId); // Передаем ID, не URL!
+
+// SERVER: handleGetVkPosts с валидацией
+function handleGetVkPosts(payload, clientIp) {
+  const { license_key, vk_group_id, count = 50 } = payload;
+  
+  // Валидация vk_group_id
+  if (!/^-?\d+$/.test(vk_group_id)) {
+    return ContentService.createTextOutput(JSON.stringify({
+      success: false,
+      error: "Invalid vk_group_id format. Expected: -123456 or 123456"
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+  
+  const logUrl = `https://api.vk.com/method/wall.get?owner_id=${vk_group_id}&count=${count}&v=${VK_API_VERSION}&access_token=[HIDDEN]`;
+  logEvent("DEBUG", "vk_api_request", license_key, `Request URL: ${logUrl}, Group ID: ${vk_group_id}, IP: ${clientIp}`);
+  
+  // ... VK API call and error handling
+}
+
+// PUBLISHED SHEETS: новое именование
+function getOrCreatePublishedPostsSheet(bindingName, vkGroupId) {
+  let sheetName;
+  if (bindingName) {
+    const safeName = bindingName.replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '').replace(/\s+/g, '_').substring(0, 27);
+    sheetName = `Published_${safeName}`;
+  } else {
+    sheetName = `Published_${Math.abs(parseInt(vkGroupId) || 0)}`;
+  }
+  // ... создание листа
 }
 ```
 
