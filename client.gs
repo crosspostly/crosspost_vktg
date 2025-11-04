@@ -27,6 +27,9 @@ const SERVER_URL = "https://script.google.com/macros/s/AKfycbzNlXEfpsiMi1UAgaXJW
 const CACHE_DURATION = 10 * 60 * 1000; // 10 минут
 const MAX_POSTS_CHECK = 50;
 const REQUEST_TIMEOUT = 30000;
+var LICENSE_CACHE_TTL_MS = 30 * 60 * 1000; // 30 минут
+var USER_PROP_LICENSE_KEY = 'LICENSE_KEY';
+var USER_PROP_LICENSE_META = 'LICENSE_META'; // JSON: { type, maxGroups, expires, cachedAt }
 
 // ============================================
 // 1. ИНИЦИАЛИЗАЦИЯ И МЕНЮ
@@ -177,7 +180,7 @@ function addBinding(bindingName, bindingDescription, vkGroupUrl, tgChatId, forma
       binding_description: bindingDescription || "",
       vk_group_url: vkGroupUrl,
       tg_chat_id: tgChatId,
-      format_settings: formatSettings || {
+      formatSettings: formatSettings || {
         boldFirstLine: true,
         boldUppercase: true,
         syncPostsCount: 1
@@ -260,7 +263,7 @@ function editBinding(bindingId, bindingName, bindingDescription, vkGroupUrl, tgC
       binding_description: bindingDescription || "",
       vk_group_url: vkGroupUrl,
       tg_chat_id: tgChatId,
-      format_settings: formatSettings || {
+      formatSettings: formatSettings || {
         boldFirstLine: true,
         boldUppercase: true,
         syncPostsCount: 1
@@ -295,6 +298,7 @@ function editBinding(bindingId, bindingName, bindingDescription, vkGroupUrl, tgC
     return { success: false, error: error.message };
   }
 }
+
 
 function deleteBinding(bindingId) {
   try {
@@ -1559,7 +1563,8 @@ function getMainPanelHtml() {
       </div>
       <div id="modal-message" class="message"></div>
       <form class="modal-form" onsubmit="event.preventDefault(); submitBinding();">
-        <!-- Название и описание связки -->
+        
+        <!-- ✅ НОВЫЕ ПОЛЯ ДЛЯ НАЗВАНИЯ И ОПИСАНИЯ: -->
         <div class="form-group">
           <label>📝 Название связки <span style="color: red;">*</span></label>
           <input type="text" id="modal-binding-name" placeholder="Например: Новости компании, Акции магазина..." required maxlength="100">
@@ -1574,18 +1579,20 @@ function getMainPanelHtml() {
         
         <div style="border-top: 1px solid #f0f0f0; margin: 20px 0; padding-top: 20px;"></div>
         
+        <!-- ОСНОВНЫЕ ПОЛЯ: -->
         <div class="form-group">
-          <label>URL группы ВКонтакте</label>
+          <label>🔗 URL группы ВКонтакте <span style="color: red;">*</span></label>
           <input type="text" id="modal-vk-url" placeholder="https://vk.com/public123456 или club123456" required>
           <div class="hint">Укажите URL или ID группы ВК (public123456, club123456, или -123456)</div>
         </div>
+        
         <div class="form-group">
-          <label>ID Telegram чата/канала</label>
+          <label>📱 ID Telegram чата/канала <span style="color: red;">*</span></label>
           <input type="text" id="modal-tg-chat" placeholder="-1001234567890 или @channel_name" required>
           <div class="hint">ID чата (с минусом для групп) или @имя_канала</div>
         </div>
         
-        <!-- Настройки форматирования -->
+        <!-- НАСТРОЙКИ ФОРМАТИРОВАНИЯ: -->
         <div style="border-top: 1px solid #f0f0f0; margin: 20px 0; padding-top: 20px;">
           <label style="font-size: 16px; color: #333; margin-bottom: 15px; display: block;">⚙️ Настройки форматирования</label>
           
@@ -1606,7 +1613,7 @@ function getMainPanelHtml() {
           </div>
           
           <div class="form-group" style="margin-bottom: 15px;">
-            <label>Синхронизировать последние посты</label>
+            <label>📊 Синхронизировать последние посты</label>
             <select id="modal-sync-posts" style="width: 100%;">
               <option value="1">Только последний пост</option>
               <option value="3">Последние 3 поста</option>
@@ -1616,6 +1623,8 @@ function getMainPanelHtml() {
             <div class="hint">Количество постов для синхронизации при первой настройке</div>
           </div>
         </div>
+        
+        <!-- КНОПКИ: -->
         <div class="modal-buttons">
           <button type="button" class="btn-secondary" onclick="closeModal()">❌ Отмена</button>
           <button type="submit" class="btn-primary" id="submit-binding-btn">✅ Сохранить</button>
@@ -1969,6 +1978,11 @@ function getMainPanelHtml() {
     function showAddBindingDialog() {
       appState.currentEditingId = null;
       document.getElementById("modal-title").textContent = "➕ Добавить связку";
+      
+      // ✅ ОЧИЩАЕМ ВСЕ ПОЛЯ:
+      document.getElementById("modal-binding-name").value = "";
+      document.getElementById("modal-binding-description").value = "";
+      
       document.getElementById("modal-vk-url").value = "";
       document.getElementById("modal-tg-chat").value = "";
       
@@ -1977,34 +1991,39 @@ function getMainPanelHtml() {
       document.getElementById("modal-bold-uppercase").checked = true;
       document.getElementById("modal-sync-posts").value = "1";
       
-      document.getElementById("submit-binding-btn").textContent = "✅ Добавить";
+      document.getElementById("submit-binding-btn").textContent = "✅ Добавить связку";
       clearModalMessage();
       openModal();
-      logMessageToConsole("Add binding dialog opened");
+      logEvent("INFO", "add_binding_dialog_opened", "client", "User opened add binding dialog");
     }
 
     function editBinding(bindingId) {
-      const binding = appState.bindings.find(b => b.id === bindingId);
-      if (!binding) {
-        showMessage("bindings", "error", "❌ Связка не найдена");
-        return;
-      }
+  const binding = appState.bindings.find(b => b.id === bindingId);
+  if (!binding) {
+    showMessage("bindings", "error", "❌ Связка не найдена");
+    return;
+  }
 
-      appState.currentEditingId = bindingId;
-      document.getElementById("modal-title").textContent = "✏️ Редактировать связку";
-      document.getElementById("modal-vk-url").value = binding.vkGroupUrl || binding.vk_group_url || "";
-      document.getElementById("modal-tg-chat").value = binding.tgChatId || binding.tg_chat_id || "";
-      
-      // Загружаем настройки форматирования (с значениями по умолчанию если не заданы)
-      document.getElementById("modal-bold-first-line").checked = binding.formatSettings?.boldFirstLine !== false;
-      document.getElementById("modal-bold-uppercase").checked = binding.formatSettings?.boldUppercase !== false;
-      document.getElementById("modal-sync-posts").value = binding.formatSettings?.syncPostsCount || "1";
-      
-      document.getElementById("submit-binding-btn").textContent = "✅ Сохранить";
-      clearModalMessage();
-      openModal();
-      logMessageToConsole("Edit binding dialog opened for ID: " + bindingId);
-    }
+  appState.currentEditingId = bindingId;
+  document.getElementById("modal-title").textContent = "✏️ Редактировать связку";
+  
+  // ✅ ЗАПОЛНЯЕМ ВСЕ ПОЛЯ ИЗ BINDING:
+  document.getElementById("modal-binding-name").value = binding.bindingName || binding.binding_name || "";
+  document.getElementById("modal-binding-description").value = binding.bindingDescription || binding.binding_description || "";
+  
+  document.getElementById("modal-vk-url").value = binding.vkGroupUrl || binding.vk_group_url || "";
+  document.getElementById("modal-tg-chat").value = binding.tgChatId || binding.tg_chat_id || "";
+  
+  // Загружаем настройки форматирования (с значениями по умолчанию если не заданы)
+  document.getElementById("modal-bold-first-line").checked = binding.formatSettings?.boldFirstLine !== false;
+  document.getElementById("modal-bold-uppercase").checked = binding.formatSettings?.boldUppercase !== false;
+  document.getElementById("modal-sync-posts").value = binding.formatSettings?.syncPostsCount || "1";
+  
+  document.getElementById("submit-binding-btn").textContent = "✅ Сохранить изменения";
+  clearModalMessage();
+  openModal();    
+    logEvent("INFO", "edit_binding_dialog_opened", "client", "Binding ID: " + bindingId + ", Name: " + (binding.bindingName || binding.binding_name || 'N/A'));
+}
 
     function submitBinding() {
       // Читаем название и описание
@@ -2048,20 +2067,21 @@ function getMainPanelHtml() {
             refreshBindings();
             const message = isEdit ? "✅ Связка обновлена!" : "✅ Связка добавлена!";
             showMessage("bindings", "success", message);
-            logMessageToConsole("Binding " + (isEdit ? "updated" : "added") + " successfully");
+            logEvent("INFO", "binding_operation_success", "client", "Action: " + action + ", Name: " + bindingName);
           } else {
             const errorMsg = result?.error || "Неизвестная ошибка";
             showModalMessage("error", errorMsg);
-            logMessageToConsole("Binding operation failed: " + errorMsg);
+            logEvent("ERROR", "binding_operation_failed", "client", "Action: " + action + ", Error: " + errorMsg);
           }
         })
         .withFailureHandler(function(error) {
           document.getElementById("submit-binding-btn").disabled = false;
           showModalMessage("error", "❌ Ошибка: " + error.message);
-          logMessageToConsole("Binding operation error: " + error.message);
+          logEvent("ERROR", "binding_operation_error", "client", "Action: " + action + ", Error: " + error.message);
         })
         [action](...params);
     }
+
 
     function publishBinding(bindingId) {
       if (!confirm("▶️ Опубликовать последний пост из VK в Telegram?\\n\\nПост будет отправлен в канал согласно настройкам связки.")) {
@@ -2400,7 +2420,7 @@ function getMainPanelHtml() {
       if (!appState.license) {
         miniStatus.textContent = 'Требуется активация лицензии';
       } else if (appState.stats.active > 0) {
-        miniStatus.textContent = `Работает ${appState.stats.active} ${appState.stats.active === 1 ? 'связка' : 'связок'}`;
+        miniStatus.textContent = "Работает " + appState.stats.active + " " + (appState.stats.active === 1 ? 'связка' : 'связок');
       } else {
         miniStatus.textContent = 'Нет активных связок';
       }
@@ -2688,6 +2708,181 @@ function migratePublishedSheetsNames() {
   } catch (error) {
     logEvent("ERROR", "published_migration_error", "client", error.message);
     SpreadsheetApp.getUi().alert(`❌ Ошибка миграции: ${error.message}`);
+  }
+}
+
+// ============================================
+// ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ ОЧИСТКИ КЕША
+// ============================================
+
+/**
+ * Очищает кеш от записей групп, которые больше не используются в связках
+ * @return {Object} Результат очистки с количеством очищенных записей
+ */
+function cleanupOrphanedCache() {
+  try {
+    logEvent("INFO", "orphaned_cache_cleanup_start", "client", "Starting cleanup of orphaned cache entries");
+    
+    // Получаем все активные связки
+    const bindingsResult = getBindings();
+    if (!bindingsResult.success) {
+      return { success: false, error: bindingsResult.error, cleaned: 0, total: 0 };
+    }
+    
+    // Извлекаем все VK Group ID из активных связок
+    const activeGroupIds = new Set();
+    if (bindingsResult.bindings) {
+      bindingsResult.bindings.forEach(binding => {
+        try {
+          const groupId = extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
+          if (groupId) {
+            activeGroupIds.add(groupId);
+          }
+        } catch (error) {
+          logEvent("WARN", "invalid_vk_url_in_binding", "client", 
+                   `Binding ID: ${binding.id}, URL: ${binding.vkGroupUrl}, Error: ${error.message}`);
+        }
+      });
+    }
+    
+    logEvent("DEBUG", "active_groups_identified", "client", 
+             `Found ${activeGroupIds.size} active VK groups: [${Array.from(activeGroupIds).join(", ")}]`);
+    
+    // Получаем все листы с паттерном "Published_*"
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const allSheets = ss.getSheets();
+    
+    let totalCacheSheets = 0;
+    let cleanedSheets = 0;
+    
+    allSheets.forEach(sheet => {
+      const sheetName = sheet.getName();
+      
+      // Проверяем только листы кеша (Published_*)
+      if (sheetName.startsWith("Published_")) {
+        totalCacheSheets++;
+        
+        // Извлекаем Group ID из названия листа
+        const groupIdMatch = sheetName.match(/^Published_(.+)$/);
+        if (groupIdMatch) {
+          const cachedGroupId = groupIdMatch[1];
+          
+          // Если группа больше не используется - удаляем лист
+          if (!activeGroupIds.has(cachedGroupId)) {
+            logEvent("INFO", "removing_orphaned_cache_sheet", "client", 
+                     `Deleting unused cache sheet: ${sheetName} (Group ID: ${cachedGroupId})`);
+            
+            try {
+              ss.deleteSheet(sheet);
+              cleanedSheets++;
+            } catch (deleteError) {
+              logEvent("ERROR", "cache_sheet_deletion_failed", "client", 
+                       `Sheet: ${sheetName}, Error: ${deleteError.message}`);
+            }
+          } else {
+            logEvent("DEBUG", "cache_sheet_active", "client", 
+                     `Keeping active cache sheet: ${sheetName}`);
+          }
+        }
+      }
+    });
+    
+    logEvent("INFO", "orphaned_cache_cleanup_complete", "client", 
+             `Cleanup complete. Checked ${totalCacheSheets} cache sheets, cleaned ${cleanedSheets} orphaned sheets`);
+    
+    return {
+      success: true,
+      cleaned: cleanedSheets,
+      total: totalCacheSheets,
+      activeGroups: activeGroupIds.size
+    };
+    
+  } catch (error) {
+    logEvent("ERROR", "orphaned_cache_cleanup_error", "client", error.message);
+    return { success: false, error: error.message, cleaned: 0, total: 0 };
+  }
+}
+
+/**
+ * Обеспечивает создание листов Published для всех связок
+ * @return {Object} Результат с количеством созданных листов
+ */
+function ensureAllPublishedSheetsExist() {
+  try {
+    logEvent("INFO", "ensure_published_sheets_start", "client", "Starting creation of missing Published sheets");
+    
+    // Получаем все связки
+    const bindingsResult = getBindings();
+    if (!bindingsResult.success) {
+      return { success: false, error: bindingsResult.error, total: 0, created: 0 };
+    }
+    
+    if (!bindingsResult.bindings || bindingsResult.bindings.length === 0) {
+      logEvent("INFO", "no_bindings_for_sheets", "client", "No bindings found, no sheets to create");
+      return { success: true, total: 0, created: 0 };
+    }
+    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let totalBindings = bindingsResult.bindings.length;
+    let createdSheets = 0;
+    
+    bindingsResult.bindings.forEach(binding => {
+      try {
+        // Извлекаем VK Group ID
+        const groupId = extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
+        if (!groupId) {
+          logEvent("WARN", "invalid_vk_group_id", "client", 
+                   `Binding ID: ${binding.id}, URL: ${binding.vkGroupUrl}`);
+          return;
+        }
+        
+        // Создаем лист если не существует
+        const sheetName = `Published_${groupId}`;
+        let publishedSheet = ss.getSheetByName(sheetName);
+        
+        if (!publishedSheet) {
+          // Создаем новый лист
+          publishedSheet = ss.insertSheet(sheetName);
+          
+          // Устанавливаем заголовки
+          publishedSheet.appendRow([
+            "Post ID", "Published Date", "Text Preview", "Media Count", "Status"
+          ]);
+          
+          // Форматируем заголовки
+          const headerRange = publishedSheet.getRange(1, 1, 1, 5);
+          headerRange.setBackground("#667eea");
+          headerRange.setFontColor("white");
+          headerRange.setFontWeight("bold");
+          publishedSheet.setFrozenRows(1);
+          
+          createdSheets++;
+          
+          logEvent("INFO", "published_sheet_created", "client", 
+                   `Created sheet: ${sheetName} for Binding: ${binding.id}`);
+        } else {
+          logEvent("DEBUG", "published_sheet_exists", "client", 
+                   `Sheet already exists: ${sheetName} for Binding: ${binding.id}`);
+        }
+        
+      } catch (bindingError) {
+        logEvent("ERROR", "binding_sheet_creation_error", "client", 
+                 `Binding ID: ${binding.id}, Error: ${bindingError.message}`);
+      }
+    });
+    
+    logEvent("INFO", "ensure_published_sheets_complete", "client", 
+             `Sheet creation complete. Checked ${totalBindings} bindings, created ${createdSheets} new sheets`);
+    
+    return {
+      success: true,
+      total: totalBindings,
+      created: createdSheets
+    };
+    
+  } catch (error) {
+    logEvent("ERROR", "ensure_published_sheets_error", "client", error.message);
+    return { success: false, error: error.message, total: 0, created: 0 };
   }
 }
 
