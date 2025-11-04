@@ -904,7 +904,7 @@ function handleGetBindings(payload, clientIp) {
   }
 }
 
-function handleGetUserBindingsWithNamesy(payload, clientIp) {
+function handleGetUserBindingsWithNames(payload, clientIp) {
   try {
     var { license_key } = payload;
     
@@ -931,7 +931,7 @@ function handleGetUserBindingsWithNamesy(payload, clientIp) {
   }
 }
 
-function handleAddBindingy(payload, clientIp) {
+function handleAddBinding(payload, clientIp) {
   try {
     var { license_key, vk_group_url, tg_chat_id, formatSettings, binding_name, binding_description } = payload;
     
@@ -1028,7 +1028,7 @@ function handleAddBindingy(payload, clientIp) {
   }
 }
 
-function handleEditBindingy(payload, clientIp) {
+function handleEditBinding(payload, clientIp) {
   try {
     var { license_key, binding_id, vk_group_url, tg_chat_id, formatSettings } = payload;
     
