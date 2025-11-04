@@ -1062,14 +1062,15 @@ function getOrCreatePublishedPostsSheet(bindingName, vkGroupId) {
   // Используем bindingName (название связки) для имени листа
   let sheetName;
   if (bindingName) {
-    // Безопасное имя: удаляем небезопасные символы и ограничиваем длину до 30 символов
-    sheetName = bindingName
+    // Безопасное имя: удаляем небезопасные символы и ограничиваем длину до 27 символов
+    const safeName = bindingName
       .replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '')  // Удаляем небезопасные символы
       .replace(/\s+/g, '_')                  // Заменяем пробелы на подчеркивания
-      .substring(0, 30);                     // Ограничиваем длину (макс 31 символ в Google Sheets)
+      .substring(0, 27);                     // Ограничиваем длину (Published_ = 10 символов, итого макс 37)
+    sheetName = `Published_${safeName}`;
   } else {
     // Fallback: если bindingName не задано, используем VK Group ID
-    sheetName = `Published_${vkGroupId}`;
+    sheetName = `Published_${Math.abs(parseInt(vkGroupId) || 0)}`;
   }
   
   let sheet = ss.getSheetByName(sheetName);
@@ -2301,6 +2302,80 @@ function getMainPanelHtml() {
   </script>
 </body>
 </html>`;
+}
+
+// ============================================
+// ДОПОЛНИТЕЛЬНЫЕ УТИЛИТЫ
+// ============================================
+
+/**
+ * Миграция Published листов: переименование из Published_-123456 в Published_GroupName
+ * Согласно требованиям UNIFIED_TODO.md
+ */
+function migratePublishedSheetsNames() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheets = ss.getSheets();
+    let renamedCount = 0;
+    
+    logEvent("INFO", "published_migration_start", "client", "Starting Published sheets migration");
+    
+    // Ищем листы в старом формате Published_-123456
+    for (const sheet of sheets) {
+      const currentName = sheet.getName();
+      const match = currentName.match(/^Published_(-?\d+)$/);
+      
+      if (match) {
+        const groupId = match[1];
+        
+        // Пытаемся найти bindingName для этого groupId
+        const bindingsResult = getBindings();
+        let newName = null;
+        
+        if (bindingsResult.success) {
+          for (const binding of bindingsResult.bindings) {
+            const bindingGroupId = extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
+            if (bindingGroupId === groupId && (binding.bindingName || binding.binding_name)) {
+              newName = (binding.bindingName || binding.binding_name).substring(0, 27);
+              break;
+            }
+          }
+        }
+        
+        if (newName) {
+          try {
+            const finalName = `Published_${newName.replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '').replace(/\s+/g, '_')}`;
+            
+            // Проверяем уникальность
+            if (ss.getSheetByName(finalName)) {
+              logEvent("WARN", "migration_name_exists", "client", `Name already exists: ${finalName}`);
+              continue;
+            }
+            
+            sheet.setName(finalName);
+            renamedCount++;
+            
+            logEvent("INFO", "published_sheet_renamed", "client", `${currentName} → ${finalName}`);
+          } catch (error) {
+            logEvent("ERROR", "migration_rename_error", "client", 
+                     `Sheet: ${currentName}, Error: ${error.message}`);
+          }
+        } else {
+          logEvent("WARN", "migration_no_binding_name", "client", 
+                   `No binding name found for group ID: ${groupId}`);
+        }
+      }
+    }
+    
+    const message = `✅ Миграция Published листов завершена!\n\nПереименовано листов: ${renamedCount}`;
+    SpreadsheetApp.getUi().alert(message);
+    
+    logEvent("INFO", "published_migration_complete", "client", `Renamed: ${renamedCount} sheets`);
+    
+  } catch (error) {
+    logEvent("ERROR", "published_migration_error", "client", error.message);
+    SpreadsheetApp.getUi().alert(`❌ Ошибка миграции: ${error.message}`);
+  }
 }
 
 // ============================================
