@@ -1964,35 +1964,9 @@ function formatVkPostForTelegram(vkPost, binding) {
     }
   }
   
-  var result = "";
-  
-  // Основной текст поста
-  if (vkPost.text) {
-    result = formatVkTextForTelegram(vkPost.text, formatOptions);
-  }
-  
-  // Добавляем информацию об attachments если есть
-  if (vkPost.attachments && vkPost.attachments.length > 0) {
-    var mediaInfo = getVkMediaUrls(vkPost.attachments);
-    
-    // Добавляем ссылки на фото
-    if (mediaInfo.photos && mediaInfo.photos.length > 0) {
-      result += "\n\n📷 Фото: " + mediaInfo.photos.length;
-    }
-    
-    // Добавляем ссылки на видео  
-    if (mediaInfo.videoLinks && mediaInfo.videoLinks.length > 0) {
-      result += "\n🎥 Видео: " + mediaInfo.videoLinks.join(", ");
-    }
-  }
-  
-  // Добавляем ссылку на оригинальный пост
-  if (binding && binding.vkGroupUrl) {
-    var vkGroupId = extractVkGroupId(binding.vkGroupUrl);
-    result += `\n\n🔗 [Перейти к посту](https://vk.com/wall${vkGroupId}_${vkPost.id})`;
-  }
-  
-  return result;
+  // ✅ ВОЗВРАЩАЕМ ТОЛЬКО ОТФОРМАТИРОВАННЫЙ ТЕКСТ
+  // ❌ Никаких ссылок на VK пост! Никакой инфы о медиа!
+  return vkPost.text ? formatVkTextForTelegram(vkPost.text, formatOptions) : "";
 }
 
 function getVkMediaUrls(attachments) {
