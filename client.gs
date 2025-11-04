@@ -198,6 +198,17 @@ function addBinding(bindingName, bindingDescription, vkGroupUrl, tgChatId, forma
     if (result.success) {
       logEvent("INFO", "binding_added", "client",
                `Binding ID: ${result.binding_id}, Name: ${bindingName}, VK Group: ${result.converted?.vk_group_id || 'N/A'}`);
+      
+      // 💡 НОВОЕ: Очищаем мусорный кеш при добавлении новой связки
+      const cleanupResult = cleanupOrphanedCache();
+      logEvent("INFO", "orphaned_cache_cleanup_on_add", "client", 
+               `Cleaned ${cleanupResult.cleaned} orphaned entries from ${cleanupResult.total} total cache entries`);
+      
+      // 💡 НОВОЕ: Форсированно создаем все Published листы для связок
+      const sheetsResult = ensureAllPublishedSheetsExist();
+      logEvent("INFO", "published_sheets_forced_creation", "client", 
+               `Checked ${sheetsResult.total} bindings, Created ${sheetsResult.created} new Published sheets`);
+      
       return result;
     } else {
       logEvent("WARN", "add_binding_failed", "client", result.error);
@@ -267,6 +278,11 @@ function editBinding(bindingId, bindingName, bindingDescription, vkGroupUrl, tgC
     
     if (result.success) {
       logEvent("INFO", "binding_edited", "client", `Binding ID: ${bindingId}, Name: ${bindingName}`);
+      
+      // 💡 НОВОЕ: Форсированно обновляем Published листы после редактирования
+      const sheetsResult = ensureAllPublishedSheetsExist();
+      logEvent("INFO", "published_sheets_updated_on_edit", "client", 
+               `Checked ${sheetsResult.total} bindings, Created ${sheetsResult.created} new Published sheets`);
     } else {
       logEvent("WARN", "edit_binding_failed", "client", result.error);
     }
@@ -2431,6 +2447,135 @@ function clearGroupFromCache(vkGroupId) {
     logEvent("ERROR", "clear_cache_error", "client", 
              `VK Group: ${vkGroupId}, Error: ${error.message}`);
     return false;
+  }
+}
+
+/**
+ * 💡 НОВАЯ ФУНКЦИЯ: Форсированное создание всех Published листов для существующих связок
+ * Проверяет все связки и создает отсутствующие листы Published_
+ */
+function ensureAllPublishedSheetsExist() {
+  try {
+    logEvent("INFO", "ensure_published_sheets_start", "client", "Checking Published sheets for all bindings");
+    
+    const bindingsResult = getBindings();
+    if (!bindingsResult.success) {
+      logEvent("WARN", "no_bindings_for_sheets", "client", "Could not get bindings");
+      return { created: 0, total: 0, error: "Could not get bindings" };
+    }
+    
+    const bindings = bindingsResult.bindings || [];
+    let createdCount = 0;
+    let checkedCount = 0;
+    
+    for (const binding of bindings) {
+      try {
+        const bindingName = binding.bindingName || binding.binding_name;
+        const vkGroupId = extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
+        
+        if (!vkGroupId) {
+          logEvent("WARN", "invalid_vk_group_in_binding", "client", 
+                   `Binding ID: ${binding.id}, invalid VK URL: ${binding.vkGroupUrl || binding.vk_group_url}`);
+          continue;
+        }
+        
+        // Получаем или создаем лист (функция создаст если нужно)
+        const sheet = getOrCreatePublishedPostsSheet(bindingName, vkGroupId);
+        
+        if (sheet) {
+          checkedCount++;
+          // Проверяем был ли создан новый лист
+          const ss = SpreadsheetApp.getActiveSpreadsheet();
+          const sheetName = sheet.getName();
+          
+          logEvent("DEBUG", "published_sheet_checked", "client", 
+                   `Binding: ${binding.id}, Sheet: ${sheetName}, VK Group: ${vkGroupId}`);
+          
+          // Если лист создается впервые, он будет иметь только заголовок
+          const lastRow = sheet.getLastRow();
+          if (lastRow === 1) {
+            createdCount++;
+            logEvent("INFO", "published_sheet_created_forced", "client", 
+                     `New sheet: ${sheetName} for binding: ${binding.id}`);
+          }
+        }
+        
+      } catch (bindingError) {
+        logEvent("ERROR", "ensure_sheet_binding_error", "client", 
+                 `Binding ID: ${binding.id}, Error: ${bindingError.message}`);
+      }
+    }
+    
+    logEvent("INFO", "ensure_published_sheets_complete", "client", 
+             `Checked: ${checkedCount} bindings, Created: ${createdCount} new sheets`);
+    
+    return { created: createdCount, total: checkedCount };
+    
+  } catch (error) {
+    logEvent("ERROR", "ensure_published_sheets_error", "client", error.message);
+    return { created: 0, total: 0, error: error.message };
+  }
+}
+
+/**
+ * 💡 НОВАЯ ФУНКЦИЯ: Очистка мусорного кеша - удаляет группы, которых нет в связках
+ * Вызывается при добавлении новой связки для поддержания чистоты кеша
+ */
+function cleanupOrphanedCache() {
+  try {
+    logEvent("INFO", "orphaned_cache_cleanup_start", "client", "Starting cache cleanup");
+    
+    const lastPostIds = getLastPostIds();
+    const cachedGroupIds = Object.keys(lastPostIds);
+    
+    if (cachedGroupIds.length === 0) {
+      logEvent("DEBUG", "no_cache_to_cleanup", "client", "Cache is empty");
+      return { cleaned: 0, total: 0 };
+    }
+    
+    // Получаем все активные VK группы из связок
+    const bindingsResult = getBindings();
+    const activeGroupIds = new Set();
+    
+    if (bindingsResult.success) {
+      for (const binding of bindingsResult.bindings) {
+        const vkGroupId = extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
+        if (vkGroupId) {
+          activeGroupIds.add(vkGroupId);
+        }
+      }
+    }
+    
+    logEvent("DEBUG", "cache_cleanup_analysis", "client", 
+             `Cache: ${cachedGroupIds.length} groups, Active: ${activeGroupIds.size} groups`);
+    
+    // Находим мусорные записи (есть в кеше, но нет в связках)
+    const orphanedGroupIds = cachedGroupIds.filter(cachedId => !activeGroupIds.has(cachedId));
+    
+    if (orphanedGroupIds.length === 0) {
+      logEvent("INFO", "cache_cleanup_no_orphans", "client", "No orphaned cache entries found");
+      return { cleaned: 0, total: cachedGroupIds.length };
+    }
+    
+    // Удаляем мусорные записи
+    let cleanedCount = 0;
+    for (const orphanedId of orphanedGroupIds) {
+      delete lastPostIds[orphanedId];
+      cleanedCount++;
+      logEvent("DEBUG", "orphaned_cache_entry_removed", "client", 
+               `Removed orphaned VK Group: ${orphanedId}`);
+    }
+    
+    saveLastPostIds(lastPostIds);
+    
+    logEvent("INFO", "orphaned_cache_cleanup_complete", "client", 
+             `Cleaned ${cleanedCount} orphaned entries from cache (${Object.keys(lastPostIds).length} remain)`);
+    
+    return { cleaned: cleanedCount, total: cachedGroupIds.length };
+    
+  } catch (error) {
+    logEvent("ERROR", "orphaned_cache_cleanup_error", "client", error.message);
+    return { cleaned: 0, total: 0, error: error.message };
   }
 }
 
