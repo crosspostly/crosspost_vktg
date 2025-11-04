@@ -218,6 +218,28 @@ function editBinding(bindingId, bindingName, bindingDescription, vkGroupUrl, tgC
     logEvent("INFO", "edit_binding_start", "client",
              `Binding ID: ${bindingId}, Name: ${bindingName}, VK URL: ${vkGroupUrl}`);
     
+    // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Получаем старую связку для сравнения групп
+    const bindingsResult = getBindings();
+    let oldVkGroupId = null;
+    
+    if (bindingsResult.success) {
+      const oldBinding = bindingsResult.bindings.find(b => b.id === bindingId);
+      if (oldBinding) {
+        oldVkGroupId = extractVkGroupId(oldBinding.vkGroupUrl || oldBinding.vk_group_url);
+        logEvent("DEBUG", "old_binding_found", "client", 
+                 `Old VK Group ID: ${oldVkGroupId}`);
+      }
+    }
+    
+    const newVkGroupId = extractVkGroupId(vkGroupUrl);
+    
+    // ✅ Если группа изменилась - очищаем кеш старой группы
+    if (oldVkGroupId && newVkGroupId && oldVkGroupId !== newVkGroupId) {
+      const cleared = clearGroupFromCache(oldVkGroupId);
+      logEvent("INFO", "group_cache_cleared_on_edit", "client", 
+               `Old group: ${oldVkGroupId} → New group: ${newVkGroupId}, Cache cleared: ${cleared}`);
+    }
+    
     const payload = {
       event: "edit_binding",
       license_key: license.key,
@@ -264,6 +286,19 @@ function deleteBinding(bindingId) {
     
     logEvent("INFO", "delete_binding_start", "client", `Binding ID: ${bindingId}`);
     
+    // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Получаем VK Group ID перед удалением для очистки кеша
+    const bindingsResult = getBindings();
+    let vkGroupId = null;
+    
+    if (bindingsResult.success) {
+      const binding = bindingsResult.bindings.find(b => b.id === bindingId);
+      if (binding) {
+        vkGroupId = extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
+        logEvent("DEBUG", "binding_found_for_deletion", "client", 
+                 `Binding ID: ${bindingId}, VK Group ID: ${vkGroupId}`);
+      }
+    }
+    
     const payload = {
       event: "delete_binding",
       license_key: license.key,
@@ -282,6 +317,13 @@ function deleteBinding(bindingId) {
     
     if (result.success) {
       logEvent("INFO", "binding_deleted", "client", `Binding ID: ${bindingId}`);
+      
+      // ✅ Если успешно удалили связку - очищаем кеш VK группы
+      if (vkGroupId) {
+        const cleared = clearGroupFromCache(vkGroupId);
+        logEvent("INFO", "group_cache_cleared_on_delete", "client", 
+                 `Binding: ${bindingId}, VK Group: ${vkGroupId}, Cache cleared: ${cleared}`);
+      }
     } else {
       logEvent("WARN", "delete_binding_failed", "client", result.error);
     }
@@ -1141,10 +1183,28 @@ function logEvent(level, event, source, details) {
       details || ""
     ]]);
     
-    // ВАЖНО: Устанавливаем обычное форматирование (черный текст, белый фон, не жирный)
-    logRange.setBackground("white");
-    logRange.setFontColor("black");
-    logRange.setFontWeight("normal");
+    // ✅ ЦВЕТОВАЯ СХЕМА ПО УРОВНЮ:
+    switch (level) {
+      case "ERROR":
+        logRange.setBackground("#ffebee").setFontColor("#c62828"); // Красный
+        break;
+      case "WARN":
+        logRange.setBackground("#fff3e0").setFontColor("#ef6c00"); // Оранжевый
+        break;
+      case "INFO":
+        logRange.setBackground("#e3f2fd").setFontColor("#1565c0"); // ✅ СИНИЙ!
+        break;
+      case "DEBUG":
+        logRange.setBackground("#f3e5f5").setFontColor("#7b1fa2"); // Фиолетовый
+        break;
+      default:
+        logRange.setBackground("white").setFontColor("black"); // Обычный
+    }
+    logRange.setFontWeight("normal"); // Все записи не жирные
+    
+    // ✅ ЗАГОЛОВОК ОСТАЕТСЯ ЖИРНЫМ:
+    const headerRange = sheet.getRange(1, 1, 1, 6);
+    headerRange.setBackground("#667eea").setFontColor("white").setFontWeight("bold");
     
     // Авточистка: оставляем только последние 5000 записей
     const MAX_LOG_RECORDS = 5000;
@@ -2302,6 +2362,76 @@ function getMainPanelHtml() {
   </script>
 </body>
 </html>`;
+}
+
+// ============================================
+// РАБОТА С КЕШЕМ ГРУПП
+// ============================================
+
+/**
+ * Получить кеш последних ID постов групп из PropertiesService
+ * @returns {Object} Объект с VK группами и их последними ID постов
+ */
+function getLastPostIds() {
+  try {
+    const props = PropertiesService.getUserProperties();
+    const cacheData = props.getProperty("vk_group_last_post_ids");
+    
+    if (!cacheData) {
+      logEvent("DEBUG", "no_cache_found", "client", "No last post IDs cache found");
+      return {};
+    }
+    
+    const lastPostIds = JSON.parse(cacheData);
+    logEvent("DEBUG", "cache_loaded", "client", `Loaded cache for ${Object.keys(lastPostIds).length} groups`);
+    
+    return lastPostIds;
+  } catch (error) {
+    logEvent("ERROR", "get_cache_error", "client", error.message);
+    return {};
+  }
+}
+
+/**
+ * Сохранить кеш последних ID постов групп в PropertiesService
+ * @param {Object} lastPostIds - Объект с VK группами и их последними ID постов
+ */
+function saveLastPostIds(lastPostIds) {
+  try {
+    const props = PropertiesService.getUserProperties();
+    props.setProperty("vk_group_last_post_ids", JSON.stringify(lastPostIds));
+    
+    logEvent("DEBUG", "cache_saved", "client", `Saved cache for ${Object.keys(lastPostIds).length} groups`);
+  } catch (error) {
+    logEvent("ERROR", "save_cache_error", "client", error.message);
+  }
+}
+
+/**
+ * ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Очистить группу из кеша при изменении/удалении связки
+ * @param {string} vkGroupId - ID VK группы (например, "-123456")
+ */
+function clearGroupFromCache(vkGroupId) {
+  try {
+    const lastPostIds = getLastPostIds();
+    
+    if (lastPostIds[vkGroupId]) {
+      delete lastPostIds[vkGroupId];
+      saveLastPostIds(lastPostIds);
+      
+      logEvent("INFO", "group_cache_cleared", "client", 
+               `VK Group: ${vkGroupId} removed from cache`);
+      return true;
+    } else {
+      logEvent("DEBUG", "group_cache_not_found", "client", 
+               `VK Group: ${vkGroupId} was not in cache`);
+      return false;
+    }
+  } catch (error) {
+    logEvent("ERROR", "clear_cache_error", "client", 
+             `VK Group: ${vkGroupId}, Error: ${error.message}`);
+    return false;
+  }
 }
 
 // ============================================
