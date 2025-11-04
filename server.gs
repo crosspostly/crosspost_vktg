@@ -710,7 +710,7 @@ function getServerHealthHtml(healthData) {
 // 2. ГЛАВНЫЙ API ENDPOINT
 // ============================================
 
-function doPost_legacy(e) {
+function doPost(e) {
   try {
     // Проверяем входящие данные
     if (!e || !e.postData || !e.postData.contents) {
@@ -823,7 +823,7 @@ function doPost_legacy(e) {
 // 3. ОБРАБОТЧИКИ API ЗАПРОСОВ
 // ============================================
 
-function handleCheckLicense_legacy(payload, clientIp) {
+function handleCheckLicense(payload, clientIp) {
   try {
     var { license_key } = payload;
     
@@ -877,7 +877,7 @@ function handleCheckLicense_legacy(payload, clientIp) {
   }
 }
 
-function handleGetBindings_legacy(payload, clientIp) {
+function handleGetBindings(payload, clientIp) {
   try {
     var { license_key } = payload;
     
@@ -904,7 +904,7 @@ function handleGetBindings_legacy(payload, clientIp) {
   }
 }
 
-function handleGetUserBindingsWithNames_legacy(payload, clientIp) {
+function handleGetUserBindingsWithNamesy(payload, clientIp) {
   try {
     var { license_key } = payload;
     
@@ -931,7 +931,7 @@ function handleGetUserBindingsWithNames_legacy(payload, clientIp) {
   }
 }
 
-function handleAddBinding_legacy(payload, clientIp) {
+function handleAddBindingy(payload, clientIp) {
   try {
     var { license_key, vk_group_url, tg_chat_id, formatSettings, binding_name, binding_description } = payload;
     
@@ -1028,7 +1028,7 @@ function handleAddBinding_legacy(payload, clientIp) {
   }
 }
 
-function handleEditBinding_legacy(payload, clientIp) {
+function handleEditBindingy(payload, clientIp) {
   try {
     var { license_key, binding_id, vk_group_url, tg_chat_id, formatSettings } = payload;
     
@@ -1111,7 +1111,7 @@ function handleEditBinding_legacy(payload, clientIp) {
   }
 }
 
-function handleDeleteBinding_legacy(payload, clientIp) {
+function handleDeleteBindingy(payload, clientIp) {
   try {
     var { license_key, binding_id } = payload;
     
@@ -1146,7 +1146,7 @@ function handleDeleteBinding_legacy(payload, clientIp) {
   }
 }
 
-function handleToggleBindingStatus_legacy(payload, clientIp) {
+function handleToggleBindingStatusy(payload, clientIp) {
   try {
     var { license_key, binding_id } = payload;
     
@@ -1189,7 +1189,7 @@ function handleToggleBindingStatus_legacy(payload, clientIp) {
   }
 }
 
-function handleGetGlobalSetting_legacy(payload, clientIp) {
+function handleGetGlobalSettingy(payload, clientIp) {
   try {
     var { license_key, setting_key } = payload;
     
@@ -1227,7 +1227,7 @@ function handleGetGlobalSetting_legacy(payload, clientIp) {
   }
 }
 
-function handleSetGlobalSetting_legacy(payload, clientIp) {
+function handleSetGlobalSettingy(payload, clientIp) {
   try {
     var { license_key, setting_key, setting_value } = payload;
     
@@ -1274,7 +1274,7 @@ function handleSetGlobalSetting_legacy(payload, clientIp) {
 
 // Дополнительные обработчики для отправки постов и публикации
 
-function handleSendPost_legacy(payload, clientIp) {
+function handleSendPosty(payload, clientIp) {
   try {
     var { license_key, binding_id, vk_post } = payload;
     
@@ -1335,7 +1335,7 @@ function handleSendPost_legacy(payload, clientIp) {
   }
 }
 
-function handleTestPublication_legacy(payload, clientIp) {
+function handleTestPublicationy(payload, clientIp) {
   try {
     var { license_key, tg_chat_id } = payload;
     
@@ -1371,7 +1371,7 @@ function handleTestPublication_legacy(payload, clientIp) {
   }
 }
 
-function handleGetVkPosts_legacy(payload, clientIp) {
+function handleGetVkPostsy(payload, clientIp) {
   try {
     var { license_key, vk_group_id, count = 50 } = payload;
     
