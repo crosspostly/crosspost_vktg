@@ -328,7 +328,7 @@ const DEV_MODE = true; // Включить подробное логирован
 ## 📚 Дополнительная документация
 
 📋 **[ARCHITECTURE.md](ARCHITECTURE.md)** — подробная архитектура системы  
-📋 **[gas_compatibility.md](gas_compatibility.md)** — правила совместимости с Google Apps Script  
+📋 **[GAS_COMPATIBILITY.md](GAS_COMPATIBILITY.md)** — единый справочник по совместимости с Google Apps Script  
 📋 **[UNIFIED_TODO.md](UNIFIED_TODO.md)** — актуальные задачи и план развития  
 
 ---
