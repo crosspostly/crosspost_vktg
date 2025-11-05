@@ -1525,49 +1525,51 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
     logEvent("DEBUG", "media_processing_result", "server", 
              `Photos: ${mediaData.photos.length}, Videos: ${mediaData.videos.length}, Docs: ${mediaData.docLinks.length}, Audio: ${mediaData.audioLinks.length}`);
     
+    // Подготавливаем массив медиа для оптимизированной отправки
+    var allMedia = [];
+    
+    // Добавляем фото
+    allMedia = allMedia.concat(mediaData.photos);
+    
+    // Добавляем видео
+    allMedia = allMedia.concat(mediaData.videos);
+    
+    // Добавляем документы как объекты (преобразуем из ссылок)
+    // Note: docLinks сейчас содержат markdown ссылки, а не URL документов
+    // Для отправки документов нужны прямые URL, которые пока не поддерживаются
+    // Оставляем docLinks для текстовой отправки как раньше
+    
     var results = [];
     
     try {
-      // Стратегия отправки согласно ARCHITECTURE.md
-      
-      // 1. Видео первыми (с caption только у первого)
-      if (mediaData.videos.length > 0) {
-        for (let i = 0; i < mediaData.videos.length; i++) {
-          const videoCaption = (i === 0 && mediaData.photos.length === 0) ? text : null;
-          const videoResult = sendTelegramVideo(botToken, chatId, mediaData.videos[i].url, videoCaption);
-          results.push(videoResult);
-          
-          if (!videoResult.success) {
-            logEvent("WARN", "video_send_failed", "server", 
-                     `Video ${mediaData.videos[i].id}: ${videoResult.error}`);
-          }
-          
-          // Небольшая пауза между видео
-          if (i < mediaData.videos.length - 1) {
-            Utilities.sleep(1000);
-          }
-        }
-      }
-      
-      // 2. Фото группой (caption только если не было видео)
-      if (mediaData.photos.length > 0) {
-        const photoCaption = mediaData.videos.length === 0 ? text : null;
-        const photoResult = sendTelegramMediaGroup(botToken, chatId, mediaData.photos, photoCaption);
-        results.push(photoResult);
+      // ИСПОЛЬЗУЕМ ОПТИМИЗИРОВАННУЮ ОТПРАВКУ!
+      if (allMedia.length > 0) {
+        var optimizedResult = sendMixedMediaOptimized(
+          botToken, 
+          chatId, 
+          allMedia, 
+          text,
+          { parse_mode: 'HTML' }
+        );
+        results.push(optimizedResult);
         
-        if (!photoResult.success) {
-          logEvent("WARN", "photo_group_send_failed", "server", 
-                   `Error: ${photoResult.error}`);
+        if (!optimizedResult.success) {
+          logEvent("WARN", "optimized_media_send_failed", "server", 
+                   `Error: ${optimizedResult.error}`);
+        } else {
+          // Логируем успешную оптимизацию
+          if (optimizedResult.optimization_stats && optimizedResult.optimization_stats.api_calls_saved > 0) {
+            logEvent("INFO", "media_optimization_success", "server", 
+                     `API calls saved: ${optimizedResult.optimization_stats.api_calls_saved}, Photo groups: ${optimizedResult.optimization_stats.photo_groups}`);
+          }
         }
-      }
-      
-      // 3. Текст отдельно если был только в caption и медиа его "съело"
-      if (text && mediaData.videos.length === 0 && mediaData.photos.length === 0) {
+      } else {
+        // Только текст без медиа
         const textResult = sendTelegramMessage(botToken, chatId, text);
         results.push(textResult);
       }
       
-      // 4. Документы и аудио отдельными сообщениями
+      // Отправляем документы и аудио отдельными сообщениями (как и раньше)
       var additionalContent = [];
       if (mediaData.docLinks.length > 0) {
         additionalContent.push("📎 Документы:\n" + mediaData.docLinks.join("\n"));
@@ -1583,7 +1585,7 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
       }
       
       // Определяем общий результат
-      const successCount = results.filter(r => r.success).length;
+      const successCount = results.filter(function(r) { return r.success; }).length;
       const totalCount = results.length;
       
       if (successCount === 0) {
@@ -4021,6 +4023,278 @@ function getVkMediaUrls(attachments) {
   }
   
   return result;
+}
+
+/**
+ * Оптимизированная отправка смешанных медиа (фото + видео + документы)
+ * Группирует фото в MediaGroup (до 10 штук), остальное отправляет отдельно
+ * 
+ * @param {string} botToken - Telegram Bot Token
+ * @param {string} chatId - ID чата/канала
+ * @param {Array<Object>} mediaUrls - Массив медиа [{type: 'photo'|'video'|'doc', url: '...'}]
+ * @param {string} caption - Текст для первого медиа
+ * @param {Object} options - Дополнительные настройки (parse_mode и т.д.)
+ * @return {Object} Результат отправки
+ */
+function sendMixedMediaOptimized(botToken, chatId, mediaUrls, caption, options) {
+  try {
+    if (!mediaUrls || mediaUrls.length === 0) {
+      // Нет медиа - отправляем только текст
+      return sendTelegramMessage(botToken, chatId, caption || '');
+    }
+
+    // Группируем медиа по типам
+    var photos = mediaUrls.filter(function(m) { return m.type === 'photo'; });
+    var videos = mediaUrls.filter(function(m) { return m.type === 'video'; });
+    var documents = mediaUrls.filter(function(m) { return m.type === 'document' || m.type === 'doc'; });
+
+    var results = [];
+    var apiCallsSaved = 0;
+
+    // Оптимизация: группируем фото по MAX_MEDIA_GROUP_SIZE (10)
+    if (photos.length > 0) {
+      var photoGroups = [];
+      for (var i = 0; i < photos.length; i += MAX_MEDIA_GROUP_SIZE) {
+        photoGroups.push(photos.slice(i, i + MAX_MEDIA_GROUP_SIZE));
+      }
+
+      // Отправляем каждую группу ОДНИМ запросом
+      photoGroups.forEach(function(group, index) {
+        var groupCaption = (index === 0) ? caption : null;
+        var groupResult = sendTelegramMediaGroup(botToken, chatId, group, groupCaption, options);
+        results.push(groupResult);
+
+        if (!groupResult.success) {
+          logEvent("WARN", "photo_group_send_failed", "server", 
+                   `Group ${index + 1}, Error: ${groupResult.error}`);
+        }
+      });
+
+      // Считаем экономию API запросов
+      apiCallsSaved = photos.length - photoGroups.length;
+    }
+
+    // Видео отправляем отдельно (Telegram API ограничение)
+    videos.forEach(function(video, index) {
+      var videoCaption = (photos.length === 0 && index === 0) ? caption : null;
+      var videoResult = sendTelegramVideo(botToken, chatId, video.url, videoCaption);
+      results.push(videoResult);
+
+      if (!videoResult.success) {
+        logEvent("WARN", "video_send_failed", "server", 
+                 `Video ${video.id || index}: ${videoResult.error}`);
+      }
+
+      // Небольшая пауза между видео
+      if (index < videos.length - 1) {
+        Utilities.sleep(1000);
+      }
+    });
+
+    // Документы отправляем отдельно
+    documents.forEach(function(doc, index) {
+      var docCaption = (photos.length === 0 && videos.length === 0 && index === 0) ? caption : null;
+      var docResult = sendTelegramDocument(botToken, chatId, doc.url, docCaption);
+      results.push(docResult);
+
+      if (!docResult.success) {
+        logEvent("WARN", "document_send_failed", "server", 
+                 `Document ${index}: ${docResult.error}`);
+      }
+    });
+
+    // Логируем оптимизацию
+    logEvent("INFO", "MEDIA_OPTIMIZATION", "server", {
+      total_media: mediaUrls.length,
+      photos: photos.length,
+      videos: videos.length,
+      documents: documents.length,
+      photo_groups: photos.length > 0 ? Math.ceil(photos.length / MAX_MEDIA_GROUP_SIZE) : 0,
+      api_calls_saved: apiCallsSaved,
+      total_api_calls: results.length
+    });
+
+    // Определяем общий результат
+    var successCount = results.filter(function(r) { return r.success; }).length;
+    var totalCount = results.length;
+
+    if (successCount === 0) {
+      return { success: false, error: "All media parts failed to send" };
+    } else if (successCount < totalCount) {
+      return { 
+        success: true, 
+        message_id: results.find(function(r) { return r.success; }).message_id,
+        warning: `Partial success: ${successCount}/${totalCount} parts sent`,
+        results: results,
+        optimization_stats: {
+          api_calls_saved: apiCallsSaved,
+          photo_groups: photos.length > 0 ? Math.ceil(photos.length / MAX_MEDIA_GROUP_SIZE) : 0
+        }
+      };
+    } else {
+      return { 
+        success: true, 
+        message_id: results.find(function(r) { return r.success; }).message_id,
+        results: results,
+        optimization_stats: {
+          api_calls_saved: apiCallsSaved,
+          photo_groups: photos.length > 0 ? Math.ceil(photos.length / MAX_MEDIA_GROUP_SIZE) : 0
+        }
+      };
+    }
+
+  } catch (error) {
+    logEvent("ERROR", "send_mixed_media_optimized_error", "server", error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Отправляет документ в Telegram
+ */
+function sendTelegramDocument(botToken, chatId, documentUrl, caption) {
+  try {
+    var url = `https://api.telegram.org/bot${botToken}/sendDocument`;
+    
+    var payload = {
+      chat_id: chatId,
+      document: documentUrl
+    };
+    
+    if (caption) {
+      payload.caption = caption;
+      payload.parse_mode = 'HTML';
+    }
+    
+    var response = UrlFetchApp.fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
+      timeout: TIMEOUTS.MEDIUM
+    });
+    
+    var result = JSON.parse(response.getContentText());
+    
+    if (result.ok) {
+      logEvent("INFO", "document_sent", "server", 
+               `Chat: ${chatId}, Document URL: ${documentUrl.substring(0, 100)}..., Message ID: ${result.result.message_id}`);
+      return { success: true, message_id: result.result.message_id };
+    } else {
+      logEvent("ERROR", "document_send_failed", "server", 
+               `Error: ${result.description}, Code: ${result.error_code}`);
+      return { success: false, error: result.description || "Document send failed" };
+    }
+    
+  } catch (error) {
+    logEvent("ERROR", "document_send_exception", "server", error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Тестовая функция для проверки оптимизации медиагрупп
+ */
+function testSendMixedMediaOptimized() {
+  try {
+    logEvent("INFO", "test_send_mixed_media_optimized_start", "server", "Starting optimization test");
+    
+    // Тестовые данные
+    var botToken = PropertiesService.getScriptProperties().getProperty("BOT_TOKEN");
+    var testChatId = PropertiesService.getScriptProperties().getProperty("TEST_CHAT_ID") || "@test_channel";
+    
+    if (!botToken) {
+      logEvent("ERROR", "test_no_bot_token", "server", "Bot token not configured for testing");
+      return { success: false, error: "Bot token not configured" };
+    }
+    
+    // Тест 1: 5 фото (должно быть 1 MediaGroup)
+    var testPhotos = [];
+    for (var i = 1; i <= 5; i++) {
+      testPhotos.push({
+        type: 'photo',
+        url: `https://picsum.photos/800/600?random=${i}`
+      });
+    }
+    
+    var result1 = sendMixedMediaOptimized(
+      botToken,
+      testChatId,
+      testPhotos,
+      "🧪 Тест 1: 5 фото в одной группе",
+      { parse_mode: 'HTML' }
+    );
+    
+    logEvent("INFO", "test_1_result", "server", {
+      photos_count: testPhotos.length,
+      success: result1.success,
+      api_calls_saved: (result1.optimization_stats && result1.optimization_stats.api_calls_saved) || 0
+    });
+    
+    // Тест 2: 12 фото (должно быть 2 MediaGroup)
+    var testPhotos2 = [];
+    for (var i = 1; i <= 12; i++) {
+      testPhotos2.push({
+        type: 'photo',
+        url: `https://picsum.photos/800/600?random=${i + 100}`
+      });
+    }
+    
+    var result2 = sendMixedMediaOptimized(
+      botToken,
+      testChatId,
+      testPhotos2,
+      "🧪 Тест 2: 12 фото в двух группах",
+      { parse_mode: 'HTML' }
+    );
+    
+    logEvent("INFO", "test_2_result", "server", {
+      photos_count: testPhotos2.length,
+      success: result2.success,
+      api_calls_saved: (result2.optimization_stats && result2.optimization_stats.api_calls_saved) || 0,
+      photo_groups: (result2.optimization_stats && result2.optimization_stats.photo_groups) || 0
+    });
+    
+    // Тест 3: Смешанные медиа (фото + видео)
+    var mixedMedia = [
+      { type: 'photo', url: 'https://picsum.photos/800/600?random=200' },
+      { type: 'photo', url: 'https://picsum.photos/800/600?random=201' },
+      { type: 'video', url: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4' }
+    ];
+    
+    var result3 = sendMixedMediaOptimized(
+      botToken,
+      testChatId,
+      mixedMedia,
+      "🧪 Тест 3: Фото + видео",
+      { parse_mode: 'HTML' }
+    );
+    
+    logEvent("INFO", "test_3_result", "server", {
+      total_media: mixedMedia.length,
+      success: result3.success,
+      optimization_stats: result3.optimization_stats
+    });
+    
+    var summary = {
+      success: true,
+      tests_passed: [result1.success, result2.success, result3.success].filter(function(s) { return s; }).length,
+      total_tests: 3,
+      results: {
+        test_1_photos_5: result1,
+        test_2_photos_12: result2,  
+        test_3_mixed: result3
+      }
+    };
+    
+    logEvent("INFO", "test_send_mixed_media_optimized_complete", "server", summary);
+    
+    return summary;
+    
+  } catch (error) {
+    logEvent("ERROR", "test_send_mixed_media_optimized_error", "server", error.message);
+    return { success: false, error: error.message };
+  }
 }
 
 // ============================================

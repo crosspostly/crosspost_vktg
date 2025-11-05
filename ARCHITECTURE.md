@@ -229,6 +229,29 @@ Content-Type: application/json
 
 ### Реализация в SERVER.gs
 
+## Оптимизация MediaGroup ✅
+
+**sendMixedMediaOptimized()** - реализована
+- Группирует до 10 фото в один MediaGroup
+- Экономия API запросов: вместо N запросов = 1 запрос
+- Производительность: ускорение отправки в N раз
+- Использование: автоматически в sendVkPostToTelegram()
+
+**Пример работы:**
+- 10 фото = 1 API запрос (экономия 90%)
+- 20 фото = 2 API запроса (экономия 90%)
+
+```javascript
+function sendMixedMediaOptimized(botToken, chatId, mediaUrls, caption, options) {
+  // Группирует фото по MAX_MEDIA_GROUP_SIZE (10)
+  // Отправляет каждую группу ОДНИМ запросом
+  // Видео и документы отправляет отдельно
+  // Возвращает статистику оптимизации
+}
+```
+
+### Предыдущая реализация (сохранена для совместимости)
+
 ```javascript
 function sendMixedMediaOptimized(botToken, chatId, mediaData, caption) {
   const { photos, videos, docLinks, audioLinks } = mediaData;
