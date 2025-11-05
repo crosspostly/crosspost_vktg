@@ -997,11 +997,11 @@ function extractVkGroupId(url) {
 // ============================================
 
 /**
- * Клиентская функция извлечения chat_id Telegram с поддержкой всех форматов из ARCHITECTURE.md
+ * Клиентская функция извлечения chat_id Telegram с поддержкой всех форматов
  * Поддерживаемые форматы:
  * - @channelname → "@channelname"
  * - https://t.me/channelname → "@channelname"
- * - t.me/username → "@username"  
+ * - t.me/username → "@username"
  * - channelname → "@channelname"
  * - -1001234567890 → "-1001234567890"
  * - 123456789 → "123456789"

@@ -3411,10 +3411,10 @@ function getCachedTelegramChatName(chatId) {
 var RATE_LIMIT_DELAY = 100; // мс между запросами
 
 /**
- * Улучшенная функция извлечения ID группы ВК с поддержкой всех форматов из ARCHITECTURE.md
+ * Улучшенная функция извлечения ID группы ВК с поддержкой всех форматов
  * Поддерживаемые форматы:
  * - https://vk.com/public123456 → -123456
- * - https://vk.com/club789012 → -789012  
+ * - https://vk.com/club789012 → -789012
  * - https://vk.com/durov → resolve via API → -123456
  * - https://vk.com/varsmana → resolve via API → -123456
  * - vk.com/apiclub → resolve via API → -123456
@@ -3591,11 +3591,11 @@ function resolveVkScreenName(screenName) {
 }
 
 /**
- * Улучшенная функция извлечения chat_id Telegram с поддержкой всех форматов из ARCHITECTURE.md
+ * Улучшенная функция извлечения chat_id Telegram с поддержкой всех форматов
  * Поддерживаемые форматы:
  * - @channelname → "@channelname"
  * - https://t.me/channelname → "@channelname"
- * - t.me/username → "@username"  
+ * - t.me/username → "@username"
  * - channelname → "@channelname"
  * - -1001234567890 → "-1001234567890"
  * - 123456789 → "123456789"
@@ -4389,7 +4389,7 @@ function testSendMixedMediaOptimized() {
 // ============================================
 
 /**
- * Извлекает ID группы VK из URL с поддержкой всех форматов из ARCHITECTURE.md
+ * Извлекает ID группы VK из URL с поддержкой всех форматов
  * @param {string} url - URL группы VK
  * @return {string} - ID группы с префиксом - для групп
  */
