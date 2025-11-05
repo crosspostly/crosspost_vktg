@@ -1,7 +1,8 @@
 # 🧪 VK URL Parsing Test Results
 
-**Дата тестирования:** 2025-11-04  
+**Дата тестирования:** 2025-11-05  
 **Согласно:** UNIFIED_TODO.md тест-кейсы  
+**Функции:** `extractVkGroupId()`, `validateVkGroupId()` в client.gs и server.gs  
 
 ## 📋 Тест-кейсы из UNIFIED_TODO.md
 
