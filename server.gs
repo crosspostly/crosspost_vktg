@@ -703,10 +703,11 @@ function getServerHealthHtml(healthData) {
   }
   
   html += '<p><button onclick="google.script.run.checkServerHealth(); google.script.host.close();">🔄 Обновить проверку</button></p>\n';
-  
-  html += '</div>\n';
-  html += '</body>\n';
-  html += '</html>\n';
+    html += '<p><button onclick="google.script.run.withSuccessHandler(function(result) { alert(\'Логи очищены: \' + result.totalDeleted + \' записей из \' + result.sheetsProcessed + \' листов\'); }).withFailureHandler(function(error) { alert(\'Ошибка: \' + error.message); }).cleanOldLogs();">🧹 Очистить старые логи (>30 дней)</button></p>\n';
+
+    html += '</div>\n';
+    html += '</body>\n';
+    html += '</html>\n';
   
   return html;
 }
@@ -3492,146 +3493,353 @@ function handleGetVkPosts(payload, clientIp) {
 var RATE_LIMIT_DELAY = 100; // мс между запросами
 
 /**
- * ИСПРАВЛЕННАЯ функция извлечения ID группы ВК с поддержкой всех форматов
+ * Улучшенная функция извлечения ID группы ВК с поддержкой всех форматов из ARCHITECTURE.md
+ * Поддерживаемые форматы:
+ * - https://vk.com/public123456 → -123456
+ * - https://vk.com/club789012 → -789012  
+ * - https://vk.com/durov → resolve via API → -123456
+ * - https://vk.com/varsmana → resolve via API → -123456
+ * - vk.com/apiclub → resolve via API → -123456
+ * - VK.COM/PUBLIC999888 → -999888
+ * - -123456 или 123456 → нормализуется в -123456
  */
 function extractVkGroupId(url) {
   if (!url || typeof url !== 'string') {
-    throw new Error('Пустая или неверная ссылка ВК');
+    throw new Error('VK URL или ID обязателен и должен быть строкой');
   }
 
-  var cleanInput = url.trim().toLowerCase();
+  var originalInput = url;
+  var cleanInput = url.trim().toLowerCase().split('?')[0].split('#')[0];
+
+  logEvent("DEBUG", "vk_group_id_extraction_start", "system", `Input: "${originalInput}" → Clean: "${cleanInput}"`);
 
   // Если уже ID (число или -число)
   if (/^-?\d+$/.test(cleanInput)) {
-    return cleanInput.startsWith('-') ? cleanInput : '-' + cleanInput;
+    var normalizedId = cleanInput.startsWith('-') ? cleanInput : '-' + cleanInput;
+    logEvent("DEBUG", "vk_group_id_numeric", "system", `${originalInput} → ${normalizedId}`);
+    return normalizedId;
   }
 
-  // Извлекаем screen_name из ссылки
+  // Извлекаем из различных форматов URL
   var screenName = null;
+  var numericId = null;
 
-  // vk.com/public123, vk.com/club123, vk.com/id123, vk.com/username
+  // Форматы: vk.com/public123, vk.com/club123
+  var publicClubMatch = cleanInput.match(/vk\.com\/(public|club)(\d+)/i);
+  if (publicClubMatch) {
+    numericId = publicClubMatch[2];
+    var result = '-' + numericId;
+    logEvent("DEBUG", "vk_group_id_public_club", "system", `${originalInput} → ${result}`);
+    return result;
+  }
+
+  // Форматы: vk.com/username, VK.COM/USERNAME, username
   var patterns = [
-    /vk\.com\/(public|club)(\d+)/i,
-    /vk\.com\/([a-z0-9_]+)/i
+    /vk\.com\/([a-z0-9_]+)/i,     // vk.com/username
+    /^([a-z0-9_]+)$/i             // просто username
   ];
 
   for (const pattern of patterns) {
     var match = cleanInput.match(pattern);
     if (match) {
-      screenName = match[2] || match[1];
+      screenName = match[1];
       break;
     }
   }
 
   if (!screenName) {
-    throw new Error('Не удалось извлечь ID из ссылки: ' + url);
+    throw new Error(`Неподдерживаемый формат VK ссылки или ID: "${originalInput}". Ожидаемые форматы: https://vk.com/public123, https://vk.com/club123, https://vk.com/username, или числовой ID`);
   }
 
-  // Если это numeric ID
+  // Если это numeric ID (fallback)
   if (/^\d+$/.test(screenName)) {
-    return '-' + screenName;
+    var result = '-' + screenName;
+    logEvent("DEBUG", "vk_group_id_fallback_numeric", "system", `${originalInput} → ${result}`);
+    return result;
   }
 
   // Если это screen_name - нужно резолвить через API
-  return resolveVkScreenName(screenName);
+  try {
+    var result = resolveVkScreenName(screenName);
+    logEvent("DEBUG", "vk_group_id_resolved", "system", `${originalInput} → ${screenName} → ${result}`);
+    return result;
+  } catch (error) {
+    logEvent("ERROR", "vk_group_id_resolution_failed", "system", `Failed to resolve "${screenName}" from "${originalInput}": ${error.message}`);
+    throw new Error(`Не удалось определить ID для "${screenName}" из "${originalInput}": ${error.message}`);
+  }
 }
 
 /**
- * Резолвит screen_name в ID через VK API
+ * Резолвит screen_name в ID через VK API с улучшенной обработкой ошибок
+ * Использует VK API utils.resolveScreenName с таймаутами и детальной диагностикой
  */
 function resolveVkScreenName(screenName) {
+  if (!screenName || typeof screenName !== 'string') {
+    throw new Error('Screen name обязателен и должен быть строкой');
+  }
+
   try {
     var userToken = PropertiesService.getScriptProperties()
       .getProperty("VK_USER_ACCESS_TOKEN");
         
     if (!userToken) {
-      throw new Error("VK token не настроен");
+      throw new Error("VK User Access Token не настроен на сервере");
+    }
+
+    var apiUrl = `https://api.vk.com/method/utils.resolveScreenName?screen_name=${encodeURIComponent(screenName)}&v=${VK_API_VERSION}&access_token=${userToken}`;
+    
+    logEvent("DEBUG", "vk_resolve_screen_name_start", "system", `Resolving screen_name: "${screenName}"`);
+    
+    var response = UrlFetchApp.fetch(apiUrl, {
+      muteHttpExceptions: true,
+      timeout: TIMEOUTS.FAST // 8 секунд для быстрой операции резолвинга
+    });
+        
+    var responseCode = response.getResponseCode();
+    var responseText = response.getContentText();
+    
+    logEvent("DEBUG", "vk_resolve_screen_name_response", "system", `Screen: "${screenName}", Code: ${responseCode}, Response length: ${responseText.length}`);
+    
+    if (responseCode !== 200) {
+      throw new Error(`VK API HTTP ${responseCode}: ${responseText.substring(0, 100)}`);
+    }
+    
+    var data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseError) {
+      throw new Error(`Invalid JSON response from VK API: ${parseError.message}`);
     }
         
-    var response = UrlFetchApp.fetch(
-      `https://api.vk.com/method/utils.resolveScreenName?screen_name=${screenName}&v=${VK_API_VERSION}&access_token=${userToken}`,
-      { muteHttpExceptions: true, timeout: 10000 }
-    );
-        
-    var data = JSON.parse(response.getContentText());
-        
+    // Обработка ошибок VK API
     if (data.error) {
-      throw new Error(`VK API Error: ${data.error.error_msg}`);
+      var errorCode = data.error.error_code;
+      var errorMsg = data.error.error_msg;
+      
+      logEvent("WARN", "vk_resolve_screen_name_api_error", "system", `Screen: "${screenName}", Error: ${errorCode} - ${errorMsg}`);
+      
+      // Специальная обработка распространенных ошибок
+      switch (errorCode) {
+        case 5: // User authorization failed
+          throw new Error(`Ошибка авторизации VK (${errorCode}): ${errorMsg}. Проверьте VK User Access Token`);
+        case 113: // Invalid user id
+          throw new Error(`Неверный screen_name "${screenName}": ${errorMsg}`);
+        case 100: // One of the parameters specified was missing or invalid
+          throw new Error(`Неверный параметр запроса для "${screenName}": ${errorMsg}`);
+        case 10: // Internal server error
+          throw new Error(`Внутренняя ошибка VK API (${errorCode}): ${errorMsg}`);
+        case 15: // Access denied
+          throw new Error(`Доступ запрещен для "${screenName}": ${errorMsg}`);
+        default:
+          throw new Error(`VK API Error (${errorCode}): ${errorMsg}`);
+      }
     }
         
     if (!data.response || !data.response.object_id) {
-      throw new Error(`Группа/страница не найдена: ${screenName}`);
+      logEvent("WARN", "vk_resolve_screen_name_not_found", "system", `Screen name not found: "${screenName}"`);
+      throw new Error(`Группа, страница или пользователь не найдены: "${screenName}"`);
     }
         
     var objectId = data.response.object_id;
     var type = data.response.type;
-        
-    // Для групп и страниц добавляем минус
-    return (type === 'group' || type === 'page') ? `-${objectId}` : objectId.toString();
+    
+    // Валидация object_id
+    if (!/^\d+$/.test(objectId.toString())) {
+      throw new Error(`Получен некорректный object_id: ${objectId} для screen_name "${screenName}"`);
+    }
+    
+    // Для групп и страниц добавляем минус, для пользователей оставляем как есть
+    var result = (type === 'group' || type === 'page') ? `-${objectId}` : objectId.toString();
+    
+    logEvent("INFO", "vk_resolve_screen_name_success", "system", `Screen: "${screenName}" → Type: ${type}, ID: ${objectId} → Result: ${result}`);
+    
+    return result;
       
   } catch (error) {
-    throw new Error(`Не удалось резолвить ${screenName}: ${error.message}`);
+    // Дополнительная обработка сетевых ошибок
+    if (error.message.includes('timeout') || error.message.includes('Timed out')) {
+      logEvent("ERROR", "vk_resolve_screen_name_timeout", "system", `Timeout resolving screen_name "${screenName}"`);
+      throw new Error(`Таймаут при резолвинге "${screenName}" через VK API. Попробуйте позже.`);
+    }
+    
+    if (error.message.includes('fetch') || error.message.includes('network')) {
+      logEvent("ERROR", "vk_resolve_screen_name_network", "system", `Network error resolving screen_name "${screenName}": ${error.message}`);
+      throw new Error(`Сетевая ошибка при резолвинге "${screenName}": ${error.message}`);
+    }
+    
+    logEvent("ERROR", "vk_resolve_screen_name_failed", "system", `Failed to resolve screen_name "${screenName}": ${error.message}`);
+    throw new Error(`Не удалось резолвить "${screenName}": ${error.message}`);
   }
 }
 
 /**
- * ИСПРАВЛЕННАЯ функция извлечения chat_id Telegram
+ * Улучшенная функция извлечения chat_id Telegram с поддержкой всех форматов из ARCHITECTURE.md
+ * Поддерживаемые форматы:
+ * - @channelname → "@channelname"
+ * - https://t.me/channelname → "@channelname"
+ * - t.me/username → "@username"  
+ * - channelname → "@channelname"
+ * - -1001234567890 → "-1001234567890"
+ * - 123456789 → "123456789"
  */
 function extractTelegramChatId(input) {
   if (!input || typeof input !== 'string') {
-    throw new Error('Пустая или неверная ссылка Telegram');
+    throw new Error('Telegram chat ID или username обязателен и должен быть строкой');
   }
 
-  var cleanInput = input.trim();
+  var originalInput = input;
+  var cleanInput = input.trim().toLowerCase().split('?')[0].split('#')[0];
 
-  // Если уже chat_id (число с минусом)
+  logEvent("DEBUG", "telegram_chat_id_extraction_start", "system", `Input: "${originalInput}" → Clean: "${cleanInput}"`);
+
+  // Если уже chat_id (число с возможным минусом)
   if (/^-?\d+$/.test(cleanInput)) {
+    logEvent("DEBUG", "telegram_chat_id_numeric", "system", `${originalInput} → ${cleanInput}`);
     return cleanInput;
   }
 
-  // t.me/username или @username
+  // Извлекаем username из различных форматов
+  var username = null;
+
+  // Форматы в порядке приоритета:
   var patterns = [
-    /t\.me\/([a-z0-9_]+)/i,
-    /@([a-z0-9_]+)/i,
-    /^([a-z0-9_]+)$/i
+    /https?:\/\/t\.me\/([a-z0-9_]+)/i,  // https://t.me/username
+    /t\.me\/([a-z0-9_]+)/i,            // t.me/username
+    /@([a-z0-9_]+)/i,                  // @username
+    /^([a-z0-9_]+)$/i                  // просто username
   ];
 
   for (const pattern of patterns) {
     var match = cleanInput.match(pattern);
     if (match) {
-      var username = match[1];
-      return '@' + username;
+      username = match[1];
+      break;
     }
   }
 
-  throw new Error('Не удалось извлечь chat_id из: ' + input);
+  if (!username) {
+    throw new Error(`Неподдерживаемый формат Telegram: "${originalInput}". Ожидаемые форматы: @channelname, https://t.me/channelname, t.me/username, channelname, или числовой chat_id`);
+  }
+
+  // Валидация username
+  if (!/^[a-z0-9_]+$/i.test(username)) {
+    throw new Error(`Некорректный Telegram username "${username}" из "${originalInput}". Допустимы только буквы, цифры и подчеркивания`);
+  }
+
+  var result = '@' + username;
+  logEvent("DEBUG", "telegram_chat_id_username", "system", `${originalInput} → ${result}`);
+  
+  return result;
 }
 
 /**
- * Очистка старых логов (более 30 дней)
+ * Расширенная очистка старых логов (более 30 дней) из всех лог-листов
+ * Обрабатывает листы: "Logs", "Client Logs" и другие листы с "Log" в названии
  */
 function cleanOldLogs() {
   try {
-    var logsSheet = getSheet("Logs");
-    var data = logsSheet.getDataRange().getValues();
-    var thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var allSheets = ss.getSheets();
+    var logSheets = [];
     
-    var deletedCount = 0;
-    
-    for (let i = data.length - 1; i >= 1; i--) {
-      var logDate = new Date(data[i][0]);
-      if (logDate < thirtyDaysAgo) {
-        logsSheet.deleteRow(i + 1);
-        deletedCount++;
+    // Ищем все листы с логами
+    for (var i = 0; i < allSheets.length; i++) {
+      var sheetName = allSheets[i].getName();
+      if (sheetName === "Logs" || sheetName === "Client Logs" || sheetName.toLowerCase().includes("log")) {
+        logSheets.push(allSheets[i]);
       }
     }
     
-    logEvent("INFO", "logs_cleaned", "system", `Deleted ${deletedCount} old log entries`);
-    return deletedCount;
+    if (logSheets.length === 0) {
+      logEvent("WARN", "no_log_sheets_found", "system", "No log sheets found for cleanup");
+      return { totalDeleted: 0, sheetResults: [] };
+    }
+    
+    var thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    var totalDeleted = 0;
+    var sheetResults = [];
+    
+    logEvent("INFO", "log_cleanup_started", "system", `Starting cleanup of ${logSheets.length} log sheets older than ${thirtyDaysAgo.toISOString()}`);
+    
+    // Обрабатываем каждый лог-лист
+    for (var j = 0; j < logSheets.length; j++) {
+      var sheet = logSheets[j];
+      var sheetName = sheet.getName();
+      var sheetDeletedCount = 0;
+      
+      try {
+        // Проверяем, есть ли у листа данные
+        var dataRange = sheet.getDataRange();
+        var data = dataRange.getValues();
+        
+        if (data.length <= 1) { // Только заголовок или пустой лист
+          logEvent("DEBUG", "log_cleanup_sheet_empty", "system", `Sheet "${sheetName}" is empty or has only headers`);
+          sheetResults.push({ sheetName: sheetName, deletedCount: 0, status: "empty" });
+          continue;
+        }
+        
+        // Удаляем старые записи (начиная с конца, чтобы не сбивать индексы)
+        for (let i = data.length - 1; i >= 1; i--) {
+          try {
+            var logDate = new Date(data[i][0]);
+            
+            // Проверяем валидность даты
+            if (isNaN(logDate.getTime())) {
+              logEvent("DEBUG", "log_cleanup_invalid_date", "system", `Invalid date in sheet "${sheetName}" row ${i + 1}: ${data[i][0]}`);
+              continue;
+            }
+            
+            if (logDate < thirtyDaysAgo) {
+              sheet.deleteRow(i + 1);
+              sheetDeletedCount++;
+            }
+          } catch (rowError) {
+            logEvent("WARN", "log_cleanup_row_error", "system", `Error processing row ${i + 1} in sheet "${sheetName}": ${rowError.message}`);
+          }
+        }
+        
+        totalDeleted += sheetDeletedCount;
+        sheetResults.push({ 
+          sheetName: sheetName, 
+          deletedCount: sheetDeletedCount, 
+          status: "success",
+          totalRows: data.length
+        });
+        
+        logEvent("INFO", "log_cleanup_sheet_completed", "system", `Sheet "${sheetName}": deleted ${sheetDeletedCount} of ${data.length - 1} entries`);
+        
+      } catch (sheetError) {
+        logEvent("ERROR", "log_cleanup_sheet_error", "system", `Error processing sheet "${sheetName}": ${sheetError.message}`);
+        sheetResults.push({ 
+          sheetName: sheetName, 
+          deletedCount: 0, 
+          status: "error", 
+          error: sheetError.message 
+        });
+      }
+    }
+    
+    // Финальная сводка
+    var summary = {
+      totalDeleted: totalDeleted,
+      sheetsProcessed: logSheets.length,
+      cutoffDate: thirtyDaysAgo.toISOString(),
+      sheetResults: sheetResults
+    };
+    
+    logEvent("INFO", "log_cleanup_completed", "system", 
+      `Cleanup completed: ${totalDeleted} entries deleted from ${logSheets.length} sheets. Summary: ${JSON.stringify(sheetResults)}`);
+    
+    return summary;
     
   } catch (error) {
-    logEvent("ERROR", "log_cleanup_error", "system", error.message);
-    return 0;
+    logEvent("ERROR", "log_cleanup_critical_error", "system", `Critical error in log cleanup: ${error.message}, Stack: ${error.stack?.substring(0, 200)}`);
+    return { 
+      totalDeleted: 0, 
+      sheetsProcessed: 0, 
+      error: error.message,
+      sheetResults: [] 
+    };
   }
 }
 
