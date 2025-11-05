@@ -1017,6 +1017,16 @@ function handleAddBinding(payload, clientIp) {
       binding_description || "" // Binding Description
     ]);
     
+    // Создаем Published лист для отслеживания постов
+    try {
+      createPublishedSheet(binding_name || `Binding_${bindingId.substring(0, 8)}`);
+      logEvent("INFO", "published_sheet_created_for_binding", license_key, 
+               `Created Published sheet for binding: ${binding_name || bindingId}`);
+    } catch (sheetError) {
+      logEvent("WARN", "published_sheet_creation_warning", license_key, 
+               `Failed to create Published sheet for binding ${bindingId}: ${sheetError.message}`);
+      // Не прерываем процесс, так как основная функция выполнена
+    }
     
     logEvent("INFO", "binding_added", license_key, 
              `Binding ID: ${bindingId}, VK: ${vk_group_url} (${processedVkGroupId}), TG: ${processedTgChatId}, IP: ${clientIp}`);
@@ -1472,15 +1482,59 @@ function handleGetVkPosts(payload, clientIp) {
       
       var posts = responseData.response ? responseData.response.items || [] : [];
       
-      logEvent("INFO", "vk_posts_retrieved", license_key, 
-               `Group ID: ${vk_group_id}, Posts count: ${posts.length}, IP: ${clientIp}`);
-      
-      return jsonResponse({
-        success: true,
-        posts: posts,
-        group_id: vk_group_id,
-        total_count: responseData.response ? responseData.response.count : 0
-      });
+      // Фильтруем уже отправленные посты используя Published листы
+      try {
+        var bindings = getUserBindings(license_key);
+        var filteredPosts = [];
+        
+        for (var post of posts) {
+          var alreadySent = false;
+          
+          // Проверяем для каждой связки этого пользователя
+          for (var binding of bindings) {
+            if (binding.vkGroupUrl) {
+              var bindingGroupId = extractVkGroupId(binding.vkGroupUrl);
+              if (bindingGroupId === vk_group_id && binding.bindingName) {
+                if (checkPostAlreadySent(binding.bindingName, post.id)) {
+                  alreadySent = true;
+                  logEvent("DEBUG", "post_already_sent", license_key, 
+                           `Post ${post.id} already sent to ${binding.bindingName}`);
+                  break;
+                }
+              }
+            }
+          }
+          
+          if (!alreadySent) {
+            filteredPosts.push(post);
+          }
+        }
+        
+        logEvent("INFO", "vk_posts_filtered", license_key, 
+                 `Group ID: ${vk_group_id}, Original: ${posts.length}, Filtered: ${filteredPosts.length}, IP: ${clientIp}`);
+        
+        return jsonResponse({
+          success: true,
+          posts: filteredPosts,
+          group_id: vk_group_id,
+          total_count: responseData.response ? responseData.response.count : 0,
+          filtered_count: filteredPosts.length
+        });
+        
+      } catch (filterError) {
+        logEvent("WARN", "post_filtering_failed", license_key, 
+                 `Failed to filter posts: ${filterError.message}, returning all posts`);
+        
+        logEvent("INFO", "vk_posts_retrieved", license_key, 
+                 `Group ID: ${vk_group_id}, Posts count: ${posts.length}, IP: ${clientIp}`);
+        
+        return jsonResponse({
+          success: true,
+          posts: posts,
+          group_id: vk_group_id,
+          total_count: responseData.response ? responseData.response.count : 0
+        });
+      }
       
     } catch (vkError) {
       logEvent("ERROR", "vk_posts_fetch_error", license_key, 
@@ -1598,21 +1652,54 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
           results: results
         };
       } else {
-        return { 
-          success: true, 
+        var finalResult = {
+          success: true,
           message_id: results.find(r => r.success)?.message_id,
           results: results
         };
+
+        // Сохраняем информацию об отправленном посте в Published лист
+        try {
+          if (binding && binding.bindingName && vkPost && vkPost.id) {
+            saveLastPostIdToSheet(binding.bindingName, binding.vkGroupId || 'unknown', vkPost.id, {
+              tgChatName: chatId,
+              preview: (vkPost.text || '').substring(0, 100) + (vkPost.text && vkPost.text.length > 100 ? '...' : '')
+            });
+
+            logEvent("INFO", "post_saved_to_published_sheet", "server",
+                     `Post ${vkPost.id} saved to Published_${binding.bindingName}`);
+          }
+        } catch (saveError) {
+          logEvent("WARN", "post_save_to_sheet_failed", "server",
+                   `Post ID: ${vkPost?.id}, Error: ${saveError.message}`);
+          // Не прерываем успешную отправку из-за ошибки сохранения
+        }
+
+        return finalResult;
       }
-      
-    } catch (mediaError) {
+
+      } catch (mediaError) {
       logEvent("ERROR", "media_send_strategy_error", "server", mediaError.message);
-      
+
       // Fallback: отправляем только текст
       if (text) {
-        return sendTelegramMessage(botToken, chatId, text);
+       var fallbackResult = sendTelegramMessage(botToken, chatId, text);
+
+       // Сохраняем информацию даже для fallback
+       if (fallbackResult.success && binding && binding.bindingName && vkPost && vkPost.id) {
+         try {
+           saveLastPostIdToSheet(binding.bindingName, binding.vkGroupId || 'unknown', vkPost.id, {
+             tgChatName: chatId,
+             preview: (vkPost.text || '').substring(0, 100) + (vkPost.text && vkPost.text.length > 100 ? '...' : '')
+           });
+         } catch (saveError) {
+           logEvent("WARN", "fallback_post_save_failed", "server", saveError.message);
+         }
+       }
+
+       return fallbackResult;
       }
-      
+
       return { success: false, error: mediaError.message };
     }
     
@@ -4294,6 +4381,445 @@ function testSendMixedMediaOptimized() {
   } catch (error) {
     logEvent("ERROR", "test_send_mixed_media_optimized_error", "server", error.message);
     return { success: false, error: error.message };
+  }
+}
+
+// ============================================
+// 7. УТИЛИТЫ ОБРАБОТКИ URL И ID
+// ============================================
+
+/**
+ * Извлекает ID группы VK из URL с поддержкой всех форматов из ARCHITECTURE.md
+ * @param {string} url - URL группы VK
+ * @return {string} - ID группы с префиксом - для групп
+ */
+function extractVkGroupId(url) {
+  try {
+    if (!url || typeof url !== 'string') {
+      logEvent('WARN', 'vk_url_invalid_type', 'server', `URL type: ${typeof url}`);
+      throw new Error('Invalid URL type');
+    }
+    
+    const originalInput = url;
+    const cleanInput = url.trim().toLowerCase().split('?')[0].split('#')[0];
+    
+    logEvent('DEBUG', 'vk_group_id_extraction_start', 'server', `Input: "${originalInput}" → Clean: "${cleanInput}"`);
+    
+    // Если уже ID (число или -число)
+    if (/^-?\d+$/.test(cleanInput)) {
+      const normalizedId = cleanInput.startsWith('-') ? cleanInput : '-' + cleanInput;
+      logEvent('DEBUG', 'vk_group_id_numeric', 'server', `${originalInput} → ${normalizedId}`);
+      return normalizedId;
+    }
+    
+    // Форматы: vk.com/public123, vk.com/club123
+    const publicClubMatch = cleanInput.match(/vk\.com\/(public|club)(\d+)/i);
+    if (publicClubMatch) {
+      const result = '-' + publicClubMatch[2];
+      logEvent('DEBUG', 'vk_group_id_public_club', 'server', `${originalInput} → ${result}`);
+      return result;
+    }
+    
+    // Форматы: vk.com/username
+    const nameMatch = cleanInput.match(/vk\.com\/([a-z0-9_]+)/i);
+    if (nameMatch) {
+      const screenName = nameMatch[1];
+      const resolvedId = resolveVkScreenName(screenName);
+      if (resolvedId) {
+        logEvent('DEBUG', 'vk_group_id_resolved', 'server', `${originalInput} → ${resolvedId}`);
+        return resolvedId;
+      }
+    }
+    
+    throw new Error('Invalid VK URL format: ' + originalInput);
+    
+  } catch (error) {
+    logEvent('ERROR', 'vk_url_extraction_failed', 'server', `URL: ${url}, Error: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
+ * Резолвит screen name VK в числовой ID через API
+ * @param {string} screenName - screen name пользователя или группы
+ * @return {string} - числовой ID с префиксом - для групп
+ */
+function resolveVkScreenName(screenName) {
+  try {
+    const userToken = PropertiesService.getScriptProperties().getProperty("VK_USER_ACCESS_TOKEN");
+    
+    if (!userToken) {
+      throw new Error('VK User Access Token not configured');
+    }
+    
+    const apiUrl = `https://api.vk.com/method/utils.resolveScreenName?screen_name=${encodeURIComponent(screenName)}&v=${VK_API_VERSION}&access_token=${userToken}`;
+    
+    logEvent('DEBUG', 'vk_screen_name_resolution_start', 'server', `Screen name: ${screenName}`);
+    
+    const response = UrlFetchApp.fetch(apiUrl, {
+      muteHttpExceptions: true,
+      timeout: TIMEOUTS.FAST
+    });
+    
+    const responseText = response.getContentText();
+    const data = JSON.parse(responseText);
+    
+    if (data.error) {
+      const errorCode = data.error.error_code;
+      const errorMsg = data.error.error_msg;
+      
+      switch (errorCode) {
+        case 5:
+          throw new Error('VK User Access Token invalid');
+        case 100:
+          throw new Error(`Screen name '${screenName}' invalid format`);
+        case 104:
+          throw new Error(`Screen name '${screenName}' not found`);
+        case 113:
+          throw new Error(`Screen name '${screenName}' not found`);
+        case 7:
+          throw new Error(`Access denied to '${screenName}'`);
+        default:
+          throw new Error(`VK API Error ${errorCode}: ${errorMsg}`);
+      }
+    }
+    
+    if (!data.response) {
+      throw new Error(`No response data for screen name '${screenName}'`);
+    }
+    
+    const objectId = data.response.object_id;
+    const type = data.response.type;
+    
+    // Правильное добавление минуса для групп
+    const result = (type === 'group' || type === 'page') ? `-${objectId}` : objectId.toString();
+    
+    logEvent('DEBUG', 'vk_screen_name_resolved', 'server', 
+      `Screen name: ${screenName} → Type: ${type}, ID: ${objectId} → Result: ${result}`);
+    
+    return result;
+    
+  } catch (error) {
+    logEvent('ERROR', 'vk_screen_name_resolution_failed', 'server', 
+      `Failed to resolve '${screenName}': ${error.message}`);
+    throw error;
+  }
+}
+
+/**
+ * Извлекает безопасное имя листа из URL VK группы
+ * @param {string} url - URL группы VK
+ * @return {string} - безопасное имя для листа Google Sheets
+ */
+function extractSheetNameFromVkUrl(url) {
+  if (!url) return null;
+  
+  const cleanUrl = url.trim().toLowerCase().split('?')[0].split('#')[0];
+  
+  // public123456, club789012
+  const idMatch = cleanUrl.match(/(?:public|club)(\d+)/);
+  if (idMatch) {
+    return `${idMatch[0]}`.substring(0, 27); // Ограничение 30 символов для имени листа
+  }
+  
+  // durov, varsmana, apiclub
+  const nameMatch = cleanUrl.match(/vk\.com\/([a-z0-9_]+)/);
+  if (nameMatch) {
+    return nameMatch[1]
+      .replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '')
+      .replace(/\s+/g, '_')
+      .substring(0, 27);
+  }
+  
+  return null;
+}
+
+/**
+ * Извлекает chat_id Telegram с поддержкой всех форматов
+ * @param {string} input - input в любом формате
+ * @return {string} - chat_id или @username
+ */
+function extractTelegramChatId(input) {
+  if (!input) throw new Error('Empty Telegram input');
+  
+  const cleanInput = input.trim();
+  
+  // Уже chat_id (число)
+  if (/^-?\d+$/.test(cleanInput)) return cleanInput;
+  
+  // Извлекаем username из разных форматов
+  const patterns = [
+    /t\.me\/([a-z0-9_]+)/i,     // t.me/username
+    /@([a-z0-9_]+)/i,           // @username  
+    /^([a-z0-9_]+)$/i           // username
+  ];
+  
+  for (const pattern of patterns) {
+    const match = cleanInput.match(pattern);
+    if (match) return '@' + match[1];
+  }
+  
+  throw new Error('Invalid Telegram format: ' + input);
+}
+
+// ============================================
+// 8. PUBLISHED ЛИСТЫ СИСТЕМА
+// ============================================
+
+/**
+ * Создает Published лист для отслеживания отправленных постов
+ * @param {string} bindingName - название связки
+ * @return {Sheet} - созданный лист
+ */
+function createPublishedSheet(bindingName) {
+  try {
+    if (!bindingName) {
+      bindingName = 'Unknown';
+    }
+    
+    // Создаем безопасное имя листа
+    const safeName = bindingName
+      .replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '')
+      .replace(/\s+/g, '_')
+      .substring(0, 27);
+    
+    const sheetName = `Published_${safeName}`;
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    // Проверяем существует ли лист
+    let sheet = ss.getSheetByName(sheetName);
+    if (sheet) {
+      logEvent('DEBUG', 'published_sheet_exists', 'server', `Sheet ${sheetName} already exists`);
+      return sheet;
+    }
+    
+    // Создаем новый лист
+    sheet = ss.insertSheet(sheetName);
+    
+    // Устанавливаем заголовки
+    const headers = [
+      "Post ID", "Sent At", "TG Chat Name", 
+      "Status", "Source", "Post Preview", "VK Post URL"
+    ];
+    
+    sheet.appendRow(headers);
+    
+    // Форматируем заголовки
+    const headerRange = sheet.getRange(1, 1, 1, headers.length);
+    headerRange.setBackground("#667eea");
+    headerRange.setFontColor("white");
+    headerRange.setFontWeight("bold");
+    sheet.setFrozenRows(1);
+    
+    logEvent('INFO', 'published_sheet_created', 'server', `Created sheet: ${sheetName}`);
+    
+    return sheet;
+    
+  } catch (error) {
+    logEvent('ERROR', 'published_sheet_creation_failed', 'server', 
+      `Binding: ${bindingName}, Error: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
+ * Получает последний ID поста из Published листа
+ * @param {string} bindingName - название связки
+ * @param {string} vkGroupId - ID группы VK
+ * @return {string|null} - последний ID поста или null
+ */
+function getLastPostIdFromSheet(bindingName, vkGroupId) {
+  try {
+    const sheetName = `Published_${bindingName}`;
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+    
+    if (!sheet) {
+      createPublishedSheet(bindingName);
+      return null; // Новый лист, нет постов
+    }
+    
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return null; // Только заголовки
+    
+    // Последний пост в первой строке данных
+    return data[1][0]; // Post ID из колонки A
+    
+  } catch (error) {
+    logEvent('ERROR', 'get_last_post_failed', 'server', error.message);
+    return null;
+  }
+}
+
+/**
+ * Сохраняет информацию об отправленном посте в Published лист
+ * @param {string} bindingName - название связки
+ * @param {string} vkGroupId - ID группы VK
+ * @param {string} postId - ID поста
+ * @param {Object} postData - данные поста
+ */
+function saveLastPostIdToSheet(bindingName, vkGroupId, postId, postData) {
+  try {
+    const sheetName = `Published_${bindingName}`;
+    let sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+    
+    if (!sheet) {
+      sheet = createPublishedSheet(bindingName);
+    }
+    
+    // Добавляем новый пост в начало (после заголовков)
+    sheet.insertRowAfter(1);
+    sheet.getRange(2, 1, 1, 7).setValues([[
+      postId,                           // Post ID
+      new Date().toISOString(),         // Sent At  
+      postData.tgChatName || 'Unknown', // TG Chat Name
+      'sent',                           // Status
+      'VK',                            // Source
+      postData.preview || '',          // Post Preview
+      `https://vk.com/wall${vkGroupId}_${postId}` // VK Post URL
+    ]]);
+    
+    logEvent('INFO', 'post_saved_to_sheet', 'server', 
+      `Post ${postId} saved to ${sheetName}`);
+    
+  } catch (error) {
+    logEvent('ERROR', 'save_post_failed', 'server', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Проверяет, был ли пост уже отправлен
+ * @param {string} bindingName - название связки
+ * @param {string} postId - ID поста
+ * @return {boolean} - true если пост уже был отправлен
+ */
+function checkPostAlreadySent(bindingName, postId) {
+  try {
+    const sheetName = `Published_${bindingName}`;
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+    
+    if (!sheet) {
+      return false; // Листа нет, значит пост не отправлялся
+    }
+    
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return false; // Только заголовки
+    
+    // Ищем пост в колонке A (Post ID)
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0] == postId) {
+        return true;
+      }
+    }
+    
+    return false;
+    
+  } catch (error) {
+    logEvent('ERROR', 'check_post_sent_failed', 'server', error.message);
+    return false;
+  }
+}
+
+/**
+ * Очищает старые логи (старше 30 дней) из всех лог-листов
+ * @return {Object} - результат очистки
+ */
+function cleanOldLogs() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const allSheets = ss.getSheets();
+    const logSheets = [];
+    
+    // Ищем все листы с логами
+    for (let i = 0; i < allSheets.length; i++) {
+      const sheetName = allSheets[i].getName();
+      if (sheetName === "Logs" || sheetName.toLowerCase().includes("log")) {
+        logSheets.push(allSheets[i]);
+      }
+    }
+    
+    if (logSheets.length === 0) {
+      logEvent('WARN', 'no_log_sheets_found', 'server', 'No log sheets found for cleanup');
+      return { totalDeleted: 0, sheetResults: [] };
+    }
+    
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    let totalDeleted = 0;
+    const sheetResults = [];
+    
+    logEvent('INFO', 'log_cleanup_started', 'server', `Starting cleanup of ${logSheets.length} log sheets older than ${thirtyDaysAgo.toISOString()}`);
+    
+    // Обрабатываем каждый лог-лист
+    for (let j = 0; j < logSheets.length; j++) {
+      const sheet = logSheets[j];
+      const sheetName = sheet.getName();
+      let sheetDeletedCount = 0;
+      
+      try {
+        // Проверяем, есть ли у листа данные
+        const lastRow = sheet.getLastRow();
+        if (lastRow <= 1) { // Только заголовки или пустой лист
+          sheetResults.push({ sheetName, deleted: 0, status: 'empty' });
+          continue;
+        }
+        
+        // Получаем все данные
+        const data = sheet.getRange(1, 1, lastRow, sheet.getLastColumn()).getValues();
+        const rowsToDelete = [];
+        
+        // Находим строки для удаления (старше 30 дней)
+        for (let i = 1; i < data.length; i++) { // Пропускаем заголовки (i = 0)
+          const timestamp = data[i][0]; // Первая колонка - Timestamp
+          if (timestamp && typeof timestamp === 'object' && timestamp instanceof Date) {
+            if (timestamp < thirtyDaysAgo) {
+              rowsToDelete.push(i + 1); // +1 потому что диапазоны в Google Sheets 1-based
+            }
+          } else if (typeof timestamp === 'string') {
+            const dateValue = new Date(timestamp);
+            if (!isNaN(dateValue.getTime()) && dateValue < thirtyDaysAgo) {
+              rowsToDelete.push(i + 1);
+            }
+          }
+        }
+        
+        // Удаляем старые строки (в обратном порядке чтобы не сбить индексы)
+        if (rowsToDelete.length > 0) {
+          rowsToDelete.sort((a, b) => b - a); // Сортируем по убыванию
+          for (let k = 0; k < rowsToDelete.length; k++) {
+            sheet.deleteRow(rowsToDelete[k]);
+          }
+          sheetDeletedCount = rowsToDelete.length;
+        }
+        
+        totalDeleted += sheetDeletedCount;
+        sheetResults.push({ 
+          sheetName, 
+          deleted: sheetDeletedCount, 
+          status: sheetDeletedCount > 0 ? 'cleaned' : 'no_old_records'
+        });
+        
+        logEvent('INFO', 'sheet_cleanup_completed', 'server', 
+                 `Sheet: ${sheetName}, Deleted: ${sheetDeletedCount} rows`);
+        
+      } catch (sheetError) {
+        logEvent('ERROR', 'sheet_cleanup_error', 'server', 
+                 `Sheet: ${sheetName}, Error: ${sheetError.message}`);
+        sheetResults.push({ sheetName, deleted: 0, status: 'error', error: sheetError.message });
+      }
+    }
+    
+    logEvent('INFO', 'log_cleanup_completed', 'server', 
+             `Cleanup complete. Total deleted: ${totalDeleted} rows from ${logSheets.length} sheets`);
+    
+    return {
+      success: true,
+      totalDeleted: totalDeleted,
+      sheetResults: sheetResults
+    };
+    
+  } catch (error) {
+    logEvent('ERROR', 'log_cleanup_failed', 'server', error.message);
+    return { success: false, error: error.message, totalDeleted: 0, sheetResults: [] };
   }
 }
 
