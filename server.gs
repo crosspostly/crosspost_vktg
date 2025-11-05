@@ -2281,7 +2281,10 @@ function findBindingById(bindingId, licenseKey) {
           tgChatId: data[i][4],
           status: data[i][5],
           createdAt: data[i][6],
-          lastCheck: data[i][7]
+          lastCheck: data[i][7],
+          formatSettings: data[i][8] || "",
+          bindingName: data[i][9] || "",
+          bindingDescription: data[i][10] || ""
         };
       }
     }
@@ -2571,6 +2574,7 @@ function getAdminPanelHtml() {
   html += '    <table border="1" cellpadding="5" cellspacing="0">';
   html += '      <tr>';
   html += '        <th>ID</th>';
+  html += '        <th>Название</th>';
   html += '        <th>Email</th>';
   html += '        <th>VK группа</th>';
   html += '        <th>TG чат</th>';
@@ -2587,8 +2591,11 @@ function getAdminPanelHtml() {
       statusColor = 'orange';
     }
     
+    var bindingName = binding.bindingName || 'Без названия';
+    
     html += '      <tr>';
     html += '        <td><code>' + binding.id.substring(0, 15) + '...</code></td>';
+    html += '        <td><em>' + escapeHtml(bindingName) + '</em></td>';
     html += '        <td>' + binding.userEmail + '</td>';
     html += '        <td>' + binding.vkGroupUrl + '</td>';
     html += '        <td><code>' + binding.tgChatId + '</code></td>';
@@ -2598,9 +2605,33 @@ function getAdminPanelHtml() {
   });
   
   html += '    </table>';
+  html += '    <hr>';
+  html += '    <h2>🛠️ Управление системой</h2>';
+  html += '    <p>';
+  html += '      <button onclick="ensureBindingsStructure()">🔧 Обеспечить структуру Bindings (11 колонок)</button>';
+  html += '      <button onclick="google.script.run.withSuccessHandler(function(result) { alert(\'Логи очищены: \' + result.totalDeleted + \' записей из \' + result.sheetsProcessed + \' листов\'); }).withFailureHandler(function(error) { alert(\'Ошибка: \' + error.message); }).cleanOldLogs();">🧹 Очистить старые логи (>30 дней)</button>';
+  html += '    </p>';
   html += '  </div>';
   html += '</body>';
   html += '</html>';
+  
+  // Добавляем JavaScript для кнопок
+  html += '<script>';
+  html += 'function ensureBindingsStructure() {';
+  html += '  google.script.run.withSuccessHandler(function(result) {';
+  html += '    if (result.success) {';
+  html += '      var message = result.added_columns.length > 0 ';
+  html += '        ? "Добавлены колонки: " + result.added_columns.join(", ") ';
+  html += '        : "Структура Bindings уже корректна";';
+  html += '      alert("✅ " + message);';
+  html += '    } else {';
+  html += '      alert("❌ Ошибка: " + result.error);';
+  html += '    }';
+  html += '  }).withFailureHandler(function(error) {';
+  html += '    alert("❌ Критическая ошибка: " + error.message);';
+  html += '  }).ensureBindingsSheetStructure();';
+  html += '}';
+  html += '</script>';
   
   return html;
 }
@@ -2676,7 +2707,9 @@ function getSystemStats() {
           vkGroupUrl: binding[3],
           tgChatId: binding[4],
           status: binding[5],
-          createdAt: binding[6]
+          createdAt: binding[6],
+          bindingName: binding[9] || "",
+          bindingDescription: binding[10] || ""
         }))
         .slice(-10)
         .reverse()
@@ -3786,6 +3819,85 @@ function handlePublishLastPost(payload, clientIp) {
       success: false, 
       error: "Failed to publish last post: " + error.message 
     }, 500);
+  }
+}
+
+/**
+ * Функция для обеспечения структуры листа Bindings (11 колонок)
+ * Создает недостающие колонки и валидирует существующие
+ */
+function ensureBindingsSheetStructure() {
+  try {
+    var sheet = getSheet("Bindings");
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    
+    var expectedHeaders = [
+      "Binding ID", "License Key", "User Email", "VK Group URL", "TG Chat ID", 
+      "Status", "Created At", "Last Check", "Format Settings", "Binding Name", "Binding Description"
+    ];
+    
+    var missingColumns = [];
+    var currentColumnCount = headers.length;
+    
+    // Проверяем какие колонки отсутствуют
+    for (var i = 0; i < expectedHeaders.length; i++) {
+      if (i >= headers.length || headers[i] !== expectedHeaders[i]) {
+        missingColumns.push({
+          name: expectedHeaders[i],
+          index: i + 1 // 1-based index
+        });
+      }
+    }
+    
+    // Добавляем недостающие колонки
+    if (missingColumns.length > 0) {
+      var targetColumn = Math.max(currentColumnCount + 1, 1);
+      
+      for (var j = 0; j < missingColumns.length; j++) {
+        var missing = missingColumns[j];
+        
+        // Если колонка полностью отсутствует (выходит за текущие границы)
+        if (missing.index > currentColumnCount) {
+          sheet.getRange(1, targetColumn).setValue(missing.name);
+          targetColumn++;
+        } else {
+          // Обновляем существующую колонку с неправильным названием
+          sheet.getRange(1, missing.index).setValue(missing.name);
+        }
+      }
+      
+      // Форматируем новые заголовки
+      var headerRange = sheet.getRange(1, 1, 1, expectedHeaders.length);
+      headerRange.setBackground("#667eea");
+      headerRange.setFontColor("white");
+      headerRange.setFontWeight("bold");
+      
+      logEvent("INFO", "bindings_structure_ensured", "system", 
+               `Added/updated columns: ${missingColumns.map(c => c.name).join(", ")}`);
+      
+      return {
+        success: true,
+        added_columns: missingColumns.map(c => c.name),
+        total_columns: expectedHeaders.length
+      };
+    } else {
+      logEvent("DEBUG", "bindings_structure_already_valid", "system", 
+               "All required columns exist with correct names");
+      
+      return {
+        success: true,
+        added_columns: [],
+        total_columns: expectedHeaders.length,
+        message: "Bindings sheet structure is already correct"
+      };
+    }
+    
+  } catch (error) {
+    logEvent("ERROR", "ensure_bindings_structure_error", "system", error.message);
+    return {
+      success: false,
+      error: error.message
+    };
   }
 }
 
