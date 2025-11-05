@@ -2,6 +2,9 @@
 // API ENDPOINTS AND HANDLERS (split from server.gs)
 // ============================================
 
+// Константы API
+var VK_API_VERSION = "5.131";
+
 function doPost(e) {
   try {
     if (!e || !e.postData || !e.postData.contents) {
@@ -47,6 +50,8 @@ function doPost(e) {
           return handleTestPublication(payload, clientIp);
         case "get_vk_posts":
           return handleGetVkPosts(payload, clientIp);
+        case "publish_last_post":
+          return handlePublishLastPost(payload, clientIp);
         case "get_global_setting":
           return handleGetGlobalSetting(payload, clientIp);
         case "set_global_setting":
@@ -124,7 +129,7 @@ function handleGetUserBindingsWithNames(payload, clientIp) {
 
 function handleAddBinding(payload, clientIp) {
   try {
-    var { license_key, vk_group_url, tg_chat_id, formatSettings } = payload;
+    var { license_key, vk_group_url, tg_chat_id, formatSettings, binding_name, binding_description } = payload;
     var licenseCheck = handleCheckLicense({ license_key }, clientIp);
     var licenseData = JSON.parse(licenseCheck.getContent());
     if (!licenseData.success) return licenseCheck;
@@ -161,6 +166,9 @@ function handleAddBinding(payload, clientIp) {
       }
     }
 
+    // Обеспечиваем наличие листа с правильной структурой
+    ensureBindingsSheetStructure();
+
     var bindingsSheet = getSheet("Bindings");
     bindingsSheet.appendRow([
       bindingId,
@@ -171,11 +179,13 @@ function handleAddBinding(payload, clientIp) {
       "active",
       new Date().toISOString(),
       new Date().toISOString(),
-      formatSettingsString
+      formatSettingsString,
+      binding_name || `Group_${Math.abs(processedVkGroupId)}`,
+      binding_description || ""
     ]);
 
-    logEvent("INFO", "binding_added", license_key, `Binding ID: ${bindingId}, VK: ${vk_group_url} (${processedVkGroupId}), TG: ${processedTgChatId}, IP: ${clientIp}`);
-    return jsonResponse({ success: true, binding_id: bindingId, converted: { vk_group_id: processedVkGroupId, tg_chat_id: processedTgChatId } });
+    logEvent("INFO", "binding_added", license_key, `Binding ID: ${bindingId}, Name: ${binding_name || 'Auto'}, VK: ${vk_group_url} (${processedVkGroupId}), TG: ${processedTgChatId}, IP: ${clientIp}`);
+    return jsonResponse({ success: true, binding_id: bindingId, converted: { vk_group_id: processedVkGroupId, tg_chat_id: processedTgChatId }, binding_name: binding_name });
   } catch (error) {
     logEvent("ERROR", "binding_add_error", payload.license_key, error.message);
     return jsonResponse({ success: false, error: error.message }, 500);
@@ -184,10 +194,13 @@ function handleAddBinding(payload, clientIp) {
 
 function handleEditBinding(payload, clientIp) {
   try {
-    var { license_key, binding_id, vk_group_url, tg_chat_id, formatSettings } = payload;
+    var { license_key, binding_id, vk_group_url, tg_chat_id, formatSettings, binding_name, binding_description } = payload;
     var licenseCheck = handleCheckLicense({ license_key }, clientIp);
     var licenseData = JSON.parse(licenseCheck.getContent());
     if (!licenseData.success) return licenseCheck;
+
+    // Обеспечиваем наличие листа с правильной структурой
+    ensureBindingsSheetStructure();
 
     var bindingRow = findBindingRowById(binding_id, license_key);
     if (!bindingRow) {
@@ -224,9 +237,17 @@ function handleEditBinding(payload, clientIp) {
     bindingsSheet.getRange(bindingRow, 5).setValue(processedTgChatId);
     bindingsSheet.getRange(bindingRow, 8).setValue(new Date().toISOString());
     bindingsSheet.getRange(bindingRow, 9).setValue(formatSettingsString);
+    
+    // Обновляем новые поля если переданы
+    if (binding_name !== undefined) {
+      bindingsSheet.getRange(bindingRow, 10).setValue(binding_name);
+    }
+    if (binding_description !== undefined) {
+      bindingsSheet.getRange(bindingRow, 11).setValue(binding_description);
+    }
 
-    logEvent("INFO", "binding_edited", license_key, `Binding ID: ${binding_id}, VK: ${vk_group_url} (${processedVkGroupId}), TG: ${processedTgChatId}, IP: ${clientIp}`);
-    return jsonResponse({ success: true, converted: { vk_group_id: processedVkGroupId, tg_chat_id: processedTgChatId } });
+    logEvent("INFO", "binding_edited", license_key, `Binding ID: ${binding_id}, Name: ${binding_name || 'unchanged'}, VK: ${vk_group_url} (${processedVkGroupId}), TG: ${processedTgChatId}, IP: ${clientIp}`);
+    return jsonResponse({ success: true, converted: { vk_group_id: processedVkGroupId, tg_chat_id: processedTgChatId }, binding_name: binding_name });
   } catch (error) {
     logEvent("ERROR", "binding_edit_error", payload.license_key, error.message);
     return jsonResponse({ success: false, error: error.message }, 500);
@@ -402,7 +423,7 @@ function handleTestPublication(payload, clientIp) {
 
 function handleGetVkPosts(payload, clientIp) {
   try {
-    var { license_key, vk_group_url, count } = payload;
+    var { license_key, vk_group_url, vk_group_id, count = 50 } = payload;
     
     // Проверяем лицензию
     var licenseCheck = handleCheckLicense({ license_key }, clientIp);
@@ -411,18 +432,34 @@ function handleGetVkPosts(payload, clientIp) {
       return licenseCheck;
     }
     
-    if (!vk_group_url) {
-      return jsonResponse({ success: false, error: "VK group URL required" }, 400);
+    var groupId;
+    var sourceInfo;
+    
+    // Приоритет: vk_group_id > vk_group_url
+    if (vk_group_id) {
+      // Валидация формата vk_group_id
+      if (!/^-?\d+$/.test(vk_group_id)) {
+        logEvent("WARN", "invalid_vk_group_id_format", license_key, `Invalid vk_group_id format: ${vk_group_id}, IP: ${clientIp}`);
+        return jsonResponse({ success: false, error: "Invalid vk_group_id format. Expected: -123456 or 123456" }, 400);
+      }
+      groupId = vk_group_id;
+      sourceInfo = `ID: ${vk_group_id}`;
+    } else if (vk_group_url) {
+      // Извлекаем ID группы из URL (fallback для обратной совместимости)
+      try {
+        groupId = extractVkGroupId(vk_group_url);
+        sourceInfo = `URL: ${vk_group_url} → ${groupId}`;
+      } catch (error) {
+        logEvent("WARN", "vk_group_id_extraction_failed", license_key, `URL: ${vk_group_url}, Error: ${error.message}, IP: ${clientIp}`);
+        return jsonResponse({ success: false, error: `Ошибка в ВК ссылке: ${error.message}` }, 400);
+      }
+    } else {
+      return jsonResponse({ success: false, error: "Either vk_group_id or vk_group_url required" }, 400);
     }
     
-    // Извлекаем ID группы из URL
-    var groupId;
-    try {
-      groupId = extractVkGroupId(vk_group_url);
-    } catch (error) {
-      logEvent("WARN", "vk_group_id_extraction_failed", license_key, `URL: ${vk_group_url}, Error: ${error.message}, IP: ${clientIp}`);
-      return jsonResponse({ success: false, error: `Ошибка в ВК ссылке: ${error.message}` }, 400);
-    }
+    // Логируем запрос VK API (без токена)
+    var logUrl = `https://api.vk.com/method/wall.get?owner_id=${groupId}&count=${count}&v=${VK_API_VERSION}&access_token=[HIDDEN]`;
+    logEvent("DEBUG", "vk_api_request", license_key, `Request URL: ${logUrl}, Source: ${sourceInfo}, IP: ${clientIp}`);
     
     // Проверяем VK User Token
     var userToken = PropertiesService.getScriptProperties().getProperty("VK_USER_ACCESS_TOKEN");
@@ -433,16 +470,162 @@ function handleGetVkPosts(payload, clientIp) {
     
     // Получаем посты из ВК
     try {
-      var posts = getVkPosts(groupId, count || 10);
-      logEvent("INFO", "vk_posts_retrieved", license_key, `Group: ${vk_group_url} (${groupId}), Posts count: ${posts.length}, IP: ${clientIp}`);
-      return jsonResponse({ success: true, posts: posts, group_id: groupId });
+      var posts = getVkPosts(groupId, count || 50);
+      logEvent("INFO", "vk_posts_retrieved", license_key, `Group: ${sourceInfo} (${groupId}), Posts count: ${posts.length}, IP: ${clientIp}`);
+      return jsonResponse({ success: true, posts: posts, group_id: groupId, source: sourceInfo });
     } catch (vkError) {
-      logEvent("ERROR", "vk_posts_fetch_error", license_key, `Group: ${vk_group_url} (${groupId}), Error: ${vkError.message}, IP: ${clientIp}`);
-      return jsonResponse({ success: false, error: `Не удалось получить посты из ВК: ${vkError.message}`, details: { group_url: vk_group_url, group_id: groupId, vk_error: vkError.message } }, 500);
+      logEvent("ERROR", "vk_posts_fetch_error", license_key, `Group: ${sourceInfo} (${groupId}), Error: ${vkError.message}, IP: ${clientIp}`);
+      return jsonResponse({ success: false, error: `Не удалось получить посты из ВК: ${vkError.message}`, details: { source: sourceInfo, group_id: groupId, vk_error: vkError.message } }, 500);
     }
     
   } catch (error) {
     logEvent("ERROR", "get_vk_posts_error", payload.license_key, error.message);
     return jsonResponse({ success: false, error: error.message }, 500);
+  }
+}
+
+function handlePublishLastPost(payload, clientIp) {
+  try {
+    var { license_key, vk_group_id, binding_id } = payload;
+    
+    // Проверяем лицензию
+    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    var licenseData = JSON.parse(licenseCheck.getContent());
+    if (!licenseData.success) {
+      return licenseCheck;
+    }
+    
+    // Валидация vk_group_id
+    if (!vk_group_id || !/^-?\d+$/.test(vk_group_id)) {
+      logEvent("WARN", "invalid_vk_group_id_format", license_key, `Invalid vk_group_id format: ${vk_group_id}, IP: ${clientIp}`);
+      return jsonResponse({ success: false, error: "Invalid vk_group_id format. Expected: -123456 or 123456" }, 400);
+    }
+    
+    // Находим связку для получения настроек форматирования
+    var binding;
+    if (binding_id) {
+      binding = findBindingById(binding_id, license_key);
+    } else {
+      // Ищем связку по vk_group_id
+      var bindings = getUserBindingsWithNames(license_key);
+      if (bindings.success) {
+        var foundBinding = bindings.bindings.find(b => b.vkGroupId === vk_group_id);
+        binding = foundBinding;
+      }
+    }
+    
+    if (!binding) {
+      logEvent("WARN", "binding_not_found_for_publish", license_key, `VK Group ID: ${vk_group_id}, IP: ${clientIp}`);
+      return jsonResponse({ success: false, error: "Binding not found for this VK group" }, 404);
+    }
+    
+    if (binding.status !== "active") {
+      logEvent("WARN", "binding_not_active_for_publish", license_key, `Binding ID: ${binding.id}, Status: ${binding.status}, IP: ${clientIp}`);
+      return jsonResponse({ success: false, error: "Binding is not active" }, 403);
+    }
+    
+    // Логируем начало операции
+    logEvent("DEBUG", "publish_last_post_started", license_key, `VK Group ID: ${vk_group_id}, Binding ID: ${binding.id}, IP: ${clientIp}`);
+    
+    // Получаем последний пост из VK
+    try {
+      var posts = getVkPosts(vk_group_id, 1); // Только последний пост
+      if (!posts || posts.length === 0) {
+        logEvent("WARN", "no_posts_found", license_key, `VK Group ID: ${vk_group_id}, IP: ${clientIp}`);
+        return jsonResponse({ success: false, error: "No posts found in VK group" }, 404);
+      }
+      
+      var lastPost = posts[0];
+      logEvent("DEBUG", "last_post_retrieved", license_key, `Post ID: ${lastPost.id}, VK Group ID: ${vk_group_id}`);
+      
+    } catch (vkError) {
+      logEvent("ERROR", "vk_last_post_fetch_error", license_key, `VK Group ID: ${vk_group_id}, Error: ${vkError.message}, IP: ${clientIp}`);
+      return jsonResponse({ success: false, error: `Не удалось получить последний пост из ВК: ${vkError.message}` }, 500);
+    }
+    
+    // Отправляем пост в Telegram с учетом настроек форматирования связки
+    try {
+      var sendResult = sendVkPostToTelegram(binding.tgChatId, lastPost, binding);
+      
+      if (sendResult.success) {
+        logEvent("INFO", "last_post_published_successfully", license_key, `Binding ID: ${binding.id}, VK Group ID: ${vk_group_id}, Post ID: ${lastPost.id}, Message ID: ${sendResult.message_id}, IP: ${clientIp}`);
+        return jsonResponse({ 
+          success: true, 
+          message: "Last post published successfully",
+          post_id: lastPost.id,
+          message_id: sendResult.message_id,
+          binding_id: binding.id
+        });
+      } else {
+        logEvent("ERROR", "last_post_publish_failed", license_key, `Binding ID: ${binding.id}, VK Group ID: ${vk_group_id}, Post ID: ${lastPost.id}, Error: ${sendResult.error}, IP: ${clientIp}`);
+        return jsonResponse({ success: false, error: `Failed to publish last post: ${sendResult.error}` }, 500);
+      }
+      
+    } catch (sendError) {
+      logEvent("ERROR", "last_post_send_error", license_key, `Binding ID: ${binding.id}, VK Group ID: ${vk_group_id}, Post ID: ${lastPost.id}, Error: ${sendError.message}, IP: ${clientIp}`);
+      return jsonResponse({ success: false, error: `Error sending last post to Telegram: ${sendError.message}` }, 500);
+    }
+    
+  } catch (error) {
+    logEvent("ERROR", "publish_last_post_error", payload.license_key, error.message);
+    return jsonResponse({ success: false, error: error.message }, 500);
+  }
+}
+
+function ensureBindingsSheetStructure() {
+  try {
+    var bindingsSheet = getSheet("Bindings");
+    var headers = bindingsSheet.getRange(1, 1, 1, bindingsSheet.getLastColumn()).getValues()[0];
+    
+    var expectedHeaders = [
+      "Binding ID", "License Key", "User Email", "VK Group URL", 
+      "TG Chat ID", "Status", "Created At", "Last Check", 
+      "Format Settings", "Binding Name", "Binding Description"
+    ];
+    
+    var needsUpdate = false;
+    
+    // Проверяем наличие всех колонок
+    for (var i = 0; i < expectedHeaders.length; i++) {
+      if (headers[i] !== expectedHeaders[i]) {
+        needsUpdate = true;
+        break;
+      }
+    }
+    
+    if (needsUpdate) {
+      logEvent("INFO", "bindings_sheet_migration", "system", "Migrating Bindings sheet structure");
+      
+      // Создаем временный лист с правильной структурой
+      var tempSheet = bindingsSheet.getParent().insertSheet("Bindings_temp");
+      tempSheet.getRange(1, 1, 1, expectedHeaders.length).setValues([expectedHeaders]);
+      
+      // Копируем данные
+      if (bindingsSheet.getLastRow() > 1) {
+        var data = bindingsSheet.getRange(2, 1, bindingsSheet.getLastRow() - 1, bindingsSheet.getLastColumn()).getValues();
+        
+        // Обрабатываем каждую строку данных
+        var newData = data.map(function(row) {
+          while (row.length < expectedHeaders.length) {
+            row.push(""); // Добавляем пустые колонки для новых полей
+          }
+          return row.slice(0, expectedHeaders.length);
+        });
+        
+        if (newData.length > 0) {
+          tempSheet.getRange(2, 1, newData.length, expectedHeaders.length).setValues(newData);
+        }
+      }
+      
+      // Удаляем старый лист и переименовываем временный
+      bindingsSheet.getParent().deleteSheet(bindingsSheet);
+      tempSheet.setName("Bindings");
+      
+      logEvent("INFO", "bindings_sheet_migration_complete", "system", "Bindings sheet structure updated successfully");
+    }
+    
+  } catch (error) {
+    logEvent("ERROR", "bindings_sheet_migration_error", "system", error.message);
+    throw error;
   }
 }
