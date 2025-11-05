@@ -24,6 +24,7 @@ var SERVER_VERSION = "6.0";
 var MAX_MEDIA_GROUP_SIZE = 10; // Лимит Telegram для media group
 var VK_API_VERSION = "5.131";
 var REQUEST_TIMEOUT = 30000; // 30 секунд (по умолчанию)
+var LICENSE_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 часа
 
 // Таймауты по типу операции
 var TIMEOUTS = {
@@ -712,7 +713,95 @@ function getServerHealthHtml(healthData) {
   return html;
 }
 
+// ============================================
+// LICENSE CACHE HELPERS (SERVER)
+// ============================================
 
+/**
+ * Получить закешированную информацию о лицензии на сервере
+ * @param {string} licenseKey - Ключ лицензии
+ * @returns {Object|null} Объект с данными лицензии или null если кеш недействителен
+ */
+function getCachedLicenseServer(licenseKey) {
+  try {
+    var scriptProps = PropertiesService.getScriptProperties();
+    var cacheKey = 'LICENSE_CACHE_' + licenseKey;
+    var cached = scriptProps.getProperty(cacheKey);
+    
+    if (!cached) {
+      logEvent("DEBUG", "server_license_cache_miss", licenseKey, "No cached data");
+      return null;
+    }
+    
+    var data = JSON.parse(cached);
+    var now = Date.now();
+    var cacheAge = now - data.timestamp;
+    
+    if (cacheAge > LICENSE_CACHE_TTL_MS) {
+      logEvent("DEBUG", "server_license_cache_expired", licenseKey, 
+               `Cache age: ${Math.round(cacheAge / 1000 / 60)} minutes`);
+      scriptProps.deleteProperty(cacheKey);
+      return null;
+    }
+    
+    logEvent("INFO", "server_license_cache_hit", licenseKey, 
+             `Using cached license (age: ${Math.round(cacheAge / 1000 / 60)} min), type: ${data.type}`);
+    
+    return {
+      type: data.type,
+      maxGroups: data.maxGroups,
+      expires: data.expires,
+      status: data.status
+    };
+  } catch (error) {
+    logEvent("ERROR", "server_license_cache_read_error", licenseKey, error.message);
+    return null;
+  }
+}
+
+/**
+ * Сохранить информацию о лицензии в кеш на сервере
+ * @param {string} licenseKey - Ключ лицензии
+ * @param {Object} licenseData - Данные лицензии (type, maxGroups, expires, status)
+ */
+function setCachedLicenseServer(licenseKey, licenseData) {
+  try {
+    var scriptProps = PropertiesService.getScriptProperties();
+    var cacheKey = 'LICENSE_CACHE_' + licenseKey;
+    var now = Date.now();
+    
+    var cacheData = {
+      type: licenseData.type,
+      maxGroups: licenseData.maxGroups,
+      expires: licenseData.expires,
+      status: licenseData.status || 'active',
+      timestamp: now
+    };
+    
+    scriptProps.setProperty(cacheKey, JSON.stringify(cacheData));
+    
+    logEvent("INFO", "server_license_cache_saved", licenseKey, 
+             `Cached license type: ${licenseData.type}, expires: ${licenseData.expires}`);
+  } catch (error) {
+    logEvent("ERROR", "server_license_cache_write_error", licenseKey, error.message);
+  }
+}
+
+/**
+ * Очистить кеш лицензии на сервере
+ * @param {string} licenseKey - Ключ лицензии
+ */
+function clearLicenseCacheServer(licenseKey) {
+  try {
+    var scriptProps = PropertiesService.getScriptProperties();
+    var cacheKey = 'LICENSE_CACHE_' + licenseKey;
+    scriptProps.deleteProperty(cacheKey);
+    
+    logEvent("INFO", "server_license_cache_cleared", licenseKey, "License cache cleared");
+  } catch (error) {
+    logEvent("ERROR", "server_license_cache_clear_error", licenseKey, error.message);
+  }
+}
 
 // ============================================
 // 2. ГЛАВНЫЙ API ENDPOINT
@@ -833,7 +922,7 @@ function doPost(e) {
 
 function handleCheckLicense(payload, clientIp) {
   try {
-    var { license_key } = payload;
+    var { license_key, force_refresh } = payload;
     
     if (!license_key) {
       return jsonResponse({
@@ -842,9 +931,31 @@ function handleCheckLicense(payload, clientIp) {
       }, 400);
     }
     
+    // Проверяем кеш, если не force_refresh
+    if (!force_refresh) {
+      var cached = getCachedLicenseServer(license_key);
+      if (cached) {
+        logEvent("INFO", "license_check_from_cache", license_key, 
+                 `IP: ${clientIp}, Type: ${cached.type}`);
+        return jsonResponse({
+          success: true,
+          license: {
+            type: cached.type,
+            maxGroups: cached.maxGroups,
+            expires: cached.expires
+          }
+        });
+      }
+    }
+    
+    if (force_refresh) {
+      logEvent("INFO", "license_check_force_refresh", license_key, `IP: ${clientIp}`);
+    }
+    
     var license = findLicense(license_key);
     
     if (!license) {
+      clearLicenseCacheServer(license_key);
       logEvent("WARN", "license_not_found", license_key, `IP: ${clientIp}`);
       return jsonResponse({
         success: false,
@@ -853,6 +964,7 @@ function handleCheckLicense(payload, clientIp) {
     }
     
     if (license.status !== "active") {
+      clearLicenseCacheServer(license_key);
       logEvent("WARN", "license_inactive", license_key, `Status: ${license.status}, IP: ${clientIp}`);
       return jsonResponse({
         success: false,
@@ -861,12 +973,21 @@ function handleCheckLicense(payload, clientIp) {
     }
     
     if (new Date() > new Date(license.expires)) {
+      clearLicenseCacheServer(license_key);
       logEvent("WARN", "license_expired", license_key, `Expires: ${license.expires}, IP: ${clientIp}`);
       return jsonResponse({
         success: false,
         error: "License expired"
       }, 403);
     }
+    
+    // Сохраняем успешный результат в кеш
+    setCachedLicenseServer(license_key, {
+      type: license.type,
+      maxGroups: license.maxGroups,
+      expires: license.expires,
+      status: license.status
+    });
     
     logEvent("INFO", "license_check_success", license_key, `IP: ${clientIp}`);
     

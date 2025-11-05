@@ -27,9 +27,110 @@ const SERVER_URL = "https://script.google.com/macros/s/AKfycbzNlXEfpsiMi1UAgaXJW
 const CACHE_DURATION = 10 * 60 * 1000; // 10 минут
 const MAX_POSTS_CHECK = 50;
 const REQUEST_TIMEOUT = 30000;
-var LICENSE_CACHE_TTL_MS = 30 * 60 * 1000; // 30 минут
-var USER_PROP_LICENSE_KEY = 'LICENSE_KEY';
-var USER_PROP_LICENSE_META = 'LICENSE_META'; // JSON: { type, maxGroups, expires, cachedAt }
+const LICENSE_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 часа
+const USER_PROP_LICENSE_KEY = 'LICENSE_KEY';
+const USER_PROP_LICENSE_STATUS = 'LICENSE_STATUS';
+const USER_PROP_LICENSE_TYPE = 'LICENSE_TYPE';
+const USER_PROP_LICENSE_MAX_GROUPS = 'LICENSE_MAX_GROUPS';
+const USER_PROP_LICENSE_EXPIRES = 'LICENSE_EXPIRES';
+const USER_PROP_LAST_CHECK_TS = 'LAST_CHECK_TS';
+
+// ============================================
+// LICENSE CACHE HELPERS
+// ============================================
+
+/**
+ * Получить закешированную информацию о лицензии
+ * @returns {Object|null} Объект с данными лицензии или null если кеш недействителен
+ */
+function getCachedLicense() {
+  try {
+    const userProps = PropertiesService.getUserProperties();
+    const cachedKey = userProps.getProperty(USER_PROP_LICENSE_KEY);
+    const lastCheckTs = userProps.getProperty(USER_PROP_LAST_CHECK_TS);
+    
+    if (!cachedKey || !lastCheckTs) {
+      logEvent("DEBUG", "license_cache_miss", "client", "No cached license data");
+      return null;
+    }
+    
+    const now = Date.now();
+    const cacheAge = now - parseInt(lastCheckTs);
+    
+    if (cacheAge > LICENSE_CACHE_TTL_MS) {
+      logEvent("DEBUG", "license_cache_expired", "client", 
+               `Cache age: ${Math.round(cacheAge / 1000 / 60)} minutes`);
+      return null;
+    }
+    
+    const status = userProps.getProperty(USER_PROP_LICENSE_STATUS);
+    const type = userProps.getProperty(USER_PROP_LICENSE_TYPE);
+    const maxGroups = userProps.getProperty(USER_PROP_LICENSE_MAX_GROUPS);
+    const expires = userProps.getProperty(USER_PROP_LICENSE_EXPIRES);
+    
+    if (!status || !type) {
+      logEvent("DEBUG", "license_cache_incomplete", "client", "Missing cache fields");
+      return null;
+    }
+    
+    logEvent("INFO", "license_cache_hit", "client", 
+             `Using cached license (age: ${Math.round(cacheAge / 1000 / 60)} min), type: ${type}`);
+    
+    return {
+      key: cachedKey,
+      status: status,
+      type: type,
+      maxGroups: maxGroups ? parseInt(maxGroups) : null,
+      expires: expires
+    };
+  } catch (error) {
+    logEvent("ERROR", "license_cache_read_error", "client", error.message);
+    return null;
+  }
+}
+
+/**
+ * Сохранить информацию о лицензии в кеш
+ * @param {string} licenseKey - Ключ лицензии
+ * @param {Object} licenseData - Данные лицензии (type, maxGroups, expires, status)
+ */
+function setCachedLicense(licenseKey, licenseData) {
+  try {
+    const userProps = PropertiesService.getUserProperties();
+    const now = Date.now();
+    
+    userProps.setProperty(USER_PROP_LICENSE_KEY, licenseKey);
+    userProps.setProperty(USER_PROP_LICENSE_STATUS, licenseData.status || 'active');
+    userProps.setProperty(USER_PROP_LICENSE_TYPE, licenseData.type);
+    userProps.setProperty(USER_PROP_LICENSE_MAX_GROUPS, String(licenseData.maxGroups || 0));
+    userProps.setProperty(USER_PROP_LICENSE_EXPIRES, licenseData.expires || '');
+    userProps.setProperty(USER_PROP_LAST_CHECK_TS, String(now));
+    
+    logEvent("INFO", "license_cache_saved", "client", 
+             `Cached license type: ${licenseData.type}, expires: ${licenseData.expires}`);
+  } catch (error) {
+    logEvent("ERROR", "license_cache_write_error", "client", error.message);
+  }
+}
+
+/**
+ * Очистить кеш лицензии
+ */
+function clearLicenseCache() {
+  try {
+    const userProps = PropertiesService.getUserProperties();
+    userProps.deleteProperty(USER_PROP_LICENSE_KEY);
+    userProps.deleteProperty(USER_PROP_LICENSE_STATUS);
+    userProps.deleteProperty(USER_PROP_LICENSE_TYPE);
+    userProps.deleteProperty(USER_PROP_LICENSE_MAX_GROUPS);
+    userProps.deleteProperty(USER_PROP_LICENSE_EXPIRES);
+    userProps.deleteProperty(USER_PROP_LAST_CHECK_TS);
+    
+    logEvent("INFO", "license_cache_cleared", "client", "License cache cleared");
+  } catch (error) {
+    logEvent("ERROR", "license_cache_clear_error", "client", error.message);
+  }
+}
 
 // ============================================
 // 1. ИНИЦИАЛИЗАЦИЯ И МЕНЮ
@@ -105,7 +206,7 @@ function getInitialData() {
   }
 }
 
-function saveLicenseWithCheck(licenseKey) {
+function saveLicenseWithCheck(licenseKey, forceRefresh) {
   try {
     if (!SERVER_URL || SERVER_URL.includes("YOURSERVERURL")) {
       logEvent("ERROR", "server_url_missing", "client", "SERVER_URL not configured");
@@ -115,15 +216,38 @@ function saveLicenseWithCheck(licenseKey) {
       };
     }
     
+    // Проверяем кеш, если не forceRefresh
+    if (!forceRefresh) {
+      const cached = getCachedLicense();
+      if (cached && cached.key === licenseKey) {
+        logEvent("INFO", "license_check_cached", "client", 
+                 `Using cached license check result, type: ${cached.type}`);
+        return {
+          success: true,
+          license: {
+            key: cached.key,
+            type: cached.type,
+            maxGroups: cached.maxGroups,
+            expires: cached.expires
+          }
+        };
+      }
+    }
+    
+    if (forceRefresh) {
+      logEvent("INFO", "license_check_force_refresh", "client", "Force refresh requested");
+    }
+    
     logEvent("INFO", "license_check_start", "client", `Checking license: ${licenseKey.substring(0, 20)}...`);
     
     const payload = {
       event: "check_license",
-      license_key: licenseKey
+      license_key: licenseKey,
+      force_refresh: forceRefresh || false
     };
     
     logEvent("DEBUG", "server_request_payload", "client", 
-             `Event: ${payload.event}, License key length: ${licenseKey.length}`);
+             `Event: ${payload.event}, License key length: ${licenseKey.length}, Force refresh: ${forceRefresh}`);
     
     const response = UrlFetchApp.fetch(SERVER_URL, {
       method: 'POST',
@@ -141,7 +265,13 @@ function saveLicenseWithCheck(licenseKey) {
     const result = JSON.parse(responseText);
     
     if (result.success) {
-      PropertiesService.getUserProperties().setProperty("LICENSE_KEY", licenseKey);
+      // Сохраняем в кеш
+      setCachedLicense(licenseKey, {
+        type: result.license.type,
+        maxGroups: result.license.maxGroups,
+        expires: result.license.expires,
+        status: 'active'
+      });
       
       logEvent("INFO", "license_saved", "client",
                `License type: ${result.license.type}, Max groups: ${result.license.maxGroups}`);
@@ -156,6 +286,8 @@ function saveLicenseWithCheck(licenseKey) {
         }
       };
     } else {
+      // Очищаем кеш при неудаче
+      clearLicenseCache();
       logEvent("WARN", "license_check_failed", "client", result.error);
       return { success: false, error: result.error };
     }
@@ -1191,7 +1323,17 @@ function getLicense() {
     
     logEvent("DEBUG", "license_key_found", "client", `License: ${licenseKey.substring(0, 20)}...`);
     
-    // Получаем полную информацию о лицензии с сервера
+    // Сначала проверяем кеш
+    const cached = getCachedLicense();
+    if (cached && cached.key === licenseKey) {
+      logEvent("DEBUG", "license_details_from_cache", "client", 
+               `Type: ${cached.type}, Max Groups: ${cached.maxGroups}`);
+      return cached;
+    }
+    
+    // Если кеш пустой или устарел, запрашиваем с сервера
+    logEvent("DEBUG", "license_cache_miss_fetching", "client", "Fetching fresh license data from server");
+    
     try {
       const payload = {
         event: "check_license",
@@ -1211,6 +1353,14 @@ function getLicense() {
       if (result.success && result.license) {
         logEvent("DEBUG", "license_details_retrieved", "client", 
                  `Type: ${result.license.type}, Max Groups: ${result.license.maxGroups}`);
+        
+        // Сохраняем в кеш
+        setCachedLicense(licenseKey, {
+          type: result.license.type,
+          maxGroups: result.license.maxGroups,
+          expires: result.license.expires,
+          status: 'active'
+        });
         
         return {
           key: licenseKey,
@@ -1700,6 +1850,7 @@ function getMainPanelHtml() {
 
       <div id="license-info" class="license-info" style="display: none;">
         <button class="btn-small btn-secondary license-change" onclick="changeLicense()">🔄 Изменить</button>
+        <button class="btn-small btn-secondary" onclick="forceRefreshLicense()" style="margin-right: 8px;">🔄 Обновить</button>
         <div class="license-type" id="license-type-display"></div>
         <div class="license-details" id="license-details-display"></div>
       </div>
@@ -1998,6 +2149,51 @@ function getMainPanelHtml() {
         document.getElementById("license-key-input").value = "";
         updateUI();
         showMessage("license", "warning", "🔄 Введите новый ключ лицензии");
+      }
+    }
+
+    function forceRefreshLicense() {
+      if (!appState.license || !appState.license.key) {
+        showMessage("license", "error", "❌ Нет активной лицензии");
+        return;
+      }
+
+      logMessageToConsole("Force refresh license: " + appState.license.key.substring(0, 20) + "...");
+      showMessage("license", "loading", "🔄 Принудительное обновление лицензии...");
+      showLoader(true);
+
+      try {
+        google.script.run
+          .withSuccessHandler(function(result) {
+            logMessageToConsole("Force refresh success: " + JSON.stringify(result).substring(0, 200));
+            showLoader(false);
+
+            if (result && result.success) {
+              appState.license = result.license;
+              updateUI();
+              showMessage("license", "success", "✅ Лицензия обновлена (принудительно)!");
+              
+              setTimeout(() => {
+                document.getElementById("license-message").style.display = "none";
+              }, 3000);
+            } else {
+              const errorMsg = result?.error || "Неизвестная ошибка";
+              logMessageToConsole("Force refresh failed: " + errorMsg);
+              showMessage("license", "error", errorMsg);
+            }
+          })
+          .withFailureHandler(function(error) {
+            logMessageToConsole("Force refresh failure: " + error.message);
+            showLoader(false);
+            showMessage("license", "error", "❌ Ошибка: " + error.message);
+          })
+          .withUserObject({timestamp: new Date().toISOString()})
+          .saveLicenseWithCheck(appState.license.key, true);
+          
+      } catch (error) {
+        logMessageToConsole("Force refresh exception: " + error.message);
+        showLoader(false);
+        showMessage("license", "error", "❌ Исключение: " + error.message);
       }
     }
 
