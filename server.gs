@@ -942,6 +942,192 @@ function handleGetUserBindingsWithNames(payload, clientIp) {
   }
 }
 
+function handleAddBinding(payload, clientIp) {
+  try {
+    var { license_key, vk_group_url, tg_chat_id, formatSettings, binding_name, binding_description } = payload;
+    
+    // Проверяем лицензию
+    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    var licenseData = JSON.parse(licenseCheck.getContent());
+    
+    if (!licenseData.success) {
+      return licenseCheck;
+    }
+    
+    // Проверяем лимит
+    var currentBindings = getUserBindings(license_key);
+    if (currentBindings.length >= licenseData.license.maxGroups) {
+      return jsonResponse({
+        success: false,
+        error: "Max groups limit exceeded"
+      }, 429);
+    }
+    
+    // АВТОМАТИЧЕСКОЕ ПРЕОБРАЗОВАНИЕ ССЫЛОК В ID
+    var processedVkGroupId;
+    var processedTgChatId;
+    
+    try {
+      // Извлекаем ID ВК группы из ссылки
+      processedVkGroupId = extractVkGroupId(vk_group_url);
+      logEvent("INFO", "vk_url_converted", license_key, `${vk_group_url} -> ${processedVkGroupId}`);
+    } catch (error) {
+      return jsonResponse({
+        success: false,
+        error: `Ошибка в ВК ссылке: ${error.message}`
+      }, 400);
+    }
+    
+    try {
+      // Извлекаем chat_id Telegram канала
+      processedTgChatId = extractTelegramChatId(tg_chat_id);
+      logEvent("INFO", "tg_url_converted", license_key, `${tg_chat_id} -> ${processedTgChatId}`);
+    } catch (error) {
+      return jsonResponse({
+        success: false,
+        error: `Ошибка в Telegram ссылке: ${error.message}`
+      }, 400);
+    }
+    
+    // Создаем новую связку с обработанными ID
+    var bindingId = generateBindingId();
+    var license = findLicense(license_key);
+    
+    // Обработка formatSettings
+    var formatSettingsString = "";
+    if (formatSettings && typeof formatSettings === "object") {
+      try {
+        formatSettingsString = JSON.stringify(formatSettings);
+        logEvent("DEBUG", "format_settings_stored", license_key, 
+                 `Binding ${bindingId}: ${formatSettingsString}`);
+      } catch (e) {
+        logEvent("WARN", "format_settings_json_error", license_key, e.message);
+      }
+    }
+
+    var bindingsSheet = getSheet("Bindings");
+    bindingsSheet.appendRow([
+      bindingId,
+      license_key,
+      license.email,
+      vk_group_url,          // Сохраняем оригинальную ссылку для отображения
+      processedTgChatId,     // Сохраняем обработанный chat_id для API
+      "active",
+      new Date().toISOString(),
+      new Date().toISOString(),
+      formatSettingsString,  // Format Settings
+      binding_name || "",    // Binding Name
+      binding_description || "" // Binding Description
+    ]);
+    
+    
+    logEvent("INFO", "binding_added", license_key, 
+             `Binding ID: ${bindingId}, VK: ${vk_group_url} (${processedVkGroupId}), TG: ${processedTgChatId}, IP: ${clientIp}`);
+    
+    return jsonResponse({
+      success: true,
+      binding_id: bindingId,
+      converted: {
+        vk_group_id: processedVkGroupId,
+        tg_chat_id: processedTgChatId
+      }
+    });
+    
+  } catch (error) {
+    logEvent("ERROR", "binding_add_error", payload.license_key, error.message);
+    return jsonResponse({ success: false, error: error.message }, 500);
+  }
+}
+
+function handleEditBinding(payload, clientIp) {
+  try {
+    var { license_key, binding_id, vk_group_url, tg_chat_id, formatSettings, binding_name, binding_description } = payload;
+    
+    // Проверяем лицензию
+    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    var licenseData = JSON.parse(licenseCheck.getContent());
+    
+    if (!licenseData.success) {
+      return licenseCheck;
+    }
+    
+    // Находим связку
+    var bindingRow = findBindingRowById(binding_id, license_key);
+    if (!bindingRow) {
+      return jsonResponse({
+        success: false,
+        error: "Binding not found"
+      }, 404);
+    }
+    
+    // АВТОМАТИЧЕСКОЕ ПРЕОБРАЗОВАНИЕ ССЫЛОК В ID
+    var processedVkGroupId;
+    var processedTgChatId;
+    
+    try {
+      // Извлекаем ID ВК группы из ссылки
+      processedVkGroupId = extractVkGroupId(vk_group_url);
+      logEvent("INFO", "vk_url_converted", license_key, `${vk_group_url} -> ${processedVkGroupId}`);
+    } catch (error) {
+      return jsonResponse({
+        success: false,
+        error: `Ошибка в ВК ссылке: ${error.message}`
+      }, 400);
+    }
+    
+    try {
+      // Извлекаем chat_id Telegram канала
+      processedTgChatId = extractTelegramChatId(tg_chat_id);
+      logEvent("INFO", "tg_url_converted", license_key, `${tg_chat_id} -> ${processedTgChatId}`);
+    } catch (error) {
+      return jsonResponse({
+        success: false,
+        error: `Ошибка в Telegram ссылке: ${error.message}`
+      }, 400);
+    }
+    
+    // Обработка formatSettings
+    var formatSettingsString = "";
+    if (formatSettings && typeof formatSettings === "object") {
+      try {
+        formatSettingsString = JSON.stringify(formatSettings);
+        logEvent("DEBUG", "format_settings_updated", license_key, 
+                 `Binding ${binding_id}: ${formatSettingsString}`);
+      } catch (e) {
+        logEvent("WARN", "format_settings_json_error", license_key, e.message);
+      }
+    }
+
+    // Обновляем связку с обработанными ID
+    var bindingsSheet = getSheet("Bindings");
+    bindingsSheet.getRange(bindingRow, 4).setValue(vk_group_url);      // VK Group URL (оригинальная ссылка)
+    bindingsSheet.getRange(bindingRow, 5).setValue(processedTgChatId); // TG Chat ID (обработанный)
+    bindingsSheet.getRange(bindingRow, 8).setValue(new Date().toISOString()); // Last Check
+    bindingsSheet.getRange(bindingRow, 9).setValue(formatSettingsString); // Format Settings
+    
+    // ✅ ДОБАВЛЕНЫ НОВЫЕ ПОЛЯ:
+    bindingsSheet.getRange(bindingRow, 10).setValue(binding_name || "");        // Binding Name
+    bindingsSheet.getRange(bindingRow, 11).setValue(binding_description || ""); // Binding Description
+    
+    logEvent("INFO", "binding_edited", license_key, 
+             `Binding ID: ${binding_id}, Name: ${binding_name}, VK: ${vk_group_url} (${processedVkGroupId}), TG: ${processedTgChatId}, IP: ${clientIp}`);
+    
+    return jsonResponse({ 
+      success: true,
+      converted: {
+        vk_group_id: processedVkGroupId,
+        tg_chat_id: processedTgChatId
+      }
+    });
+    
+  } catch (error) {
+    logEvent("ERROR", "binding_edit_error", payload.license_key, error.message);
+    return jsonResponse({ success: false, error: error.message }, 500);
+  }
+}
+
+
+
 function handleDeleteBinding(payload, clientIp) {
   try {
     var { license_key, binding_id } = payload;
@@ -2631,6 +2817,244 @@ function testNameRetrieval() {
   });
 }
 
+/**
+ * Обработчик отправки поста из VK в Telegram
+ */
+function handleSendPost(payload, clientIp) {
+  try {
+    var { license_key, binding_id, vk_post } = payload;
+    
+    // Проверяем лицензию
+    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    var licenseData = JSON.parse(licenseCheck.getContent());
+    
+    if (!licenseData.success) {
+      return licenseCheck;
+    }
+    
+    // Находим связку
+    var binding = findBindingById(binding_id, license_key);
+    if (!binding) {
+      logEvent("WARN", "binding_not_found_for_send", license_key, `Binding ID: ${binding_id}`);
+      return jsonResponse({
+        success: false,
+        error: "Binding not found"
+      }, 404);
+    }
+    
+    if (binding.status !== "active") {
+      logEvent("WARN", "binding_inactive_for_send", license_key, `Binding ID: ${binding_id}, Status: ${binding.status}`);
+      return jsonResponse({
+        success: false,
+        error: "Binding is not active"
+      }, 403);
+    }
+    
+    logEvent("INFO", "send_post_start", license_key, 
+             `Binding: ${binding_id}, VK Post: ${vk_post.id}, Text length: ${vk_post.text?.length || 0}`);
+    
+    // Получаем токен бота
+    var botToken = PropertiesService.getScriptProperties().getProperty("BOT_TOKEN");
+    if (!botToken) {
+      logEvent("ERROR", "bot_token_missing", license_key, "Bot token not configured");
+      return jsonResponse({
+        success: false,
+        error: "Bot token not configured"
+      }, 500);
+    }
+    
+    // Форматируем текст с применением всех улучшений
+    var formattedText = "";
+    if (vk_post.text) {
+      formattedText = formatVkTextForTelegram(vk_post.text);
+      logEvent("DEBUG", "text_formatted", license_key, 
+               `Original length: ${vk_post.text.length}, Formatted length: ${formattedText.length}`);
+    }
+    
+    // Обрабатываем медиа вложения
+    var mediaResult = getVkMediaUrls(vk_post.attachments || []);
+    
+    var sendResult;
+    
+    if (mediaResult.photos.length > 0) {
+      // Отправляем как media group с текстом в caption
+      sendResult = sendTelegramMediaGroup(botToken, binding.tgChatId, mediaResult.photos, formattedText);
+    } else if (formattedText) {
+      // Отправляем только текст
+      sendResult = sendTelegramMessage(botToken, binding.tgChatId, formattedText);
+    } else {
+      // Нет ни текста, ни медиа
+      logEvent("WARN", "empty_post", license_key, `VK Post: ${vk_post.id} has no content`);
+      return jsonResponse({
+        success: false,
+        error: "Post has no content to send"
+      }, 400);
+    }
+    
+    // Отправляем дополнительную информацию о видео, аудио, документах
+    if (mediaResult.videos.length > 0 || mediaResult.audioLinks.length > 0 || mediaResult.docLinks.length > 0) {
+      var additionalContent = [];
+      
+      if (mediaResult.videos.length > 0) {
+        var videoLinks = mediaResult.videos.map(video => `🎥 [${video.id}](https://vk.com/video${video.id})`);
+        additionalContent.push("📹 **Видео:**", ...videoLinks);
+      }
+      
+      if (mediaResult.audioLinks.length > 0) {
+        additionalContent.push("🎵 **Аудио:**", ...mediaResult.audioLinks);
+      }
+      
+      if (mediaResult.docLinks.length > 0) {
+        additionalContent.push("📎 **Документы:**", ...mediaResult.docLinks);
+      }
+      
+      if (additionalContent.length > 0) {
+        var additionalText = additionalContent.join("\n");
+        sendTelegramMessage(botToken, binding.tgChatId, additionalText);
+      }
+    }
+    
+    if (sendResult.success) {
+      logEvent("INFO", "post_sent_successfully", license_key, 
+               `VK Post: ${vk_post.id}, TG Message: ${sendResult.message_id}, Binding: ${binding_id}`);
+      
+      return jsonResponse({
+        success: true,
+        message_id: sendResult.message_id,
+        formatted_text_length: formattedText.length,
+        has_media: mediaResult.photos.length > 0
+      });
+    } else {
+      logEvent("ERROR", "post_send_failed", license_key, 
+               `VK Post: ${vk_post.id}, Error: ${sendResult.error}, Binding: ${binding_id}`);
+      
+      return jsonResponse({
+        success: false,
+        error: sendResult.error
+      }, 500);
+          }
+    
+  } catch (error) {
+    logEvent("ERROR", "send_post_error", payload.license_key || "unknown", error.message);
+    return jsonResponse({ success: false, error: error.message }, 500);
+  }
+}
+
+/**
+ * Обработчик тестовой публикации
+ */
+function handleTestPublication(payload, clientIp) {
+  try {
+    var { license_key, binding_id } = payload;
+    
+    // Проверяем лицензию
+    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    var licenseData = JSON.parse(licenseCheck.getContent());
+    
+    if (!licenseData.success) {
+      return licenseCheck;
+    }
+    
+    // Находим связку
+    var binding = findBindingById(binding_id, license_key);
+    if (!binding) {
+      return jsonResponse({
+        success: false,
+        error: "Binding not found"
+      }, 404);
+    }
+    
+    logEvent("INFO", "test_publication_start", license_key, 
+             `Binding: ${binding_id}, VK: ${binding.vkGroupUrl}, TG: ${binding.tgChatId}`);
+    
+    // Получаем токен бота
+    var botToken = PropertiesService.getScriptProperties().getProperty("BOT_TOKEN");
+    if (!botToken) {
+      return jsonResponse({
+        success: false,
+        error: "Bot token not configured"
+      }, 500);
+    }
+    
+    // Получаем реальный пост из VK для тестирования
+    var vkGroupId = extractVkGroupId(binding.vkGroupUrl);
+    var userToken = PropertiesService.getScriptProperties().getProperty("VK_USER_ACCESS_TOKEN");
+    
+    if (!userToken) {
+      return jsonResponse({
+        success: false,
+        error: "VK User Access Token not configured"
+      }, 500);
+    }
+    
+    // Запрашиваем последний пост из VK (исключая закрепленные)
+    var vkUrl = `https://api.vk.com/method/wall.get?owner_id=${encodeURIComponent(vkGroupId)}&count=10&filter=owner&v=${VK_API_VERSION}&access_token=${userToken}`;
+    
+    var vkResponse = UrlFetchApp.fetch(vkUrl, {
+      muteHttpExceptions: true,
+      timeout: 15000
+    });
+    
+    var vkData = JSON.parse(vkResponse.getContentText());
+    
+    if (vkData.error) {
+      logEvent("ERROR", "test_vk_fetch_error", license_key, 
+               `VK Error: ${vkData.error.error_code} - ${vkData.error.error_msg}`);
+      return jsonResponse({
+        success: false,
+        error: `VK API Error: ${vkData.error.error_msg}`
+      }, 400);
+    }
+    
+    if (!vkData.response || !vkData.response.items || vkData.response.items.length === 0) {
+      return jsonResponse({
+        success: false,
+        error: "No posts found in VK group"
+      }, 404);
+    }
+    
+    // Берем первый не закрепленный пост
+    var posts = vkData.response.items.filter(post => !post.is_pinned);
+    if (posts.length === 0) {
+      return jsonResponse({
+        success: false,
+        error: "No regular posts found (only pinned posts available)"
+      }, 404);
+    }
+    
+    var testPost = posts[0];
+    
+    // Форматируем пост для отправки в Telegram  
+    var formattedText = formatVkPostForTelegram(testPost, binding);
+    
+    // Отправляем реальный пост как тест
+    var sendResult = sendTelegramMessage(botToken, binding.tgChatId, formattedText);
+    
+    if (sendResult.success) {
+      logEvent("INFO", "test_publication_success", license_key, 
+               `Binding: ${binding_id}, Message ID: ${sendResult.message_id}`);
+      
+      return jsonResponse({
+        success: true,
+        message_id: sendResult.message_id,
+        message: "Тестовое сообщение отправлено успешно! Проверьте ваш Telegram канал/чат."
+      });
+    } else {
+      logEvent("ERROR", "test_publication_failed", license_key, 
+               `Binding: ${binding_id}, Error: ${sendResult.error}`);
+      
+      return jsonResponse({
+        success: false,
+        error: `Не удалось отправить тестовое сообщение: ${sendResult.error}`
+      }, 500);
+    }
+    
+  } catch (error) {
+    logEvent("ERROR", "test_publication_error", payload.license_key || "unknown", error.message);
+    return jsonResponse({ success: false, error: error.message }, 500);
+  }
+}
+
 // ============================================
 // ФУНКЦИИ ПОЛУЧЕНИЯ НАЗВАНИЙ ГРУПП И КАНАЛОВ
 // ============================================
@@ -2896,7 +3320,6 @@ function getUserBindingsWithNames(licenseKey) {
 }
 
 // handleGetVkPosts moved to server/api_endpoints.gs (better version with vk_group_url support)
-
 
 // ============================================
 // ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ И УЛУЧШЕНИЯ  
@@ -3252,6 +3675,213 @@ function cleanOldLogs() {
       sheetsProcessed: 0, 
       error: error.message,
       sheetResults: [] 
+    };
+  }
+}
+
+/**
+ * Обработчик публикации последнего поста из VK группы в Telegram
+ */
+function handlePublishLastPost(payload, clientIp) {
+  try {
+    var { license_key, vk_group_id, binding_id } = payload;
+    
+    // Проверяем лицензию
+    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    var licenseData = JSON.parse(licenseCheck.getContent());
+    
+    if (!licenseData.success) {
+      return licenseCheck;
+    }
+    
+    if (!vk_group_id) {
+      return jsonResponse({
+        success: false,
+        error: "vk_group_id required"
+      }, 400);
+    }
+    
+    // Валидация vk_group_id
+    if (!/^-?\d+$/.test(vk_group_id)) {
+      return jsonResponse({
+        success: false,
+        error: "Invalid vk_group_id format"
+      }, 400);
+    }
+    
+    logEvent("INFO", "publish_last_post_request", license_key, 
+             `Group ID: ${vk_group_id}, Binding ID: ${binding_id}, IP: ${clientIp}`);
+    
+    // Получаем последний пост из VK
+    var postsResult = handleGetVkPosts({ 
+      license_key: license_key, 
+      vk_group_id: vk_group_id, 
+      count: 1 
+    }, clientIp);
+    
+    var postsData = JSON.parse(postsResult.getContent());
+    
+    if (!postsData.success) {
+      logEvent("ERROR", "publish_last_post_get_posts_failed", license_key, 
+               `Error getting posts: ${postsData.error}`);
+      return jsonResponse({
+        success: false,
+        error: `Failed to get VK posts: ${postsData.error}`
+      }, 500);
+    }
+    
+    if (!postsData.posts || postsData.posts.length === 0) {
+      logEvent("WARN", "publish_last_post_no_posts", license_key, 
+               `No posts found in VK group: ${vk_group_id}`);
+      return jsonResponse({
+        success: false,
+        error: "No posts found in VK group"
+      }, 404);
+    }
+    
+    var lastPost = postsData.posts[0];
+    
+    // Получаем настройки связки для форматирования
+    var binding = null;
+    if (binding_id) {
+      try {
+        var bindingsSheet = getSheet("Bindings");
+        var data = bindingsSheet.getDataRange().getValues();
+        
+        for (var i = 1; i < data.length; i++) {
+          if (data[i][0] === binding_id && data[i][1] === license_key) {
+            binding = {
+              id: data[i][0],
+              tgChatId: data[i][4],
+              formatSettings: data[i][8] || "{}",
+              bindingName: data[i][9] || "",
+              bindingDescription: data[i][10] || ""
+            };
+            break;
+          }
+        }
+      } catch (error) {
+        logEvent("WARN", "publish_last_post_binding_lookup_failed", license_key, 
+                 `Binding ID: ${binding_id}, Error: ${error.message}`);
+      }
+    }
+    
+    if (!binding) {
+      return jsonResponse({
+        success: false,
+        error: "Binding not found or no telegram chat specified"
+      }, 404);
+    }
+    
+    // Парсим настройки форматирования
+    var formatSettings = {};
+    try {
+      if (binding.formatSettings && binding.formatSettings !== "") {
+        formatSettings = JSON.parse(binding.formatSettings);
+      }
+    } catch (error) {
+      logEvent("WARN", "publish_last_post_format_settings_parse_error", license_key, 
+               `Error parsing format settings: ${error.message}`);
+    }
+    
+    // Отправляем пост в Telegram
+    var sendResult = handleSendPost({
+      license_key: license_key,
+      post: lastPost,
+      tg_chat_id: binding.tgChatId,
+      format_settings: formatSettings,
+      vk_group_id: vk_group_id
+    }, clientIp);
+    
+    var sendData = JSON.parse(sendResult.getContent());
+    
+    if (sendData.success) {
+      logEvent("INFO", "publish_last_post_success", license_key, 
+               `Post published successfully: VK ${vk_group_id}_${lastPost.id} -> TG ${binding.tgChatId}`);
+      
+      return jsonResponse({
+        success: true,
+        message: "Last post published successfully",
+        published_post: {
+          vk_post_id: lastPost.id,
+          vk_group_id: vk_group_id,
+          tg_chat_id: binding.tgChatId,
+          binding_name: binding.bindingName || `Binding ${binding_id}`
+        }
+      });
+    } else {
+      logEvent("ERROR", "publish_last_post_send_failed", license_key, 
+               `Send error: ${sendData.error}`);
+      
+      return jsonResponse({
+        success: false,
+        error: `Failed to send post to Telegram: ${sendData.error}`
+      }, 500);
+    }
+    
+  } catch (error) {
+    logEvent("ERROR", "publish_last_post_error", payload.license_key || "unknown", 
+             `Error: ${error.message}`);
+    return jsonResponse({ 
+      success: false, 
+      error: "Failed to publish last post: " + error.message 
+    }, 500);
+  }
+}
+
+/**
+ * Функция миграции для автосоздания недостающих колонок в листе Bindings
+ */
+function migrateBindingsSheet() {
+  try {
+    var sheet = getSheet("Bindings");
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    
+    var expectedHeaders = [
+      "Binding ID", "License Key", "User Email", "VK Group URL", "TG Chat ID", 
+      "Status", "Created At", "Last Check", "Format Settings", "Binding Name", "Binding Description"
+    ];
+    
+    var missingColumns = [];
+    
+    // Проверяем какие колонки отсутствуют
+    for (var i = 0; i < expectedHeaders.length; i++) {
+      if (i >= headers.length || headers[i] !== expectedHeaders[i]) {
+        missingColumns.push(expectedHeaders[i]);
+      }
+    }
+    
+    // Добавляем недостающие колонки
+    if (missingColumns.length > 0) {
+      var currentColumn = headers.length + 1;
+      
+      for (var j = 0; j < missingColumns.length; j++) {
+        sheet.getRange(1, currentColumn).setValue(missingColumns[j]);
+        currentColumn++;
+      }
+      
+      logEvent("INFO", "bindings_migration_completed", "system", 
+               `Added columns: ${missingColumns.join(", ")}`);
+      
+      return {
+        success: true,
+        added_columns: missingColumns
+      };
+    } else {
+      logEvent("DEBUG", "bindings_migration_not_needed", "system", 
+               "All required columns already exist");
+      
+      return {
+        success: true,
+        added_columns: []
+      };
+    }
+    
+  } catch (error) {
+    logEvent("ERROR", "bindings_migration_error", "system", error.message);
+    return {
+      success: false,
+      error: error.message
     };
   }
 }
