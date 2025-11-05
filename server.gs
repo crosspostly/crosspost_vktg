@@ -23,7 +23,14 @@ var DEV_MODE = false; // true для подробного логирования
 var SERVER_VERSION = "6.0";
 var MAX_MEDIA_GROUP_SIZE = 10; // Лимит Telegram для media group
 var VK_API_VERSION = "5.131";
-var REQUEST_TIMEOUT = 30000; // 30 секунд
+var REQUEST_TIMEOUT = 30000; // 30 секунд (по умолчанию)
+
+// Таймауты по типу операции
+var TIMEOUTS = {
+  FAST: 8000,    // 8 секунд - быстрые операции
+  MEDIUM: 15000, // 15 секунд - средние операции  
+  SLOW: 30000    // 30 секунд - медленные операции
+};
 
 // ============================================
 // 1. ИНИЦИАЛИЗАЦИЯ И МЕНЮ
@@ -1514,22 +1521,96 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
     // Обрабатываем все типы вложений
     var mediaData = getVkMediaUrls(vkPost.attachments || []);
     
-    // Добавляем информацию о видео и аудио в текст
-    if (mediaData.videoLinks.length > 0) {
-      text += "\n\n🎥 Видео:\n" + mediaData.videoLinks.join("\n");
-    }
-    if (mediaData.audioLinks.length > 0) {
-      text += "\n\n🎵 Аудио:\n" + mediaData.audioLinks.join("\n");
-    }
-    if (mediaData.docLinks.length > 0) {
-      text += "\n\n📎 Документы:\n" + mediaData.docLinks.join("\n");
-    }
+    logEvent("DEBUG", "media_processing_result", "server", 
+             `Photos: ${mediaData.photos.length}, Videos: ${mediaData.videos.length}, Docs: ${mediaData.docLinks.length}, Audio: ${mediaData.audioLinks.length}`);
     
-    // Отправляем пост
-    if (mediaData.photos.length > 0) {
-      return sendTelegramMediaGroup(botToken, chatId, mediaData.photos, text);
-    } else {
-      return sendTelegramMessage(botToken, chatId, text);
+    var results = [];
+    
+    try {
+      // Стратегия отправки согласно ARCHITECTURE.md
+      
+      // 1. Видео первыми (с caption только у первого)
+      if (mediaData.videos.length > 0) {
+        for (let i = 0; i < mediaData.videos.length; i++) {
+          const videoCaption = (i === 0 && mediaData.photos.length === 0) ? text : null;
+          const videoResult = sendTelegramVideo(botToken, chatId, mediaData.videos[i].url, videoCaption);
+          results.push(videoResult);
+          
+          if (!videoResult.success) {
+            logEvent("WARN", "video_send_failed", "server", 
+                     `Video ${mediaData.videos[i].id}: ${videoResult.error}`);
+          }
+          
+          // Небольшая пауза между видео
+          if (i < mediaData.videos.length - 1) {
+            Utilities.sleep(1000);
+          }
+        }
+      }
+      
+      // 2. Фото группой (caption только если не было видео)
+      if (mediaData.photos.length > 0) {
+        const photoCaption = mediaData.videos.length === 0 ? text : null;
+        const photoResult = sendTelegramMediaGroup(botToken, chatId, mediaData.photos, photoCaption);
+        results.push(photoResult);
+        
+        if (!photoResult.success) {
+          logEvent("WARN", "photo_group_send_failed", "server", 
+                   `Error: ${photoResult.error}`);
+        }
+      }
+      
+      // 3. Текст отдельно если был только в caption и медиа его "съело"
+      if (text && mediaData.videos.length === 0 && mediaData.photos.length === 0) {
+        const textResult = sendTelegramMessage(botToken, chatId, text);
+        results.push(textResult);
+      }
+      
+      // 4. Документы и аудио отдельными сообщениями
+      var additionalContent = [];
+      if (mediaData.docLinks.length > 0) {
+        additionalContent.push("📎 Документы:\n" + mediaData.docLinks.join("\n"));
+      }
+      if (mediaData.audioLinks.length > 0) {
+        additionalContent.push("🎵 Аудио:\n" + mediaData.audioLinks.join("\n"));
+      }
+      
+      if (additionalContent.length > 0) {
+        const additionalText = additionalContent.join("\n\n");
+        const additionalResult = sendTelegramMessage(botToken, chatId, additionalText);
+        results.push(additionalResult);
+      }
+      
+      // Определяем общий результат
+      const successCount = results.filter(r => r.success).length;
+      const totalCount = results.length;
+      
+      if (successCount === 0) {
+        return { success: false, error: "All media parts failed to send" };
+      } else if (successCount < totalCount) {
+        return { 
+          success: true, 
+          message_id: results.find(r => r.success)?.message_id,
+          warning: `Partial success: ${successCount}/${totalCount} parts sent`,
+          results: results
+        };
+      } else {
+        return { 
+          success: true, 
+          message_id: results.find(r => r.success)?.message_id,
+          results: results
+        };
+      }
+      
+    } catch (mediaError) {
+      logEvent("ERROR", "media_send_strategy_error", "server", mediaError.message);
+      
+      // Fallback: отправляем только текст
+      if (text) {
+        return sendTelegramMessage(botToken, chatId, text);
+      }
+      
+      return { success: false, error: mediaError.message };
     }
     
   } catch (error) {
@@ -1552,9 +1633,9 @@ function sendTelegramMessage(token, chatId, text) {
     var response = UrlFetchApp.fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      payload: JSON.stringif(payload),
+      payload: JSON.stringify(payload),
       muteHttpExceptions: true,
-      timeout: REQUEST_TIMEOUT
+      timeout: TIMEOUTS.FAST // 8 секунд для отправки текста
     });
     
     var responseText = response.getContentText();
@@ -1648,7 +1729,7 @@ function sendMediaGroupWithoutCaption(token, chatId, mediaUrls) {
         media: media
       }),
       muteHttpExceptions: true,
-      timeout: REQUEST_TIMEOUT
+      timeout: TIMEOUTS.MEDIUM // 15 секунд для media group
     });
     
     var result = JSON.parse(response.getContentText());
@@ -1813,6 +1894,68 @@ function splitTextIntoChunks(text, maxLength) {
   return chunks;
 }
 
+/**
+ * Отправляет видео в Telegram как файл
+ */
+function sendTelegramVideo(token, chatId, videoUrl, caption) {
+  try {
+    var url = `https://api.telegram.org/bot${token}/sendVideo`;
+    
+    var payload = {
+      chat_id: chatId,
+      video: videoUrl,
+      caption: caption || undefined,
+      parse_mode: caption ? 'Markdown' : undefined,
+      supports_streaming: true
+    };
+    
+    // Удаляем undefined поля
+    if (!payload.caption) {
+      delete payload.caption;
+      delete payload.parse_mode;
+    }
+    
+    logEvent("DEBUG", "telegram_video_send_start", "server", 
+             `Chat: ${chatId}, Video URL length: ${videoUrl?.length || 0}, Caption length: ${caption?.length || 0}`);
+    
+    var response = UrlFetchApp.fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
+      timeout: TIMEOUTS.SLOW // 30 секунд для отправки видео
+    });
+    
+    var responseText = response.getContentText();
+    var result = JSON.parse(responseText);
+    
+    if (result.ok) {
+      logEvent("DEBUG", "telegram_video_sent", "server", 
+               `Chat: ${chatId}, Message ID: ${result.result.message_id}, Video URL length: ${videoUrl?.length || 0}`);
+      return { success: true, message_id: result.result.message_id };
+    } else {
+      // Детальное логирование ошибки Telegram API
+      logApiError("TELEGRAM", "sendVideo", {
+        chat_id: chatId,
+        video_url_length: videoUrl?.length || 0,
+        caption_length: caption?.length || 0
+      }, {
+        status_code: response.getResponseCode(),
+        error_code: result.error_code,
+        description: result.description,
+        response_body: responseText.substring(0, 500)
+      });
+      
+      return { success: false, error: result.description || "Video send failed" };
+    }
+    
+  } catch (error) {
+    logEvent("ERROR", "telegram_video_exception", "server", 
+             `Chat: ${chatId}, Error: ${error.message}, Video URL length: ${videoUrl?.length || 0}`);
+    return { success: false, error: error.message };
+  }
+}
+
 // ============================================
 // 5. VK API
 // ============================================
@@ -1835,7 +1978,7 @@ function getVkPosts(groupId, count = 10) {
     
     var response = UrlFetchApp.fetch(url, {
       muteHttpExceptions: true,
-      timeout: 10000
+      timeout: TIMEOUTS.MEDIUM // 15 секунд для получения постов
     });
     
     var responseText = response.getContentText();
@@ -1858,10 +2001,16 @@ function getVkPosts(groupId, count = 10) {
       });
       
       // Более подробные ошибки для пользователей
-      if (errorCode === 30) {
-        errorMsg = "Группа/страница закрыта или приватная";
+      if (errorCode === 5) {
+        errorMsg = "Авторизация не удалась (проверьте токен)";
+      } else if (errorCode === 10) {
+        errorMsg = "Внутренняя ошибка сервера VK (повторите запрос)";
       } else if (errorCode === 15) {
         errorMsg = "Нет доступа к группе/странице (требуется разрешение)";
+      } else if (errorCode === 200) {
+        errorMsg = "Нет доступа к альбому (приватный контент)";
+      } else if (errorCode === 30) {
+        errorMsg = "Группа/страница закрыта или приватная";
       } else if (errorCode === 113) {
         errorMsg = "Неверный ID группы/пользователя";
       } else if (errorCode === 18) {
@@ -2051,7 +2200,7 @@ function getVkVideoDirectUrl(videoId) {
     
     var response = UrlFetchApp.fetch(url, {
       muteHttpExceptions: true,
-      timeout: 10000
+      timeout: TIMEOUTS.SLOW // 30 секунд для получения видео (медленная операция)
     });
     
     var responseText = response.getContentText();
@@ -3691,6 +3840,71 @@ function migrateBindingsSheet() {
       error: error.message
     };
   }
+}
+
+/**
+ * Получает медиа URL из VK вложений с поддержкой прямых ссылок на видео
+ */
+function getVkMediaUrls(attachments) {
+  var result = {
+    photos: [],
+    videos: [],      // Прямые URL через video.get
+    docLinks: [],
+    audioLinks: []
+  };
+  
+  if (!attachments || attachments.length === 0) {
+    return result;
+  }
+  
+  for (const attachment of attachments) {
+    try {
+      switch (attachment.type) {
+        case "photo":
+          const photoUrl = getBestPhotoUrl(attachment.photo.sizes);
+          if (photoUrl) {
+            result.photos.push({ type: "photo", url: photoUrl });
+          }
+          break;
+          
+        case "video":
+          const videoId = `${attachment.video.owner_id}_${attachment.video.id}`;
+          const directUrl = getVkVideoDirectUrl(videoId);
+          
+          if (directUrl) {
+            result.videos.push({ type: "video", url: directUrl, id: videoId });
+          } else {
+            // Fallback на embed если direct URL недоступен
+            result.docLinks.push(`🎥 [Видео](https://vk.com/video${videoId})`);
+          }
+          break;
+          
+        case "audio":
+          if (attachment.audio.artist && attachment.audio.title) {
+            result.audioLinks.push(`🎵 ${attachment.audio.artist} - ${attachment.audio.title}`);
+          }
+          break;
+          
+        case "doc":
+          if (attachment.doc.url && attachment.doc.title) {
+            result.docLinks.push(`📎 [${attachment.doc.title}](${attachment.doc.url})`);
+          }
+          break;
+          
+        case "link":
+          if (attachment.link.url) {
+            const title = attachment.link.title || attachment.link.url;
+            result.docLinks.push(`🔗 [${title}](${attachment.link.url})`);
+          }
+          break;
+      }
+    } catch (attachError) {
+      logEvent("WARN", "attachment_processing_error", "server", 
+               `Type: ${attachment.type}, Error: ${attachError.message}`);
+    }
+  }
+  
+  return result;
 }
 
 // ============================================
