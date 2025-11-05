@@ -1256,7 +1256,7 @@ function handleGetVkPosts(payload, clientIp) {
     try {
       var response = UrlFetchApp.fetch(apiUrl, {
         muteHttpExceptions: true,
-        timeout: 15000
+        timeout: TIMEOUTS.MEDIUM
       });
       
       var responseData = JSON.parse(response.getContentText());
@@ -2889,7 +2889,7 @@ function getUserBindingsWithNames(licenseKey) {
   }
 }
 
-// handleGetVkPosts moved to server/api_endpoints.gs (better version with vk_group_url support)
+// handleGetVkPosts consolidated in server.gs with numeric ID validation
 
 
 // ============================================
