@@ -45,10 +45,27 @@ function onOpen() {
     .addItem("📊 Статистика", "showUserStatistics")
     .addItem("🔍 Логи", "showLogsSheet")
     .addSeparator()
+    .addItem("🛠️ Мигрировать Published листы", "runPublishedSheetsMigration")
     .addItem("🧹 Очистить старые логи (>30 дней)", "cleanOldLogs")
     .addToUi();
   
   logEvent("INFO", "menu_opened", "client", `App started, version ${CLIENT_VERSION}`);
+}
+
+function runPublishedSheetsMigration() {
+  try {
+    const result = migrateAndEnsurePublishedSheets();
+    
+    const message = result.success 
+      ? `✅ Миграция Published листов завершена!\n\nОбработано связок: ${result.total}\nСоздано листов: ${result.created}\nПереименовано: ${result.migrated}\nПроверено: ${result.validated}`
+      : `❌ Ошибка миграции: ${result.error}`;
+    
+    SpreadsheetApp.getUi().alert(message);
+    
+  } catch (error) {
+    logEvent("ERROR", "published_migration_ui_error", "client", error.message);
+    SpreadsheetApp.getUi().alert(`❌ Ошибка: ${error.message}`);
+  }
 }
 
 function openMainPanel() {
@@ -702,10 +719,51 @@ function checkNewPosts() {
           return;
         }
         
-        summary.newPostsFound += posts.length;
+        // Extract binding name for Published sheet operations
+        const bindingName = binding.bindingName || binding.binding_name || `Binding_${binding.id}`;
         
-        posts.forEach(post => {
+        // Filter posts using deduplication logic
+        const newPosts = posts.filter(post => {
+          // Check if post was already sent
+          if (isPostAlreadySent(bindingName, post.id)) {
+            logEvent("DEBUG", "post_already_sent_skipping", "client",
+                     `Binding ID: ${binding.id}, Post ID: ${post.id}, Already published`);
+            return false;
+          }
+          
+          // Validate post for sending
+          const validation = validatePostForSending(post, binding);
+          if (!validation.isValid) {
+            logEvent("WARN", "post_validation_failed_skipping", "client",
+                     `Binding ID: ${binding.id}, Post ID: ${post.id}, Issues: ${validation.issues.join('; ')}`);
+            return false;
+          }
+          
+          // Log validation warnings if any
+          if (validation.warnings.length > 0) {
+            logEvent("INFO", "post_validation_warnings", "client",
+                     `Binding ID: ${binding.id}, Post ID: ${post.id}, Warnings: ${validation.warnings.join('; ')}`);
+          }
+          
+          return true;
+        });
+        
+        if (newPosts.length === 0) {
+          logEvent("INFO", "no_new_valid_posts_for_binding", "client",
+                   `Binding ID: ${binding.id}, Total posts: ${posts.length}, New valid posts: 0`);
+          return;
+        }
+        
+        summary.newPostsFound += newPosts.length;
+        
+        // Get last send timestamp for rate limiting
+        const lastSendTime = getLastSendTimestamp(bindingName);
+        
+        newPosts.forEach((post, index) => {
           try {
+            // Apply rate limiting between posts
+            applyRateLimiting(lastSendTime);
+            
             const publishResult = publishPost(binding, post, license.key);
             
             if (publishResult.success) {
@@ -773,8 +831,32 @@ function resolveSyncPostsCount(binding) {
 function publishPost(binding, vkPost, licenseKey) {
   try {
     const bindingId = binding?.id;
+    const bindingName = binding?.bindingName || binding?.binding_name || `Binding_${bindingId}`;
+    const vkGroupId = extractVkGroupId(binding?.vkGroupUrl || binding?.vk_group_url);
+    
     logEvent("DEBUG", "publish_post_start", "client",
              `Binding: ${bindingId || 'unknown'}, Post ID: ${vkPost?.id}, Text length: ${vkPost?.text ? vkPost.text.length : 0}, Attachments: ${vkPost?.attachments ? vkPost.attachments.length : 0}`);
+    
+    // Pre-post validation
+    const validation = validatePostForSending(vkPost, binding);
+    if (!validation.isValid) {
+      logEvent("WARN", "publish_post_validation_failed", "client",
+               `Binding: ${bindingId || 'unknown'}, Post ID: ${vkPost?.id}, Issues: ${validation.issues.join('; ')}`);
+      return { 
+        success: false, 
+        error: `Post validation failed: ${validation.issues.join('; ')}` 
+      };
+    }
+    
+    // Log validation warnings if any
+    if (validation.warnings.length > 0) {
+      logEvent("INFO", "publish_post_validation_warnings", "client",
+               `Binding: ${bindingId || 'unknown'}, Post ID: ${vkPost?.id}, Warnings: ${validation.warnings.join('; ')}`);
+    }
+    
+    // Apply rate limiting for manual posts
+    const lastSendTime = getLastSendTimestamp(bindingName);
+    applyRateLimiting(lastSendTime);
     
     const payload = {
       event: "send_post",
@@ -793,6 +875,17 @@ function publishPost(binding, vkPost, licenseKey) {
     if (result.success) {
       logEvent("INFO", "publish_post_success", "client",
                `Binding: ${bindingId || 'unknown'}, Post ID: ${vkPost?.id}, Message ID: ${result.message_id || 'unknown'}`);
+      
+      // Mark post as sent after successful publication
+      const markResult = markPostAsSent(bindingName, vkGroupId, vkPost?.id, {
+        text: vkPost?.text,
+        tgChatName: binding?.tgChatName || binding?.tg_chat_id
+      });
+      
+      if (!markResult) {
+        logEvent("WARN", "publish_post_mark_failed", "client",
+                 `Binding: ${bindingId || 'unknown'}, Post ID: ${vkPost?.id}, Failed to mark as sent`);
+      }
     } else {
       logEvent("WARN", "publish_post_failed", "client",
                `Binding: ${bindingId || 'unknown'}, Post ID: ${vkPost?.id}, Error: ${result.error || 'Unknown error'}`);
@@ -1246,14 +1339,84 @@ function saveLastPostIds(ids) {
   logEvent("DEBUG", "save_last_post_ids_deprecated", "client", "Server v6 tracks published posts; skipping local cache update");
 }
 
-function isPostAlreadySent(vkGroupId, postId) {
-  logEvent("DEBUG", "is_post_already_sent_deprecated", "client", `VK Group: ${vkGroupId}, Post: ${postId}`);
-  return false;
+function isPostAlreadySent(bindingName, postId) {
+  try {
+    if (!bindingName || !postId) {
+      logEvent("WARN", "is_post_already_sent_invalid_params", "client", 
+               `BindingName: ${bindingName || 'missing'}, PostId: ${postId || 'missing'}`);
+      return false;
+    }
+    
+    const sheet = getOrCreatePublishedPostsSheet(bindingName);
+    if (!sheet) {
+      logEvent("WARN", "is_post_already_sent_no_sheet", "client", `Binding: ${bindingName}`);
+      return false;
+    }
+    
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) { // Only headers exist
+      return false;
+    }
+    
+    // Search for the post ID in the first column
+    const postIdColumn = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    const postExists = postIdColumn.some(row => row[0] === postId);
+    
+    logEvent("DEBUG", "is_post_already_sent_checked", "client", 
+             `Binding: ${bindingName}, Post: ${postId}, Exists: ${postExists}`);
+    
+    return postExists;
+    
+  } catch (error) {
+    logEvent("ERROR", "is_post_already_sent_error", "client", 
+             `Binding: ${bindingName}, Post: ${postId}, Error: ${error.message}`);
+    return false; // On error, assume not sent to avoid missing posts
+  }
 }
 
-function markPostAsSent(vkGroupId, postId, tgChatId, postText, bindingName, tgChatName) {
-  logEvent("DEBUG", "mark_post_as_sent_deprecated", "client",
-           `VK Group: ${vkGroupId}, Post: ${postId}, Binding: ${bindingName || 'N/A'}`);
+function markPostAsSent(bindingName, vkGroupId, postId, postData) {
+  try {
+    if (!bindingName || !postId) {
+      logEvent("WARN", "mark_post_as_sent_invalid_params", "client", 
+               `BindingName: ${bindingName || 'missing'}, PostId: ${postId || 'missing'}`);
+      return false;
+    }
+    
+    const sheet = getOrCreatePublishedPostsSheet(bindingName);
+    if (!sheet) {
+      logEvent("ERROR", "mark_post_as_sent_no_sheet", "client", `Binding: ${bindingName}`);
+      return false;
+    }
+    
+    // Prepare row data according to architecture: Post ID, Sent At, TG Chat Name, Status, Source, Post Preview, VK Post URL
+    const timestamp = new Date().toISOString();
+    const postPreview = (postData.text || "").substring(0, 200);
+    const vkPostUrl = vkGroupId ? `https://vk.com/wall${vkGroupId}_${postId}` : "";
+    
+    const rowData = [
+      postId,                    // Post ID
+      timestamp,                 // Sent At
+      postData.tgChatName || "", // TG Chat Name
+      "sent",                    // Status
+      "VK",                      // Source
+      postPreview,               // Post Preview
+      vkPostUrl                  // VK Post URL
+    ];
+    
+    // Insert new row at the top (after headers)
+    sheet.insertRowBefore(2);
+    sheet.getRange(2, 1, 1, 7).setValues([rowData]);
+    
+    logEvent("INFO", "mark_post_as_sent_success", "client", 
+             `Binding: ${bindingName}, Post: ${postId}, VK Group: ${vkGroupId}`);
+    
+    return true;
+    
+  } catch (error) {
+    logEvent("ERROR", "mark_post_as_sent_error", "client", 
+             `Binding: ${bindingName}, Post: ${postId}, Error: ${error.message}`);
+    return false;
+  }
 }
 
 function updatePostStatistics(vkGroupId, postId) {
@@ -1261,10 +1424,375 @@ function updatePostStatistics(vkGroupId, postId) {
            `VK Group: ${vkGroupId}, Post: ${postId}`);
 }
 
-function getOrCreatePublishedPostsSheet(bindingName, vkGroupId) {
-  logEvent("DEBUG", "published_sheet_deprecated", "client",
-           `Binding: ${bindingName || 'N/A'}, VK Group: ${vkGroupId}`);
-  return null;
+function getOrCreatePublishedPostsSheet(bindingName) {
+  try {
+    if (!bindingName) {
+      logEvent("WARN", "published_sheet_no_binding_name", "client", "Binding name is required");
+      return null;
+    }
+    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    // Create safe sheet name (max 30 chars for Google Sheets)
+    const safeName = bindingName
+      .replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '') // Remove invalid characters
+      .replace(/\s+/g, '_') // Replace spaces with underscores
+      .substring(0, 27); // Leave room for "Published_" prefix
+    
+    const sheetName = `Published_${safeName}`;
+    let sheet = ss.getSheetByName(sheetName);
+    
+    if (sheet) {
+      logEvent("DEBUG", "published_sheet_exists", "client", `Sheet: ${sheetName}`);
+      return sheet;
+    }
+    
+    // Create new sheet
+    sheet = ss.insertSheet(sheetName);
+    
+    // Add headers according to architecture
+    const headers = [
+      "Post ID",
+      "Sent At", 
+      "TG Chat Name",
+      "Status",
+      "Source", 
+      "Post Preview",
+      "VK Post URL"
+    ];
+    
+    sheet.appendRow(headers);
+    
+    // Format headers
+    const headerRange = sheet.getRange(1, 1, 1, headers.length);
+    headerRange.setBackground("#667eea");
+    headerRange.setFontColor("white");
+    headerRange.setFontWeight("bold");
+    sheet.setFrozenRows(1);
+    
+    // Set column widths
+    sheet.setColumnWidth(1, 80);   // Post ID
+    sheet.setColumnWidth(2, 150);  // Sent At
+    sheet.setColumnWidth(3, 200);  // TG Chat Name
+    sheet.setColumnWidth(4, 80);   // Status
+    sheet.setColumnWidth(5, 60);   // Source
+    sheet.setColumnWidth(6, 300);  // Post Preview
+    sheet.setColumnWidth(7, 250);  // VK Post URL
+    
+    logEvent("INFO", "published_sheet_created", "client", `Created new sheet: ${sheetName}`);
+    
+    return sheet;
+    
+  } catch (error) {
+    logEvent("ERROR", "published_sheet_creation_error", "client", 
+             `Binding: ${bindingName}, Error: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Migrate existing Published sheets to new format and ensure compatibility
+ * Handles both old format (Published_-123456) and new format (Published_BindingName)
+ * @returns {Object} Migration results
+ */
+function migrateAndEnsurePublishedSheets() {
+  try {
+    logEvent("INFO", "published_migration_ensure_start", "client", "Starting Published sheets migration and compatibility check");
+    
+    const bindingsResult = getBindings();
+    if (!bindingsResult.success) {
+      logEvent("WARN", "published_migration_no_bindings", "client", "Could not get bindings for migration");
+      return { success: false, error: "Could not get bindings" };
+    }
+    
+    const bindings = bindingsResult.bindings || [];
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const allSheets = ss.getSheets();
+    const publishedSheets = allSheets.filter(sheet => sheet.getName().startsWith("Published_"));
+    
+    let migratedCount = 0;
+    let createdCount = 0;
+    let validatedCount = 0;
+    
+    // Process each binding
+    for (const binding of bindings) {
+      try {
+        const bindingName = binding.bindingName || binding.binding_name || `Binding_${binding.id}`;
+        const vkGroupId = extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
+        const expectedSheetName = `Published_${bindingName.substring(0, 27).replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '').replace(/\s+/g, '_')}`;
+        
+        // Check if sheet exists
+        let sheet = ss.getSheetByName(expectedSheetName);
+        
+        if (!sheet) {
+          // Look for old format sheets to migrate
+          const oldSheetName = `Published_${vkGroupId}`;
+          const oldSheet = ss.getSheetByName(oldSheetName);
+          
+          if (oldSheet) {
+            // Rename old sheet to new format
+            oldSheet.setName(expectedSheetName);
+            sheet = oldSheet;
+            migratedCount++;
+            logEvent("INFO", "published_sheet_renamed", "client", 
+                     `Renamed: ${oldSheetName} → ${expectedSheetName} for binding: ${binding.id}`);
+          } else {
+            // Create new sheet
+            sheet = getOrCreatePublishedPostsSheet(bindingName);
+            if (sheet) {
+              createdCount++;
+              logEvent("INFO", "published_sheet_created_new", "client", 
+                       `Created: ${expectedSheetName} for binding: ${binding.id}`);
+            }
+          }
+        }
+        
+        // Validate sheet structure
+        if (sheet) {
+          const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+          const expectedHeaders = ["Post ID", "Sent At", "TG Chat Name", "Status", "Source", "Post Preview", "VK Post URL"];
+          
+          // Check if headers match expected format
+          const headersMatch = expectedHeaders.every(header => headers.includes(header));
+          
+          if (!headersMatch) {
+            logEvent("WARN", "published_sheet_headers_mismatch", "client", 
+                     `Sheet: ${sheet.getName()}, Headers need update`);
+            // Could add header migration logic here if needed
+          } else {
+            validatedCount++;
+          }
+        }
+        
+      } catch (bindingError) {
+        logEvent("ERROR", "published_migration_binding_error", "client", 
+                 `Binding ID: ${binding.id}, Error: ${bindingError.message}`);
+      }
+    }
+    
+    logEvent("INFO", "published_migration_ensure_complete", "client", 
+             `Migrated: ${migratedCount}, Created: ${createdCount}, Validated: ${validatedCount} sheets`);
+    
+    return {
+      success: true,
+      migrated: migratedCount,
+      created: createdCount,
+      validated: validatedCount,
+      total: bindings.length
+    };
+    
+  } catch (error) {
+    logEvent("ERROR", "published_migration_ensure_error", "client", error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+// ============================================
+// PRE-POST VALIDATION FUNCTIONS
+// ============================================
+
+/**
+ * Splits long text into chunks that fit Telegram's caption limit
+ * @param {string} text - Text to split
+ * @param {number} maxLength - Maximum length per chunk (default 4096)
+ * @returns {Array} Array of text chunks
+ */
+function splitLongCaption(text, maxLength = 4096) {
+  try {
+    if (!text || text.length <= maxLength) {
+      return [text];
+    }
+    
+    const chunks = [];
+    let currentChunk = "";
+    
+    // Split by sentences first, then words if needed
+    const sentences = text.match(/[^.!?]+[.!?]*/g) || [text];
+    
+    for (const sentence of sentences) {
+      if (currentChunk.length + sentence.length <= maxLength) {
+        currentChunk += sentence;
+      } else {
+        if (currentChunk.trim()) {
+          chunks.push(currentChunk.trim());
+        }
+        
+        if (sentence.length <= maxLength) {
+          currentChunk = sentence;
+        } else {
+          // Split long sentence by words
+          const words = sentence.split(' ');
+          let wordChunk = "";
+          
+          for (const word of words) {
+            if (wordChunk.length + word.length + 1 <= maxLength) {
+              wordChunk += (wordChunk ? ' ' : '') + word;
+            } else {
+              if (wordChunk.trim()) {
+                chunks.push(wordChunk.trim());
+              }
+              wordChunk = word;
+            }
+          }
+          
+          if (wordChunk.trim()) {
+            currentChunk = wordChunk;
+          } else {
+            currentChunk = "";
+          }
+        }
+      }
+    }
+    
+    if (currentChunk.trim()) {
+      chunks.push(currentChunk.trim());
+    }
+    
+    logEvent("DEBUG", "caption_split_complete", "client", 
+             `Original length: ${text.length}, Chunks: ${chunks.length}`);
+    
+    return chunks;
+    
+  } catch (error) {
+    logEvent("ERROR", "caption_split_error", "client", error.message);
+    return [text]; // Return original text on error
+  }
+}
+
+/**
+ * Validates if a post is suitable for sending to Telegram
+ * @param {Object} vkPost - VK post object
+ * @param {Object} binding - Binding configuration
+ * @returns {Object} Validation result with isValid flag and details
+ */
+function validatePostForSending(vkPost, binding) {
+  try {
+    const validation = {
+      isValid: true,
+      issues: [],
+      warnings: [],
+      captionChunks: []
+    };
+    
+    // Check if post has text or media content
+    const hasText = vkPost.text && vkPost.text.trim().length > 0;
+    const hasMedia = vkPost.attachments && vkPost.attachments.length > 0;
+    
+    if (!hasText && !hasMedia) {
+      validation.isValid = false;
+      validation.issues.push("Post has no text or media content");
+    }
+    
+    // Check caption length and split if needed
+    if (hasText) {
+      const captionLength = vkPost.text.length;
+      if (captionLength > 4096) {
+        // Try to split the caption
+        const chunks = splitLongCaption(vkPost.text);
+        if (chunks.length > 1) {
+          validation.warnings.push(`Long caption split into ${chunks.length} parts (original: ${captionLength} chars)`);
+          validation.captionChunks = chunks;
+        } else {
+          validation.isValid = false;
+          validation.issues.push(`Caption too long: ${captionLength} characters (max 4096)`);
+        }
+      } else if (captionLength > 3500) {
+        validation.warnings.push(`Caption long: ${captionLength} characters (close to 4096 limit)`);
+      }
+    }
+    
+    // Check media content types
+    if (hasMedia) {
+      const supportedTypes = ['photo', 'video', 'audio', 'doc'];
+      const unsupportedAttachments = vkPost.attachments.filter(att => 
+        !supportedTypes.includes(att.type)
+      );
+      
+      if (unsupportedAttachments.length > 0) {
+        validation.warnings.push(`Unsupported media types: ${unsupportedAttachments.map(att => att.type).join(', ')}`);
+      }
+      
+      // Check for too many photos (Telegram limit is 10 per media group)
+      const photoCount = vkPost.attachments.filter(att => att.type === 'photo').length;
+      if (photoCount > 10) {
+        validation.warnings.push(`Too many photos: ${photoCount} (max 10 per media group)`);
+      }
+    }
+    
+    logEvent("DEBUG", "post_validation_complete", "client", 
+             `Post ID: ${vkPost.id}, Valid: ${validation.isValid}, Issues: ${validation.issues.length}, Warnings: ${validation.warnings.length}`);
+    
+    return validation;
+    
+  } catch (error) {
+    logEvent("ERROR", "post_validation_error", "client", 
+             `Post ID: ${vkPost?.id || 'unknown'}, Error: ${error.message}`);
+    return {
+      isValid: false,
+      issues: [`Validation error: ${error.message}`],
+      warnings: []
+    };
+  }
+}
+
+/**
+ * Applies rate limiting between posts to avoid Telegram flood limits
+ * @param {number} lastSendTime - Timestamp of last successful send
+ * @param {number} minInterval - Minimum interval in milliseconds (default 3000ms)
+ */
+function applyRateLimiting(lastSendTime, minInterval = 3000) {
+  try {
+    if (!lastSendTime) {
+      return; // No previous send, no delay needed
+    }
+    
+    const currentTime = Date.now();
+    const timeSinceLastSend = currentTime - lastSendTime;
+    
+    if (timeSinceLastSend < minInterval) {
+      const delayNeeded = minInterval - timeSinceLastSend;
+      logEvent("INFO", "rate_limiting_applied", "client", 
+               `Delaying ${delayNeeded}ms to avoid flood limits`);
+      Utilities.sleep(delayNeeded);
+    } else {
+      logEvent("DEBUG", "rate_limiting_not_needed", "client", 
+               `Time since last send: ${timeSinceLastSend}ms (min: ${minInterval}ms)`);
+    }
+    
+  } catch (error) {
+    logEvent("ERROR", "rate_limiting_error", "client", error.message);
+  }
+}
+
+/**
+ * Gets the timestamp of the last successful post send from Published sheets
+ * @param {string} bindingName - Name of the binding
+ * @returns {number|null} Timestamp in milliseconds or null if no previous sends
+ */
+function getLastSendTimestamp(bindingName) {
+  try {
+    const sheet = getOrCreatePublishedPostsSheet(bindingName);
+    if (!sheet || sheet.getLastRow() <= 1) {
+      return null;
+    }
+    
+    // Get the most recent sent timestamp from row 2 (latest post)
+    const timestampCell = sheet.getRange(2, 2).getValue(); // Column 2 = "Sent At"
+    
+    if (timestampCell) {
+      const timestamp = new Date(timestampCell).getTime();
+      logEvent("DEBUG", "last_send_timestamp_found", "client", 
+               `Binding: ${bindingName}, Timestamp: ${timestamp}`);
+      return timestamp;
+    }
+    
+    return null;
+    
+  } catch (error) {
+    logEvent("ERROR", "get_last_send_timestamp_error", "client", 
+             `Binding: ${bindingName}, Error: ${error.message}`);
+    return null;
+  }
 }
 
 // ============================================

@@ -1340,10 +1340,28 @@ function handleSendPost(payload, clientIp) {
       }, 403);
     }
     
+    // Server-side duplicate detection using ScriptProperties as fallback
+    var duplicateKey = `sent_post_${binding_id}_${vk_post.id}`;
+    var props = PropertiesService.getScriptProperties();
+    var alreadySent = props.getProperty(duplicateKey);
+    
+    if (alreadySent) {
+      logEvent("WARN", "duplicate_post_blocked_server", license_key, 
+               `Binding ID: ${binding_id}, Post ID: ${vk_post.id}, Already sent (server-side check)`);
+      return jsonResponse({
+        success: false,
+        error: "Post already sent (duplicate detected on server)",
+        duplicate_detected: true
+      }, 409); // 409 Conflict
+    }
+    
     // Отправляем пост в Telegram с учетом настроек связки
     var sendResult = sendVkPostToTelegram(binding.tgChatId, vk_post, binding);
     
     if (sendResult.success) {
+      // Mark post as sent in ScriptProperties (server-side fallback)
+      props.setProperty(duplicateKey, new Date().toISOString());
+      
       logEvent("INFO", "post_sent_successfully", license_key, 
                `Binding ID: ${binding_id}, Post ID: ${vk_post.id}, Message ID: ${sendResult.message_id}, IP: ${clientIp}`);
     } else {
@@ -1356,6 +1374,59 @@ function handleSendPost(payload, clientIp) {
   } catch (error) {
     logEvent("ERROR", "send_post_error", payload.license_key, error.message);
     return jsonResponse({ success: false, error: error.message }, 500);
+  }
+}
+
+/**
+ * Clean up old server-side duplicate entries from ScriptProperties
+ * Should be called periodically to prevent storage bloat
+ * @param {number} daysToKeep - Number of days to keep entries (default: 30)
+ */
+function cleanupServerDuplicateEntries(daysToKeep = 30) {
+  try {
+    logEvent("INFO", "server_duplicate_cleanup_start", "system", `Cleaning entries older than ${daysToKeep} days`);
+    
+    var props = PropertiesService.getScriptProperties();
+    var allProperties = props.getProperties();
+    var cutoffTime = Date.now() - (daysToKeep * 24 * 60 * 60 * 1000);
+    
+    var keysToDelete = [];
+    var deletedCount = 0;
+    
+    // Find duplicate entries to delete
+    for (var key in allProperties) {
+      if (key.startsWith("sent_post_")) {
+        try {
+          var timestamp = new Date(allProperties[key]).getTime();
+          if (timestamp < cutoffTime) {
+            keysToDelete.push(key);
+          }
+        } catch (parseError) {
+          // Invalid timestamp, mark for deletion
+          keysToDelete.push(key);
+        }
+      }
+    }
+    
+    // Delete old entries
+    keysToDelete.forEach(function(key) {
+      try {
+        props.deleteProperty(key);
+        deletedCount++;
+      } catch (deleteError) {
+        logEvent("WARN", "server_duplicate_cleanup_delete_failed", "system", 
+                 `Key: ${key}, Error: ${deleteError.message}`);
+      }
+    });
+    
+    logEvent("INFO", "server_duplicate_cleanup_complete", "system", 
+             `Deleted ${deletedCount} old duplicate entries, ${keysToDelete.length - deletedCount} failed`);
+    
+    return { deleted: deletedCount, failed: keysToDelete.length - deletedCount };
+    
+  } catch (error) {
+    logEvent("ERROR", "server_duplicate_cleanup_error", "system", error.message);
+    return { deleted: 0, failed: 0, error: error.message };
   }
 }
 
