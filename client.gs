@@ -45,6 +45,7 @@ function onOpen() {
     .addItem("📊 Статистика", "showUserStatistics")
     .addItem("🔍 Логи", "showLogsSheet")
     .addSeparator()
+    .addItem("🧪 Тест логирования", "testLoggingFlow")
     .addItem("🧹 Очистить старые логи (>30 дней)", "cleanOldLogs")
     .addToUi();
   
@@ -677,12 +678,12 @@ function checkNewPosts() {
     activeBindings.forEach(binding => {
       try {
         logEvent("DEBUG", "checking_binding", "client",
-                 `Binding ID: ${binding.id}, VK: ${binding.vkGroupUrl || binding.vk_group_url}, TG: ${binding.tgChatId || binding.tg_chat_id}`);
+                 `Binding ID: ${binding.id}, VK: ${binding.vkGroupUrl || binding.vk_group_url}, TG: ${binding.tgChatId || binding.tg_chat_id}`, binding.bindingName);
         
         const vkGroupId = extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
         if (!vkGroupId) {
           logEvent("WARN", "vk_group_id_unresolved", "client",
-                   `Binding ID: ${binding.id}, raw URL: ${binding.vkGroupUrl || binding.vk_group_url}`);
+                   `Binding ID: ${binding.id}, raw URL: ${binding.vkGroupUrl || binding.vk_group_url}`, binding.bindingName);
           return;
         }
         
@@ -691,14 +692,14 @@ function checkNewPosts() {
         
         if (!postsResult.success) {
           logEvent("WARN", "get_vk_posts_failed", "client",
-                   `Binding ID: ${binding.id}, Status: ${postsResult.httpStatus || 'n/a'}, Error: ${postsResult.error || 'Unknown error'}`);
+                   `Binding ID: ${binding.id}, Status: ${postsResult.httpStatus || 'n/a'}, Error: ${postsResult.error || 'Unknown error'}`, binding.bindingName);
           return;
         }
         
         const posts = postsResult.posts || [];
         if (posts.length === 0) {
           logEvent("DEBUG", "no_new_posts_for_binding", "client",
-                   `Binding ID: ${binding.id}, VK Group: ${vkGroupId}`);
+                   `Binding ID: ${binding.id}, VK Group: ${vkGroupId}`, binding.bindingName);
           return;
         }
         
@@ -711,19 +712,19 @@ function checkNewPosts() {
             if (publishResult.success) {
               summary.postsSent += 1;
               logEvent("INFO", "post_sent_to_telegram", "client",
-                       `Binding ID: ${binding.id}, VK Post: ${post.id}, Message ID: ${publishResult.message_id || 'N/A'}`);
+                       `Binding ID: ${binding.id}, VK Post: ${post.id}, Message ID: ${publishResult.message_id || 'N/A'}`, binding.bindingName);
             } else {
               logEvent("ERROR", "post_send_failed", "client",
-                       `Binding ID: ${binding.id}, VK Post: ${post.id}, Error: ${publishResult.error || 'Unknown error'}`);
+                       `Binding ID: ${binding.id}, VK Post: ${post.id}, Error: ${publishResult.error || 'Unknown error'}`, binding.bindingName);
             }
           } catch (sendError) {
             logEvent("ERROR", "post_publish_exception", "client",
-                     `Binding ID: ${binding.id}, VK Post: ${post.id}, Error: ${sendError.message}`);
+                     `Binding ID: ${binding.id}, VK Post: ${post.id}, Error: ${sendError.message}`, binding.bindingName);
           }
         });
       } catch (bindingError) {
         logEvent("ERROR", "binding_check_error", "client",
-                 `Binding ID: ${binding.id}, Error: ${bindingError.message}`);
+                 `Binding ID: ${binding.id}, Error: ${bindingError.message}`, binding.bindingName);
       }
     });
     
@@ -764,7 +765,7 @@ function resolveSyncPostsCount(binding) {
     }
   } catch (error) {
     logEvent("WARN", "resolve_sync_posts_count_failed", "client",
-             `Binding ID: ${binding?.id || 'unknown'}, Error: ${error.message}`);
+             `Binding ID: ${binding?.id || 'unknown'}, Error: ${error.message}`, binding?.bindingName);
   }
 
   return DEFAULT_COUNT;
@@ -1315,8 +1316,37 @@ function logClientEvent(level, event, user, details) {
   }
 }
 
-function logEvent(level, event, source, details) {
+function logEvent(level, event, source, details, bindingName) {
+  // Логируем локально для резервирования
   logClientEvent(level, event, source || "client", details);
+  
+  // Отправляем лог на сервер для глобального и per-binding логирования
+  try {
+    const payload = {
+      event: "client_log",
+      level: level,
+      logEvent: event,
+      source: source || "client",
+      details: details,
+      bindingName: bindingName,
+      user: Session.getActiveUser().getEmail() || "client"
+    };
+    
+    // Асинхронный вызов сервера без ожидания ответа
+    UrlFetchApp.fetch(SERVER_URL, {
+      method: "POST",
+      contentType: "application/json",
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
+      headers: {
+        "User-Agent": `VK-TG-Client/${CLIENT_VERSION}`
+      }
+    });
+    
+  } catch (error) {
+    console.error("Failed to send log to server:", error.message);
+    // Продолжаем работу даже если не удалось отправить лог на сервер
+  }
 }
 
 function getOrCreateClientLogsSheet() {
@@ -2913,6 +2943,87 @@ function ensureAllPublishedSheetsExist() {
   } catch (error) {
     logEvent("ERROR", "ensure_published_sheets_error", "client", error.message);
     return { success: false, error: error.message, total: 0, created: 0 };
+  }
+}
+
+/**
+ * Тестовая функция для проверки логирования на клиенте
+ * Вызывает серверное тестирование и проверяет результат
+ * @return {Object} - Результат теста
+ */
+function testLoggingFlow() {
+  try {
+    logEvent("INFO", "client_logging_test_start", "client", "Starting client logging test", "Test_Client_Binding");
+    
+    // Вызываем серверную тестовую функцию
+    const payload = {
+      event: "test_logging_flow"
+    };
+    
+    const response = UrlFetchApp.fetch(SERVER_URL, {
+      method: "POST",
+      contentType: "application/json",
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
+      headers: {
+        "User-Agent": `VK-TG-Client/${CLIENT_VERSION}`
+      }
+    });
+    
+    let serverResult;
+    try {
+      serverResult = JSON.parse(response.getContentText());
+    } catch (parseError) {
+      throw new Error(`Failed to parse server response: ${parseError.message}`);
+    }
+    
+    if (!serverResult.success) {
+      throw new Error(`Server test failed: ${serverResult.error || 'Unknown error'}`);
+    }
+    
+    // Проверяем локальный Client Logs лист
+    const clientLogsSheet = getOrCreateClientLogsSheet();
+    const clientData = clientLogsSheet.getDataRange().getValues();
+    const clientLastRow = clientData[clientData.length - 1];
+    
+    const clientMatch = clientLastRow[2] === "client_logging_test_start" && // Event column
+                        clientLastRow[4].includes("Starting client logging test"); // Details column
+    
+    const result = {
+      success: serverResult.success && clientMatch,
+      summary: {
+        serverTestPassed: serverResult.success,
+        clientLogsUpdated: clientMatch,
+        serverDetails: serverResult.summary || {}
+      },
+      details: {
+        serverResult: serverResult,
+        clientSheetRows: clientData.length,
+        clientLastEvent: clientLastRow[2],
+        clientLastDetails: clientLastRow[4]
+      }
+    };
+    
+    logEvent("INFO", "client_logging_test_complete", "client", 
+             `Test completed. Server: ${serverResult.success}, Client: ${clientMatch}`, 
+             "Test_Client_Binding");
+    
+    console.log("Client logging test result:", JSON.stringify(result, null, 2));
+    
+    return result;
+    
+  } catch (error) {
+    logEvent("ERROR", "client_logging_test_error", "client", error.message, "Test_Client_Binding");
+    
+    return {
+      success: false,
+      error: error.message,
+      summary: {
+        serverTestPassed: false,
+        clientLogsUpdated: false,
+        serverDetails: {}
+      }
+    };
   }
 }
 

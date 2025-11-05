@@ -46,6 +46,7 @@ function onOpen() {
     .addItem("🎛️ 4. Админ панель", "showAdminPanel")
     .addItem("📊 5. Статистика", "showStatistics")
     .addItem("🔍 6. Показать логи", "showLogsSheet")
+    .addItem("🧪 7. Тест логирования", "testLoggingFlow")
     .addToUi();
 }
 
@@ -61,7 +62,7 @@ function initializeServer() {
     ]);
     
     createSheet("Logs", [
-      "Timestamp", "Level", "Event", "User", "Details", "IP"
+      "Timestamp", "Level", "Source", "Event", "Binding Name", "Message", "Extra JSON"
     ]);
     
     // Логируем инициализацию
@@ -798,6 +799,12 @@ function doPost(e) {
         case "set_global_setting":
           return handleSetGlobalSetting(payload, clientIp);
         
+        case "client_log":
+          return handleClientLog(payload, clientIp);
+        
+        case "test_logging_flow":
+          return jsonResponse(testLoggingFlow());
+        
         default:
           logEvent("WARN", "unknown_event", payload.license_key || "anonymous", 
                    `Unknown event: ${payload.event}, Available events: check_license, get_bindings, add_binding, edit_binding, delete_binding, toggle_binding_status, send_post, test_publication`);
@@ -967,7 +974,7 @@ function handleAddBinding(payload, clientIp) {
     try {
       // Извлекаем ID ВК группы из ссылки
       processedVkGroupId = extractVkGroupId(vk_group_url);
-      logEvent("INFO", "vk_url_converted", license_key, `${vk_group_url} -> ${processedVkGroupId}`);
+      logEvent("INFO", "vk_url_converted", license_key, `${vk_group_url} -> ${processedVkGroupId}`, binding_name);
     } catch (error) {
       return jsonResponse({
         success: false,
@@ -978,7 +985,7 @@ function handleAddBinding(payload, clientIp) {
     try {
       // Извлекаем chat_id Telegram канала
       processedTgChatId = extractTelegramChatId(tg_chat_id);
-      logEvent("INFO", "tg_url_converted", license_key, `${tg_chat_id} -> ${processedTgChatId}`);
+      logEvent("INFO", "tg_url_converted", license_key, `${tg_chat_id} -> ${processedTgChatId}`, binding_name);
     } catch (error) {
       return jsonResponse({
         success: false,
@@ -996,9 +1003,9 @@ function handleAddBinding(payload, clientIp) {
       try {
         formatSettingsString = JSON.stringify(formatSettings);
         logEvent("DEBUG", "format_settings_stored", license_key, 
-                 `Binding ${bindingId}: ${formatSettingsString}`);
+                 `Binding ${bindingId}: ${formatSettingsString}`, binding_name);
       } catch (e) {
-        logEvent("WARN", "format_settings_json_error", license_key, e.message);
+        logEvent("WARN", "format_settings_json_error", license_key, e.message, binding_name);
       }
     }
 
@@ -1021,15 +1028,15 @@ function handleAddBinding(payload, clientIp) {
     try {
       createPublishedSheet(binding_name || `Binding_${bindingId.substring(0, 8)}`);
       logEvent("INFO", "published_sheet_created_for_binding", license_key, 
-               `Created Published sheet for binding: ${binding_name || bindingId}`);
+               `Created Published sheet for binding: ${binding_name || bindingId}`, binding_name || bindingId);
     } catch (sheetError) {
       logEvent("WARN", "published_sheet_creation_warning", license_key, 
-               `Failed to create Published sheet for binding ${bindingId}: ${sheetError.message}`);
+               `Failed to create Published sheet for binding ${bindingId}: ${sheetError.message}`, binding_name || bindingId);
       // Не прерываем процесс, так как основная функция выполнена
     }
     
     logEvent("INFO", "binding_added", license_key, 
-             `Binding ID: ${bindingId}, VK: ${vk_group_url} (${processedVkGroupId}), TG: ${processedTgChatId}, IP: ${clientIp}`);
+             `Binding ID: ${bindingId}, VK: ${vk_group_url} (${processedVkGroupId}), TG: ${processedTgChatId}, IP: ${clientIp}`, binding_name);
     
     return jsonResponse({
       success: true,
@@ -1074,7 +1081,7 @@ function handleEditBinding(payload, clientIp) {
     try {
       // Извлекаем ID ВК группы из ссылки
       processedVkGroupId = extractVkGroupId(vk_group_url);
-      logEvent("INFO", "vk_url_converted", license_key, `${vk_group_url} -> ${processedVkGroupId}`);
+      logEvent("INFO", "vk_url_converted", license_key, `${vk_group_url} -> ${processedVkGroupId}`, binding_name);
     } catch (error) {
       return jsonResponse({
         success: false,
@@ -1085,7 +1092,7 @@ function handleEditBinding(payload, clientIp) {
     try {
       // Извлекаем chat_id Telegram канала
       processedTgChatId = extractTelegramChatId(tg_chat_id);
-      logEvent("INFO", "tg_url_converted", license_key, `${tg_chat_id} -> ${processedTgChatId}`);
+      logEvent("INFO", "tg_url_converted", license_key, `${tg_chat_id} -> ${processedTgChatId}`, binding_name);
     } catch (error) {
       return jsonResponse({
         success: false,
@@ -1099,9 +1106,9 @@ function handleEditBinding(payload, clientIp) {
       try {
         formatSettingsString = JSON.stringify(formatSettings);
         logEvent("DEBUG", "format_settings_updated", license_key, 
-                 `Binding ${binding_id}: ${formatSettingsString}`);
+                 `Binding ${binding_id}: ${formatSettingsString}`, binding_name);
       } catch (e) {
-        logEvent("WARN", "format_settings_json_error", license_key, e.message);
+        logEvent("WARN", "format_settings_json_error", license_key, e.message, binding_name);
       }
     }
 
@@ -1117,7 +1124,7 @@ function handleEditBinding(payload, clientIp) {
     bindingsSheet.getRange(bindingRow, 11).setValue(binding_description || ""); // Binding Description
     
     logEvent("INFO", "binding_edited", license_key, 
-             `Binding ID: ${binding_id}, Name: ${binding_name}, VK: ${vk_group_url} (${processedVkGroupId}), TG: ${processedTgChatId}, IP: ${clientIp}`);
+             `Binding ID: ${binding_id}, Name: ${binding_name}, VK: ${vk_group_url} (${processedVkGroupId}), TG: ${processedTgChatId}, IP: ${clientIp}`, binding_name);
     
     return jsonResponse({ 
       success: true,
@@ -1128,7 +1135,7 @@ function handleEditBinding(payload, clientIp) {
     });
     
   } catch (error) {
-    logEvent("ERROR", "binding_edit_error", payload.license_key, error.message);
+    logEvent("ERROR", "binding_edit_error", payload.license_key, error.message, binding_name);
     return jsonResponse({ success: false, error: error.message }, 500);
   }
 }
@@ -1157,15 +1164,17 @@ function handleDeleteBinding(payload, clientIp) {
     }
     
     var bindingsSheet = getSheet("Bindings");
+    var bindingName = bindingsSheet.getRange(bindingRow, 10).getValue(); // Binding Name column
+    
     bindingsSheet.deleteRow(bindingRow);
     
     logEvent("INFO", "binding_deleted", license_key, 
-             `Binding ID: ${binding_id}, IP: ${clientIp}`);
+             `Binding ID: ${binding_id}, Name: ${bindingName}, IP: ${clientIp}`, bindingName);
     
     return jsonResponse({ success: true });
     
   } catch (error) {
-    logEvent("ERROR", "binding_delete_error", payload.license_key, error.message);
+    logEvent("ERROR", "binding_delete_error", payload.license_key, error.message, bindingName);
     return jsonResponse({ success: false, error: error.message }, 500);
   }
 }
@@ -1195,12 +1204,13 @@ function handleToggleBindingStatus(payload, clientIp) {
     var bindingsSheet = getSheet("Bindings");
     var currentStatus = bindingsSheet.getRange(bindingRow, 6).getValue();
     var newStatus = currentStatus === "active" ? "paused" : "active";
+    var bindingName = bindingsSheet.getRange(bindingRow, 10).getValue(); // Binding Name column
     
     bindingsSheet.getRange(bindingRow, 6).setValue(newStatus);
     bindingsSheet.getRange(bindingRow, 8).setValue(new Date().toISOString());
     
     logEvent("INFO", "binding_status_changed", license_key, 
-             `Binding ID: ${binding_id}, Status: ${currentStatus} → ${newStatus}, IP: ${clientIp}`);
+             `Binding ID: ${binding_id}, Name: ${bindingName}, Status: ${currentStatus} → ${newStatus}, IP: ${clientIp}`, bindingName);
     
     return jsonResponse({
       success: true,
@@ -1208,7 +1218,7 @@ function handleToggleBindingStatus(payload, clientIp) {
     });
     
   } catch (error) {
-    logEvent("ERROR", "binding_status_error", payload.license_key, error.message);
+    logEvent("ERROR", "binding_status_error", payload.license_key, error.message, bindingName);
     return jsonResponse({ success: false, error: error.message }, 500);
   }
 }
@@ -1296,6 +1306,59 @@ function handleSetGlobalSetting(payload, clientIp) {
   }
 }
 
+/**
+ * Обработчик логирования от клиента
+ * @param {Object} payload - Данные запроса
+ * @param {string} clientIp - IP адрес клиента
+ * @return {ContentService.TextOutput} - JSON ответ
+ */
+function handleClientLog(payload, clientIp) {
+  try {
+    const { level, logEvent, source, details, bindingName, user } = payload;
+    
+    // Валидация обязательных полей
+    if (!level || !logEvent) {
+      return jsonResponse({
+        success: false,
+        error: "Missing required fields: level, logEvent"
+      }, 400);
+    }
+    
+    // Создаем уникальную метку времени
+    const timestamp = new Date();
+    const timestampStr = timestamp.toISOString() + '.' + timestamp.getMilliseconds().toString().padStart(3, '0');
+    
+    // Подготавливаем данные
+    const resolvedSource = source || "client";
+    const message = details || "";
+    const extraJson = typeof details === 'object' ? JSON.stringify(details) : "";
+    
+    // Записываем в глобальный лист Logs
+    writeToGlobalLogs(timestampStr, level, resolvedSource, logEvent, bindingName || "", message, extraJson);
+    
+    // Записываем в лист связки, если указано имя связки
+    if (bindingName) {
+      writeToBindingSheet(bindingName, timestampStr, level, resolvedSource, logEvent, bindingName, message, extraJson);
+    }
+    
+    // Логируем в консоль
+    console.log(`[CLIENT LOG] [${level}] ${logEvent} (${user || 'client'}, source: ${resolvedSource}${bindingName ? ', binding: ' + bindingName : ''}): ${message}`);
+    
+    return jsonResponse({
+      success: true,
+      timestamp: timestampStr,
+      loggedTo: ["global_logs"].concat(bindingName ? ["binding_sheet"] : [])
+    });
+    
+  } catch (error) {
+    console.error("Client logging error:", error.message);
+    return jsonResponse({ 
+      success: false, 
+      error: error.message 
+    }, 500);
+  }
+}
+
 // Дополнительные обработчики для отправки постов и публикации
 
 function handleSendPost(payload, clientIp) {
@@ -1316,7 +1379,7 @@ function handleSendPost(payload, clientIp) {
     
     if (disableAllStores === "true") {
       logEvent("INFO", "post_blocked_by_global_setting", license_key, 
-               `Post sending blocked by global disable_all_stores setting`);
+               `Post sending blocked by global disable_all_stores setting`, binding.bindingName);
       return jsonResponse({
         success: false,
         error: "All stores are globally disabled",
@@ -1345,10 +1408,10 @@ function handleSendPost(payload, clientIp) {
     
     if (sendResult.success) {
       logEvent("INFO", "post_sent_successfully", license_key, 
-               `Binding ID: ${binding_id}, Post ID: ${vk_post.id}, Message ID: ${sendResult.message_id}, IP: ${clientIp}`);
+               `Binding ID: ${binding_id}, Post ID: ${vk_post.id}, Message ID: ${sendResult.message_id}, IP: ${clientIp}`, binding.bindingName);
     } else {
       logEvent("ERROR", "post_send_failed", license_key, 
-               `Binding ID: ${binding_id}, Post ID: ${vk_post.id}, Error: ${sendResult.error}, IP: ${clientIp}`);
+               `Binding ID: ${binding_id}, Post ID: ${vk_post.id}, Error: ${sendResult.error}, IP: ${clientIp}`, binding.bindingName);
     }
     
     return jsonResponse(sendResult);
@@ -2496,28 +2559,137 @@ function getUserBindingsWithNames(licenseKey) {
 }
 
 
-function logEvent(level, event, user, details) {
+function logEvent(level, event, user, details, bindingName) {
   try {
     if (!DEV_MODE && level === "DEBUG") {
       return; // Пропускаем DEBUG логи в продакшене
     }
     
-    var sheet = getSheet("Logs");
-    sheet.appendRow([
-      new Date().toISOString(),
-      level,
-      event,
-      user || "system",
-      details || "",
-      ""  // IP заполняется в doPost
-    ]);
+    // Создаем уникальную метку времени с микросекундами для предотвращения дубликатов
+    const timestamp = new Date();
+    const timestampStr = timestamp.toISOString() + '.' + timestamp.getMilliseconds().toString().padStart(3, '0');
+    
+    // Подготавливаем данные для логирования
+    const source = "server";
+    const message = details || "";
+    const extraJson = typeof details === 'object' ? JSON.stringify(details) : "";
+    
+    // Записываем в глобальный лист Logs
+    writeToGlobalLogs(timestampStr, level, source, event, bindingName || "", message, extraJson);
+    
+    // Записываем в лист связки, если указано имя связки
+    if (bindingName) {
+      writeToBindingSheet(bindingName, timestampStr, level, source, event, bindingName, message, extraJson);
+    }
     
     // Также логируем в консоль
-    console.log(`[${level}] ${event} (${user}): ${details}`);
+    console.log(`[${level}] ${event} (${user}${bindingName ? ', binding: ' + bindingName : ''}): ${message}`);
     
   } catch (error) {
     console.error("Logging error:", error.message);
   }
+}
+
+/**
+ * Записывает лог в глобальный лист Logs
+ * @param {string} timestamp - Уникальная метка времени
+ * @param {string} level - Уровень лога (INFO, WARN, ERROR, DEBUG)
+ * @param {string} source - Источник (client/server)
+ * @param {string} event - Событие/тег
+ * @param {string} bindingName - Имя связки
+ * @param {string} message - Сообщение
+ * @param {string} extraJson - Дополнительные данные в JSON
+ */
+function writeToGlobalLogs(timestamp, level, source, event, bindingName, message, extraJson) {
+  try {
+    var sheet = getSheet("Logs");
+    sheet.appendRow([
+      timestamp,
+      level,
+      source,
+      event,
+      bindingName || "",
+      message,
+      extraJson || ""
+    ]);
+  } catch (error) {
+    console.error("Failed to write to global Logs:", error.message);
+  }
+}
+
+/**
+ * Записывает лог в лист конкретной связки
+ * @param {string} bindingName - Имя связки
+ * @param {string} timestamp - Уникальная метка времени
+ * @param {string} level - Уровень лога
+ * @param {string} source - Источник
+ * @param {string} event - Событие/тег
+ * @param {string} bindingNameForLog - Имя связки для лога
+ * @param {string} message - Сообщение
+ * @param {string} extraJson - Дополнительные данные
+ */
+function writeToBindingSheet(bindingName, timestamp, level, source, event, bindingNameForLog, message, extraJson) {
+  try {
+    const sheetName = sanitizeSheetName(bindingName);
+    let sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+    
+    if (!sheet) {
+      // Создаем новый лист для связки
+      sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet(sheetName);
+      sheet.appendRow(["Timestamp", "Level", "Source", "Event", "Binding Name", "Message", "Extra JSON"]);
+      
+      // Форматируем заголовки
+      const headerRange = sheet.getRange(1, 1, 1, 7);
+      headerRange.setFontWeight("bold");
+      headerRange.setBackground("#e8f5e8");
+      headerRange.setFontColor("#1a5f1a");
+      sheet.setFrozenRows(1);
+      
+      // Логируем создание листа
+      console.log(`Created binding sheet: ${sheetName} for binding: ${bindingName}`);
+    }
+    
+    sheet.appendRow([
+      timestamp,
+      level,
+      source,
+      event,
+      bindingNameForLog || "",
+      message,
+      extraJson || ""
+    ]);
+    
+  } catch (error) {
+    console.error(`Failed to write to binding sheet ${bindingName}:`, error.message);
+  }
+}
+
+/**
+ * Очищает имя листа от недопустимых символов
+ * @param {string} name - Исходное имя
+ * @return {string} - Безопасное имя для листа
+ */
+function sanitizeSheetName(name) {
+  if (!name) return "Unnamed";
+  
+  // Заменяем недопустимые символы
+  let safeName = name
+    .replace(/[\\\/\*\?\:\[\]]/g, '_')  // \ / * ? : [ ] -> _
+    .replace(/'/g, '')                  // ' -> remove
+    .replace(/"/g, '')                  // " -> remove
+    .trim();
+  
+  // Ограничиваем длину (Google Sheets limit: 100 chars)
+  if (safeName.length > 90) {
+    safeName = safeName.substring(0, 90);
+  }
+  
+  // Убеждаемся, что имя не пустое
+  if (!safeName) {
+    safeName = "Unnamed";
+  }
+  
+  return safeName;
 }
 
 /**
@@ -4701,6 +4873,114 @@ function cleanOldLogs() {
   } catch (error) {
     logEvent('ERROR', 'log_cleanup_failed', 'server', error.message);
     return { success: false, error: error.message, totalDeleted: 0, sheetResults: [] };
+  }
+}
+
+/**
+ * Тестовая функция для проверки логирования
+ * Симулирует запись лога и проверяет, что оба листа обновлены
+ * @return {Object} - Результат теста с подробной информацией
+ */
+function testLoggingFlow() {
+  try {
+    const testBindingName = "Test_Binding_" + Date.now();
+    const testEvent = "test_logging_flow";
+    const testLevel = "INFO";
+    const testMessage = "Test logging flow verification";
+    const testDetails = { test: true, timestamp: new Date().toISOString(), binding: testBindingName };
+    
+    console.log(`Starting logging flow test with binding: ${testBindingName}`);
+    
+    // 1. Записываем тестовый лог
+    logEvent(testLevel, testEvent, "test_system", testDetails, testBindingName);
+    
+    // 2. Проверяем глобальный лист Logs
+    const globalLogsSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Logs");
+    if (!globalLogsSheet) {
+      throw new Error("Global Logs sheet not found");
+    }
+    
+    const globalData = globalLogsSheet.getDataRange().getValues();
+    const globalLastRow = globalData[globalData.length - 1];
+    
+    // Проверяем, что последняя строка содержит наш тестовый лог
+    const globalMatch = globalLastRow[3] === testEvent && // Event column
+                        globalLastRow[4] === testBindingName && // Binding Name column
+                        globalLastRow[5].includes("Test logging flow"); // Message column
+    
+    // 3. Проверяем лист связки
+    const bindingSheetName = sanitizeSheetName(testBindingName);
+    const bindingSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(bindingSheetName);
+    if (!bindingSheet) {
+      throw new Error(`Binding sheet '${bindingSheetName}' was not created`);
+    }
+    
+    const bindingData = bindingSheet.getDataRange().getValues();
+    const bindingLastRow = bindingData[bindingData.length - 1];
+    
+    // Проверяем, что последняя строка в листе связки содержит наш лог
+    const bindingMatch = bindingLastRow[3] === testEvent && // Event column
+                         bindingLastRow[4] === testBindingName && // Binding Name column
+                         bindingLastRow[5].includes("Test logging flow"); // Message column
+    
+    // 4. Проверяем уникальность меток времени
+    const globalTimestamp = globalLastRow[0];
+    const bindingTimestamp = bindingLastRow[0];
+    
+    const timestampsMatch = globalTimestamp === bindingTimestamp;
+    const timestampHasMillis = globalTimestamp.includes('.') && globalTimestamp.split('.')[1].length >= 3;
+    
+    // 5. Формируем результат
+    const result = {
+      success: globalMatch && bindingMatch && timestampsMatch && timestampHasMillis,
+      summary: {
+        globalLogsUpdated: globalMatch,
+        bindingSheetCreated: true,
+        bindingLogsUpdated: bindingMatch,
+        timestampsMatch: timestampsMatch,
+        timestampsUnique: timestampHasMillis
+      },
+      details: {
+        testBindingName: testBindingName,
+        globalSheetRows: globalData.length,
+        bindingSheetRows: bindingData.length,
+        globalTimestamp: globalTimestamp,
+        bindingTimestamp: bindingTimestamp,
+        testEvent: testEvent,
+        testLevel: testLevel
+      }
+    };
+    
+    // 6. Логируем результат теста
+    if (result.success) {
+      logEvent("INFO", "logging_flow_test_success", "test_system", 
+               `Test passed. Global: ${globalMatch}, Binding: ${bindingMatch}, Timestamps: ${timestampsMatch}`);
+    } else {
+      logEvent("ERROR", "logging_flow_test_failed", "test_system", 
+               `Test failed. Global: ${globalMatch}, Binding: ${bindingMatch}, Timestamps: ${timestampsMatch}`);
+    }
+    
+    console.log("Logging flow test completed:", JSON.stringify(result, null, 2));
+    
+    return result;
+    
+  } catch (error) {
+    const errorResult = {
+      success: false,
+      error: error.message,
+      summary: {
+        globalLogsUpdated: false,
+        bindingSheetCreated: false,
+        bindingLogsUpdated: false,
+        timestampsMatch: false,
+        timestampsUnique: false
+      }
+    };
+    
+    logEvent("ERROR", "logging_flow_test_error", "test_system", error.message);
+    console.error("Logging flow test error:", error.message);
+    
+    return errorResult;
   }
 }
 
