@@ -2125,66 +2125,6 @@ function formatVkPostForTelegram(vkPost, binding) {
   return vkPost.text ? formatVkTextForTelegram(vkPost.text, formatOptions) : "";
 }
 
-function getVkMediaUrls(attachments) {
-  var result = {
-    photos: [],
-    videoLinks: [],
-    audioLinks: [],
-    docLinks: []
-  };
-  
-  if (!attachments || attachments.length === 0) {
-    return result;
-  }
-  
-  for (const attachment of attachments) {
-    try {
-      switch (attachment.type) {
-        case "photo":
-          var photoUrl = getBestPhotoUrl(attachment.photo.sizes);
-          if (photoUrl) {
-            result.photos.push({ type: "photo", url: photoUrl });
-          }
-          break;
-          
-        case "video":
-          // Для видео получаем реальные ссылки только с пользовательским токеном
-          var videoId = `${attachment.video.owner_id}_${attachment.video.id}`;
-          var videoDirectUrl = getVkVideoDirectUrl(videoId);
-          
-          if (videoDirectUrl) {
-            result.videoLinks.push(`🎥 [Смотреть видео](${videoDirectUrl})`);
-          } else {
-            result.videoLinks.push(`🎥 [Видео](https://vk.com/video${videoId})`);
-          }
-          break;
-          
-        case "audio":
-          if (attachment.audio.url) {
-            // Если есть прямая ссылка на аудио (редко)
-            result.audioLinks.push(`🎵 ${attachment.audio.artist} - ${attachment.audio.title}`);
-          } else {
-            result.audioLinks.push(`🎵 ${attachment.audio.artist} - ${attachment.audio.title}`);
-          }
-          break;
-          
-        case "doc":
-          if (attachment.doc.url) {
-            result.docLinks.push(`📎 [${attachment.doc.title}](${attachment.doc.url})`);
-          }
-          break;
-          
-        case "link":
-          result.docLinks.push(`🔗 [${attachment.link.title || attachment.link.url}](${attachment.link.url})`);
-          break;
-      }
-    } catch (attachError) {
-      logEvent("WARN", "attachment_processing_error", "server", `Type: ${attachment.type}, Error: ${attachError.message}`);
-    }
-  }
-  
-  return result;
-}
 
 function getVkVideoDirectUrl(videoId) {
   try {
@@ -2943,11 +2883,12 @@ function handleSendPost(payload, clientIp) {
     }
     
     // Отправляем дополнительную информацию о видео, аудио, документах
-    if (mediaResult.videoLinks.length > 0 || mediaResult.audioLinks.length > 0 || mediaResult.docLinks.length > 0) {
+    if (mediaResult.videos.length > 0 || mediaResult.audioLinks.length > 0 || mediaResult.docLinks.length > 0) {
       var additionalContent = [];
       
-      if (mediaResult.videoLinks.length > 0) {
-        additionalContent.push("📹 **Видео:**", ...mediaResult.videoLinks);
+      if (mediaResult.videos.length > 0) {
+        var videoLinks = mediaResult.videos.map(video => `🎥 [${video.id}](https://vk.com/video${video.id})`);
+        additionalContent.push("📹 **Видео:**", ...videoLinks);
       }
       
       if (mediaResult.audioLinks.length > 0) {
