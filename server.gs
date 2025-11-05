@@ -2310,6 +2310,37 @@ function findBindingRowById(bindingId, licenseKey) {
   }
 }
 
+function getUserBindings(licenseKey) {
+  try {
+    var sheet = getSheet("Bindings");
+    var data = sheet.getDataRange().getValues();
+    var bindings = [];
+    
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][1] === licenseKey) {
+        bindings.push({
+          id: data[i][0],
+          licenseKey: data[i][1],
+          userEmail: data[i][2],
+          vkGroupUrl: data[i][3],
+          tgChatId: data[i][4],
+          status: data[i][5],
+          createdAt: data[i][6],
+          lastCheck: data[i][7],
+          formatSettings: data[i][8],
+          bindingName: data[i][9],
+          bindingDescription: data[i][10]
+        });
+      }
+    }
+    
+    return bindings;
+  } catch (error) {
+    logEvent("ERROR", "get_user_bindings_error", licenseKey, error.message);
+    return [];
+  }
+}
+
 function getUserBindingsWithNames(licenseKey) {
   try {
     var sheet = getSheet("Bindings");
@@ -2808,10 +2839,8 @@ function testNameRetrieval() {
   });
 }
 
-/**
- * Обработчик отправки поста из VK в Telegram
- */
-function handleSendPost(payload, clientIp) {
+// Duplicate handleSendPost function removed - see handleSendPost at line 1291
+// function handleSendPost(payload, clientIp) {
   try {
     var { license_key, binding_id, vk_post } = payload;
     
@@ -3247,183 +3276,9 @@ function getCachedTelegramChatName(chatId) {
 /**
  * НОВАЯ ФУНКЦИЯ: Получает связки пользователя с названиями групп/каналов
  */
-function getUserBindingsWithNames(licenseKey) {
-  try {
-    var sheet = getSheet("Bindings");
-    var data = sheet.getDataRange().getValues();
-    var bindings = [];
-    
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][1] === licenseKey) {
-        var vkGroupUrl = data[i][3];
-        var tgChatId = data[i][4];
-        
-        var vkGroupName = vkGroupUrl;
-        var tgChatName = tgChatId;
-        
-        // Получаем названия
-        try {
-          if (vkGroupUrl) {
-            var vkGroupId = extractVkGroupId(vkGroupUrl);
-            vkGroupName = getCachedVkGroupName(vkGroupId);
-          }
-        } catch (vkError) {
-          logEvent("WARN", "binding_vk_name_error", licenseKey, 
-                   `URL: ${vkGroupUrl}, Error: ${vkError.message}`);
-        }
-        
-        try {
-          if (tgChatId) {
-            tgChatName = getCachedTelegramChatName(tgChatId);
-          }
-        } catch (tgError) {
-          logEvent("WARN", "binding_tg_name_error", licenseKey, 
-                   `Chat ID: ${tgChatId}, Error: ${tgError.message}`);
-        }
-        
-        bindings.push({
-          id: data[i][0],
-          vkGroupUrl: vkGroupUrl,
-          vkGroupName: vkGroupName, // Добавляем название
-          tgChatId: tgChatId,
-          tgChatName: tgChatName,   // Добавляем название
-          status: data[i][5],
-          createdAt: data[i][6],
-          lastCheck: data[i][7]
-        });
-      }
-    }
-    
-    logEvent("INFO", "bindings_with_names_loaded", licenseKey, 
-             `Total bindings: ${bindings.length}`);
-    
-    return bindings;
-    
-  } catch (error) {
-    logEvent("ERROR", "get_bindings_with_names_error", licenseKey, error.message);
-    return [];
-  }
-}
+// Duplicate function removed - see getUserBindingsWithNames at line 2344
 
-/**
- * Обработчик получения постов VK с server-side access token
- */
-function handleGetVkPosts(payload, clientIp) {
-  try {
-    var { license_key, vk_group_id, count = 50 } = payload;
-    
-    // Проверяем лицензию
-    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
-    var licenseData = JSON.parse(licenseCheck.getContent());
-    
-    if (!licenseData.success) {
-      return licenseCheck;
-    }
-    
-    if (!vk_group_id) {
-      return jsonResponse({
-        success: false,
-        error: "vk_group_id required"
-      }, 400);
-    }
-    
-    // Валидация vk_group_id в формате '^-?\d+$'
-    if (!/^-?\d+$/.test(vk_group_id)) {
-      logEvent("WARN", "invalid_vk_group_id_format", license_key, 
-               `Invalid vk_group_id format: ${vk_group_id}, Expected: numeric with optional minus sign, IP: ${clientIp}`);
-      return jsonResponse({
-        success: false,
-        error: "Invalid vk_group_id format. Expected numeric format like: -123456 or 123456"
-      }, 400);
-    }
-    
-    // Проверяем VK User Token
-    var userToken = PropertiesService.getScriptProperties().getProperty("VK_USER_ACCESS_TOKEN");
-    
-    if (!userToken) {
-      logEvent("ERROR", "vk_user_token_missing", license_key, 
-               `Cannot fetch posts without VK User Access Token, Group ID: ${vk_group_id}, IP: ${clientIp}`);
-      return jsonResponse({
-        success: false,
-        error: "VK User Access Token не настроен на сервере"
-      }, 500);
-    }
-    
-    // Формируем URL для VK API
-    var apiUrl = `https://api.vk.com/method/wall.get?owner_id=${encodeURIComponent(vk_group_id)}&count=${encodeURIComponent(count)}&v=${VK_API_VERSION}&access_token=${userToken}`;
-    
-    // Логируем API запрос (без токена)
-    var logUrl = `https://api.vk.com/method/wall.get?owner_id=${vk_group_id}&count=${count}&v=${VK_API_VERSION}&access_token=***`;
-    logEvent("DEBUG", "vk_api_request", license_key, 
-             `Request URL: ${logUrl}, Group ID: ${vk_group_id}, IP: ${clientIp}`);
-    
-    // Получаем посты из ВК
-    try {
-      var response = UrlFetchApp.fetch(apiUrl, {
-        muteHttpExceptions: true,
-        timeout: 15000
-      });
-      
-      var responseData = JSON.parse(response.getContentText());
-      
-      logEvent("DEBUG", "vk_api_response", license_key, 
-               `Group ID: ${vk_group_id}, HTTP Status: ${response.getResponseCode()}, Has VK error: ${!!responseData.error}, Response length: ${response.getContentText().length}, IP: ${clientIp}`);
-      
-      if (responseData.error) {
-        logEvent("ERROR", "vk_api_error", license_key,
-                 `Group ID: ${vk_group_id}, VK Error code: ${responseData.error.error_code}, Message: ${responseData.error.error_msg}, IP: ${clientIp}`);
-        
-        // Возвращаем информативную ошибку
-        var errorMessage = `VK API Error: ${responseData.error.error_msg}`;
-        
-        if (responseData.error.error_code === 5) {
-          errorMessage = "User authorization failed: VK Access Token is invalid or expired";
-        } else if (responseData.error.error_code === 15) {
-          errorMessage = "Access denied: Unable to access VK group posts";
-        } else if (responseData.error.error_code === 100) {
-          errorMessage = "Invalid VK group ID";
-        } else if (responseData.error.error_code === 200) {
-          errorMessage = "Access to this VK group denied";
-        }
-        
-        return jsonResponse({
-          success: false,
-          error: errorMessage,
-          vk_error_code: responseData.error.error_code
-        }, 400);
-      }
-      
-      var posts = responseData.response ? responseData.response.items || [] : [];
-      
-      logEvent("INFO", "vk_posts_retrieved", license_key, 
-               `Group ID: ${vk_group_id}, Posts count: ${posts.length}, IP: ${clientIp}`);
-      
-      return jsonResponse({
-        success: true,
-        posts: posts,
-        group_id: vk_group_id,
-        total_count: responseData.response ? responseData.response.count : 0
-      });
-      
-    } catch (vkError) {
-      logEvent("ERROR", "vk_posts_fetch_error", license_key, 
-               `Group ID: ${vk_group_id}, Error: ${vkError.message}, IP: ${clientIp}`);
-      
-      return jsonResponse({
-        success: false,
-        error: `Не удалось получить посты из ВК: ${vkError.message}`,
-        details: {
-          group_id: vk_group_id,
-          vk_error: vkError.message
-        }
-      }, 500);
-    }
-    
-  } catch (error) {
-    logEvent("ERROR", "get_vk_posts_error", payload.license_key, error.message);
-    return jsonResponse({ success: false, error: error.message }, 500);
-  }
-}
+// Duplicate handleGetVkPosts function body removed - see handleGetVkPosts at line 1388
 
 
 // ============================================
