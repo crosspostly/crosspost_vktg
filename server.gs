@@ -2961,6 +2961,7 @@ function testNameRetrieval() {
   });
 }
 
+// Conflict resolution: ensure only the primary handleSendPost implementation remains (see earlier definition).
 
 /**
  * Обработчик тестовой публикации
