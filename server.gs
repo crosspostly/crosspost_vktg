@@ -1320,6 +1320,103 @@ function handleGetVkPosts(payload, clientIp) {
   }
 }
 
+function handlePublishLastPost(payload, clientIp) {
+  try {
+    var { license_key, binding_id } = payload;
+    
+    // Проверяем лицензию
+    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    var licenseData = JSON.parse(licenseCheck.getContent());
+    
+    if (!licenseData.success) {
+      return licenseCheck;
+    }
+    
+    if (!binding_id) {
+      return jsonResponse({
+        success: false,
+        error: "binding_id is required"
+      }, 400);
+    }
+    
+    // Получаем связку
+    var bindings = getUserBindings(license_key);
+    var binding = bindings.find(b => b.id == binding_id);
+    
+    if (!binding) {
+      return jsonResponse({
+        success: false,
+        error: "Binding not found"
+      }, 404);
+    }
+    
+    if (!binding.enabled) {
+      return jsonResponse({
+        success: false,
+        error: "Binding is disabled"
+      }, 400);
+    }
+    
+    // Получаем последний пост из VK
+    var vkGroupId = extractVkGroupId(binding.vk_group_url);
+    if (!vkGroupId) {
+      return jsonResponse({
+        success: false,
+        error: "Invalid VK group URL in binding"
+      }, 400);
+    }
+    
+    // Получаем 1 последний пост
+    var postsPayload = {
+      license_key: license_key,
+      vk_group_id: vkGroupId,
+      count: 1
+    };
+    
+    var postsResponse = handleGetVkPosts(postsPayload, clientIp);
+    var postsData = JSON.parse(postsResponse.getContent());
+    
+    if (!postsData.success || !postsData.posts || postsData.posts.length === 0) {
+      return jsonResponse({
+        success: false,
+        error: "No posts found in VK group"
+      }, 404);
+    }
+    
+    var lastPost = postsData.posts[0];
+    
+    // Отправляем в Telegram
+    var sendResult = sendVkPostToTelegram(binding.telegram_chat_id, lastPost, binding);
+    
+    if (sendResult.success) {
+      // Отмечаем пост как отправленный (логируем для клиентской обработки)
+      logEvent("INFO", "post_marked_sent", license_key, 
+               `Binding ID: ${binding_id}, VK Post ID: ${lastPost.id}, URL: https://vk.com/wall${vkGroupId}_${lastPost.id}`);
+      
+      logEvent("INFO", "last_post_published", license_key, 
+               `Binding ID: ${binding_id}, VK Post ID: ${lastPost.id}, TG Chat: ${binding.telegram_chat_id}, IP: ${clientIp}`);
+      
+      return jsonResponse({
+        success: true,
+        message: "Last post published successfully",
+        post_id: lastPost.id,
+        post_url: `https://vk.com/wall${vkGroupId}_${lastPost.id}`
+      });
+    } else {
+      logEvent("ERROR", "last_post_publish_error", license_key, 
+               `Binding ID: ${binding_id}, Error: ${sendResult.error}, IP: ${clientIp}`);
+      
+      return jsonResponse({
+        success: false,
+        error: `Failed to publish last post: ${sendResult.error}`
+      }, 500);
+    }
+    
+  } catch (error) {
+    logEvent("ERROR", "publish_last_post_error", payload.license_key, error.message);
+    return jsonResponse({ success: false, error: error.message }, 500);
+  }
+}
 
 
 // ============================================
@@ -3254,70 +3351,7 @@ function cleanOldLogs() {
 
 // migrateBindingsSheet moved to server/api_endpoints.gs as ensureBindingsSheetStructure (better migration logic)
 
-/**
- * Получает медиа URL из VK вложений с поддержкой прямых ссылок на видео
- */
-function getVkMediaUrls(attachments) {
-  var result = {
-    photos: [],
-    videos: [],      // Прямые URL через video.get
-    docLinks: [],
-    audioLinks: []
-  };
-  
-  if (!attachments || attachments.length === 0) {
-    return result;
-  }
-  
-  for (const attachment of attachments) {
-    try {
-      switch (attachment.type) {
-        case "photo":
-          const photoUrl = getBestPhotoUrl(attachment.photo.sizes);
-          if (photoUrl) {
-            result.photos.push({ type: "photo", url: photoUrl });
-          }
-          break;
-          
-        case "video":
-          const videoId = `${attachment.video.owner_id}_${attachment.video.id}`;
-          const directUrl = getVkVideoDirectUrl(videoId);
-          
-          if (directUrl) {
-            result.videos.push({ type: "video", url: directUrl, id: videoId });
-          } else {
-            // Fallback на embed если direct URL недоступен
-            result.docLinks.push(`🎥 [Видео](https://vk.com/video${videoId})`);
-          }
-          break;
-          
-        case "audio":
-          if (attachment.audio.artist && attachment.audio.title) {
-            result.audioLinks.push(`🎵 ${attachment.audio.artist} - ${attachment.audio.title}`);
-          }
-          break;
-          
-        case "doc":
-          if (attachment.doc.url && attachment.doc.title) {
-            result.docLinks.push(`📎 [${attachment.doc.title}](${attachment.doc.url})`);
-          }
-          break;
-          
-        case "link":
-          if (attachment.link.url) {
-            const title = attachment.link.title || attachment.link.url;
-            result.docLinks.push(`🔗 [${title}](${attachment.link.url})`);
-          }
-          break;
-      }
-    } catch (attachError) {
-      logEvent("WARN", "attachment_processing_error", "server", 
-               `Type: ${attachment.type}, Error: ${attachError.message}`);
-    }
-  }
-  
-  return result;
-}
+// Duplicate getVkMediaUrls function removed - see line 1946 for main implementation
 
 // ============================================
 // КОНЕЦ SERVER.GS

@@ -45,6 +45,7 @@ function onOpen() {
     .addItem("📊 Статистика", "showUserStatistics")
     .addItem("🔍 Логи", "showLogsSheet")
     .addSeparator()
+    .addItem("🔧 Миграция Published листов", "migratePublishedSheetsNames")
     .addItem("🧹 Очистить старые логи (>30 дней)", "cleanOldLogs")
     .addToUi();
   
@@ -1233,34 +1234,9 @@ function getLicense() {
   }
 }
 
-function getLastPostIds() {
-  try {
-    const data = PropertiesService.getUserProperties().getProperty("LAST_POST_IDS");
-    
-    if (!data) {
-      logEvent("DEBUG", "no_last_post_ids", "client", "No saved post IDs");
-      return {};
-    }
-    
-    const parsed = JSON.parse(data);
-    logEvent("DEBUG", "last_post_ids_loaded", "client", `Groups: ${Object.keys(parsed).length}`);
-    
-    return parsed;
-    
-  } catch (error) {
-    logEvent("ERROR", "get_last_post_ids_error", "client", error.message);
-    return {};
-  }
-}
-
-function saveLastPostIds(ids) {
-  try {
-    PropertiesService.getUserProperties().setProperty("LAST_POST_IDS", JSON.stringify(ids));
-    logEvent("DEBUG", "last_post_ids_saved", "client", `Groups: ${Object.keys(ids).length}`);
-  } catch (error) {
-    logEvent("ERROR", "save_last_post_ids_error", "client", error.message);
-  }
-}
+// REMOVED: PropertiesService-based last post IDs cache
+// Use Published sheets as single source of truth per ARCHITECTURE.md
+// Functions removed: getLastPostIds(), saveLastPostIds()
 
 function isPostAlreadySent(vkGroupId, postId) {
   try {
@@ -2684,47 +2660,11 @@ function getLastPostIds() {
   }
 }
 
-/**
- * Сохранить кеш последних ID постов групп в PropertiesService
- * @param {Object} lastPostIds - Объект с VK группами и их последними ID постов
- */
-function saveLastPostIds(lastPostIds) {
-  try {
-    const props = PropertiesService.getUserProperties();
-    props.setProperty("vk_group_last_post_ids", JSON.stringify(lastPostIds));
-    
-    logEvent("DEBUG", "cache_saved", "client", `Saved cache for ${Object.keys(lastPostIds).length} groups`);
-  } catch (error) {
-    logEvent("ERROR", "save_cache_error", "client", error.message);
-  }
-}
+// REMOVED: Duplicate PropertiesService-based saveLastPostIds() function
+// Use Published sheets as single source of truth per ARCHITECTURE.md
 
-/**
- * ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Очистить группу из кеша при изменении/удалении связки
- * @param {string} vkGroupId - ID VK группы (например, "-123456")
- */
-function clearGroupFromCache(vkGroupId) {
-  try {
-    const lastPostIds = getLastPostIds();
-    
-    if (lastPostIds[vkGroupId]) {
-      delete lastPostIds[vkGroupId];
-      saveLastPostIds(lastPostIds);
-      
-      logEvent("INFO", "group_cache_cleared", "client", 
-               `VK Group: ${vkGroupId} removed from cache`);
-      return true;
-    } else {
-      logEvent("DEBUG", "group_cache_not_found", "client", 
-               `VK Group: ${vkGroupId} was not in cache`);
-      return false;
-    }
-  } catch (error) {
-    logEvent("ERROR", "clear_cache_error", "client", 
-             `VK Group: ${vkGroupId}, Error: ${error.message}`);
-    return false;
-  }
-}
+// REMOVED: clearGroupFromCache() function - PropertiesService cache eliminated
+// Use Published sheets as single source of truth per ARCHITECTURE.md
 
 /**
  * 💡 НОВАЯ ФУНКЦИЯ: Форсированное создание всех Published листов для существующих связок
@@ -2933,93 +2873,8 @@ function migratePublishedSheetsNames() {
 // ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ ОЧИСТКИ КЕША
 // ============================================
 
-/**
- * Очищает кеш от записей групп, которые больше не используются в связках
- * @return {Object} Результат очистки с количеством очищенных записей
- */
-function cleanupOrphanedCache() {
-  try {
-    logEvent("INFO", "orphaned_cache_cleanup_start", "client", "Starting cleanup of orphaned cache entries");
-    
-    // Получаем все активные связки
-    const bindingsResult = getBindings();
-    if (!bindingsResult.success) {
-      return { success: false, error: bindingsResult.error, cleaned: 0, total: 0 };
-    }
-    
-    // Извлекаем все VK Group ID из активных связок
-    const activeGroupIds = new Set();
-    if (bindingsResult.bindings) {
-      bindingsResult.bindings.forEach(binding => {
-        try {
-          const groupId = extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
-          if (groupId) {
-            activeGroupIds.add(groupId);
-          }
-        } catch (error) {
-          logEvent("WARN", "invalid_vk_url_in_binding", "client", 
-                   `Binding ID: ${binding.id}, URL: ${binding.vkGroupUrl}, Error: ${error.message}`);
-        }
-      });
-    }
-    
-    logEvent("DEBUG", "active_groups_identified", "client", 
-             `Found ${activeGroupIds.size} active VK groups: [${Array.from(activeGroupIds).join(", ")}]`);
-    
-    // Получаем все листы с паттерном "Published_*"
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const allSheets = ss.getSheets();
-    
-    let totalCacheSheets = 0;
-    let cleanedSheets = 0;
-    
-    allSheets.forEach(sheet => {
-      const sheetName = sheet.getName();
-      
-      // Проверяем только листы кеша (Published_*)
-      if (sheetName.startsWith("Published_")) {
-        totalCacheSheets++;
-        
-        // Извлекаем Group ID из названия листа
-        const groupIdMatch = sheetName.match(/^Published_(.+)$/);
-        if (groupIdMatch) {
-          const cachedGroupId = groupIdMatch[1];
-          
-          // Если группа больше не используется - удаляем лист
-          if (!activeGroupIds.has(cachedGroupId)) {
-            logEvent("INFO", "removing_orphaned_cache_sheet", "client", 
-                     `Deleting unused cache sheet: ${sheetName} (Group ID: ${cachedGroupId})`);
-            
-            try {
-              ss.deleteSheet(sheet);
-              cleanedSheets++;
-            } catch (deleteError) {
-              logEvent("ERROR", "cache_sheet_deletion_failed", "client", 
-                       `Sheet: ${sheetName}, Error: ${deleteError.message}`);
-            }
-          } else {
-            logEvent("DEBUG", "cache_sheet_active", "client", 
-                     `Keeping active cache sheet: ${sheetName}`);
-          }
-        }
-      }
-    });
-    
-    logEvent("INFO", "orphaned_cache_cleanup_complete", "client", 
-             `Cleanup complete. Checked ${totalCacheSheets} cache sheets, cleaned ${cleanedSheets} orphaned sheets`);
-    
-    return {
-      success: true,
-      cleaned: cleanedSheets,
-      total: totalCacheSheets,
-      activeGroups: activeGroupIds.size
-    };
-    
-  } catch (error) {
-    logEvent("ERROR", "orphaned_cache_cleanup_error", "client", error.message);
-    return { success: false, error: error.message, cleaned: 0, total: 0 };
-  }
-}
+// REMOVED: cleanupOrphanedCache() function - PropertiesService cache eliminated
+// Use Published sheets as single source of truth per ARCHITECTURE.md
 
 /**
  * Обеспечивает создание листов Published для всех связок
