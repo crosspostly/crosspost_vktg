@@ -44,6 +44,8 @@ function onOpen() {
     .addItem("⏱️ Настроить автопроверку (каждые 30 мин)", "setupTrigger")
     .addItem("📊 Статистика", "showUserStatistics")
     .addItem("🔍 Логи", "showLogsSheet")
+    .addSeparator()
+    .addItem("🧹 Очистить старые логи (>30 дней)", "cleanOldLogs")
     .addToUi();
   
   logEvent("INFO", "menu_opened", "client", `App started, version ${CLIENT_VERSION}`);
@@ -908,49 +910,265 @@ function extractVkGroupId(url) {
       return null;
     }
     
-    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Удаляем query параметры (?from=groups) и якоря (#section)
-    const originalUrl = url;
-    url = url.trim().toLowerCase();
-    url = url.split('?')[0].split('#')[0]; // Убираем всё после ? и #
+    const originalInput = url;
+    let cleanInput = url.trim().toLowerCase().split('?')[0].split('#')[0];
     
-    logEvent("DEBUG", "vk_url_cleaned", "client", `Original: ${originalUrl} → Clean: ${url}`);
-    
-    // public123456
-    const publicMatch = url.match(/public(\d+)/);
-    if (publicMatch) {
-      const id = "-" + publicMatch[1];
-      if (validateVkGroupId(id)) {
-        logEvent("INFO", "vk_url_parsed_public", "client", `URL: ${url} → ID: ${id}`);
-        return id;
+    logEvent("DEBUG", "vk_group_id_extraction_start", "client", `Input: "${originalInput}" → Clean: "${cleanInput}"`);
+
+    // Если уже ID (число или -число)
+    if (/^-?\d+$/.test(cleanInput)) {
+      const normalizedId = cleanInput.startsWith('-') ? cleanInput : '-' + cleanInput;
+      if (validateVkGroupId(normalizedId)) {
+        logEvent("DEBUG", "vk_group_id_numeric", "client", `${originalInput} → ${normalizedId}`);
+        return normalizedId;
+      } else {
+        logEvent("WARN", "vk_group_id_numeric_invalid", "client", `${originalInput} → ${normalizedId} failed validation`);
+        return null;
       }
     }
-    
-    // club123456
-    const clubMatch = url.match(/club(\d+)/);
-    if (clubMatch) {
-      const id = "-" + clubMatch[1];
-      if (validateVkGroupId(id)) {
-        logEvent("INFO", "vk_url_parsed_club", "client", `URL: ${url} → ID: ${id}`);
-        return id;
+
+    // Извлекаем из различных форматов URL
+    let screenName = null;
+    let numericId = null;
+
+    // Форматы: vk.com/public123, vk.com/club123
+    const publicClubMatch = cleanInput.match(/vk\.com\/(public|club)(\d+)/i);
+    if (publicClubMatch) {
+      numericId = publicClubMatch[2];
+      const result = '-' + numericId;
+      if (validateVkGroupId(result)) {
+        logEvent("DEBUG", "vk_group_id_public_club", "client", `${originalInput} → ${result}`);
+        return result;
+      } else {
+        logEvent("WARN", "vk_group_id_public_club_invalid", "client", `${originalInput} → ${result} failed validation`);
+        return null;
       }
     }
-    
-    // просто число (уже ID): -123456 или 123456
-    const numMatch = url.match(/^-?\d+$/);
-    if (numMatch) {
-      const id = url; // Используем как есть
-      if (validateVkGroupId(id)) {
-        logEvent("INFO", "vk_url_parsed_numeric", "client", `URL: ${url} → ID: ${id}`);
-        return id;
+
+    // Форматы: vk.com/username, VK.COM/USERNAME, username
+    const patterns = [
+      /vk\.com\/([a-z0-9_]+)/i,     // vk.com/username
+      /^([a-z0-9_]+)$/i             // просто username
+    ];
+
+    for (const pattern of patterns) {
+      const match = cleanInput.match(pattern);
+      if (match) {
+        screenName = match[1];
+        break;
       }
     }
-    
-    logEvent("WARN", "vk_url_not_extracted", "client", `Could not extract valid ID from URL: ${url}`);
+
+    if (!screenName) {
+      logEvent("WARN", "vk_group_id_unsupported_format", "client", `Unsupported format: "${originalInput}"`);
+      return null;
+    }
+
+    // Если это numeric ID (fallback)
+    if (/^\d+$/.test(screenName)) {
+      const result = '-' + screenName;
+      if (validateVkGroupId(result)) {
+        logEvent("DEBUG", "vk_group_id_fallback_numeric", "client", `${originalInput} → ${result}`);
+        return result;
+      } else {
+        logEvent("WARN", "vk_group_id_fallback_numeric_invalid", "client", `${originalInput} → ${result} failed validation`);
+        return null;
+      }
+    }
+
+    // Если это screen_name - на клиенте не можем резолвить через API, возвращаем null
+    // Серверная часть сделает резолвинг через resolveVkScreenName
+    logEvent("INFO", "vk_group_id_screen_name_server_resolve", "client", 
+      `Screen name "${screenName}" requires server resolution from "${originalInput}"`);
     return null;
     
   } catch (error) {
     logEvent("ERROR", "extract_group_id_error", "client", `URL: ${url}, Error: ${error.message}`);
     return null;
+  }
+}
+
+// ============================================
+// 4. УТИЛИТЫ ПАРСИНГА И ИЗВЛЕЧЕНИЯ ID
+// ============================================
+
+/**
+ * Клиентская функция извлечения chat_id Telegram с поддержкой всех форматов из ARCHITECTURE.md
+ * Поддерживаемые форматы:
+ * - @channelname → "@channelname"
+ * - https://t.me/channelname → "@channelname"
+ * - t.me/username → "@username"  
+ * - channelname → "@channelname"
+ * - -1001234567890 → "-1001234567890"
+ * - 123456789 → "123456789"
+ */
+function extractTelegramChatId(input) {
+  try {
+    if (!input || typeof input !== 'string') {
+      logEvent("WARN", "invalid_telegram_input_type", "client", `Input type: ${typeof input}`);
+      return null;
+    }
+
+    const originalInput = input;
+    const cleanInput = input.trim().toLowerCase().split('?')[0].split('#')[0];
+
+    logEvent("DEBUG", "telegram_chat_id_extraction_start", "client", `Input: "${originalInput}" → Clean: "${cleanInput}"`);
+
+    // Если уже chat_id (число с возможным минусом)
+    if (/^-?\d+$/.test(cleanInput)) {
+      logEvent("DEBUG", "telegram_chat_id_numeric", "client", `${originalInput} → ${cleanInput}`);
+      return cleanInput;
+    }
+
+    // Извлекаем username из различных форматов
+    let username = null;
+
+    // Форматы в порядке приоритета:
+    const patterns = [
+      /https?:\/\/t\.me\/([a-z0-9_]+)/i,  // https://t.me/username
+      /t\.me\/([a-z0-9_]+)/i,            // t.me/username
+      /@([a-z0-9_]+)/i,                  // @username
+      /^([a-z0-9_]+)$/i                  // просто username
+    ];
+
+    for (const pattern of patterns) {
+      const match = cleanInput.match(pattern);
+      if (match) {
+        username = match[1];
+        break;
+      }
+    }
+
+    if (!username) {
+      logEvent("WARN", "telegram_chat_id_unsupported_format", "client", `Unsupported format: "${originalInput}"`);
+      return null;
+    }
+
+    // Валидация username
+    if (!/^[a-z0-9_]+$/i.test(username)) {
+      logEvent("WARN", "telegram_chat_id_invalid_username", "client", `Invalid username "${username}" from "${originalInput}"`);
+      return null;
+    }
+
+    const result = '@' + username;
+    logEvent("DEBUG", "telegram_chat_id_username", "client", `${originalInput} → ${result}`);
+    
+    return result;
+    
+  } catch (error) {
+    logEvent("ERROR", "extract_telegram_chat_id_error", "client", `Input: ${input}, Error: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Клиентская функция очистки старых логов (более 30 дней) из клиентских лог-листов
+ * Обрабатывает листы: "Client Logs" и другие листы с "Log" в названии в клиентской таблице
+ */
+function cleanOldLogs() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const allSheets = ss.getSheets();
+    const logSheets = [];
+    
+    // Ищем все клиентские листы с логами
+    for (let i = 0; i < allSheets.length; i++) {
+      const sheetName = allSheets[i].getName();
+      if (sheetName === "Client Logs" || sheetName.toLowerCase().includes("log")) {
+        logSheets.push(allSheets[i]);
+      }
+    }
+    
+    if (logSheets.length === 0) {
+      logEvent("WARN", "no_client_log_sheets_found", "client", "No client log sheets found for cleanup");
+      return { totalDeleted: 0, sheetResults: [] };
+    }
+    
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    let totalDeleted = 0;
+    const sheetResults = [];
+    
+    logEvent("INFO", "client_log_cleanup_started", "client", `Starting cleanup of ${logSheets.length} client log sheets older than ${thirtyDaysAgo.toISOString()}`);
+    
+    // Обрабатываем каждый лог-лист
+    for (let j = 0; j < logSheets.length; j++) {
+      const sheet = logSheets[j];
+      const sheetName = sheet.getName();
+      let sheetDeletedCount = 0;
+      
+      try {
+        // Проверяем, есть ли у листа данные
+        const dataRange = sheet.getDataRange();
+        const data = dataRange.getValues();
+        
+        if (data.length <= 1) { // Только заголовок или пустой лист
+          logEvent("DEBUG", "client_log_cleanup_sheet_empty", "client", `Sheet "${sheetName}" is empty or has only headers`);
+          sheetResults.push({ sheetName: sheetName, deletedCount: 0, status: "empty" });
+          continue;
+        }
+        
+        // Удаляем старые записи (начиная с конца, чтобы не сбивать индексы)
+        for (let i = data.length - 1; i >= 1; i--) {
+          try {
+            const logDate = new Date(data[i][0]);
+            
+            // Проверяем валидность даты
+            if (isNaN(logDate.getTime())) {
+              logEvent("DEBUG", "client_log_cleanup_invalid_date", "client", `Invalid date in sheet "${sheetName}" row ${i + 1}: ${data[i][0]}`);
+              continue;
+            }
+            
+            if (logDate < thirtyDaysAgo) {
+              sheet.deleteRow(i + 1);
+              sheetDeletedCount++;
+            }
+          } catch (rowError) {
+            logEvent("WARN", "client_log_cleanup_row_error", "client", `Error processing row ${i + 1} in sheet "${sheetName}": ${rowError.message}`);
+          }
+        }
+        
+        totalDeleted += sheetDeletedCount;
+        sheetResults.push({ 
+          sheetName: sheetName, 
+          deletedCount: sheetDeletedCount, 
+          status: "success",
+          totalRows: data.length
+        });
+        
+        logEvent("INFO", "client_log_cleanup_sheet_completed", "client", `Sheet "${sheetName}": deleted ${sheetDeletedCount} of ${data.length - 1} entries`);
+        
+      } catch (sheetError) {
+        logEvent("ERROR", "client_log_cleanup_sheet_error", "client", `Error processing sheet "${sheetName}": ${sheetError.message}`);
+        sheetResults.push({ 
+          sheetName: sheetName, 
+          deletedCount: 0, 
+          status: "error", 
+          error: sheetError.message 
+        });
+      }
+    }
+    
+    // Финальная сводка
+    const summary = {
+      totalDeleted: totalDeleted,
+      sheetsProcessed: logSheets.length,
+      cutoffDate: thirtyDaysAgo.toISOString(),
+      sheetResults: sheetResults
+    };
+    
+    logEvent("INFO", "client_log_cleanup_completed", "client", 
+      `Client cleanup completed: ${totalDeleted} entries deleted from ${logSheets.length} sheets. Summary: ${JSON.stringify(sheetResults)}`);
+    
+    return summary;
+    
+  } catch (error) {
+    logEvent("ERROR", "client_log_cleanup_critical_error", "client", `Critical error in client log cleanup: ${error.message}, Stack: ${error.stack?.substring(0, 200)}`);
+    return { 
+      totalDeleted: 0, 
+      sheetsProcessed: 0, 
+      error: error.message,
+      sheetResults: [] 
+    };
   }
 }
 
