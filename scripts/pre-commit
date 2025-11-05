@@ -1,0 +1,38 @@
+#!/bin/bash
+
+# Pre-commit hook for Apps Script syntax checking
+# Install with: cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+
+echo "🔍 Running Apps Script syntax check..."
+
+# Check if npm is available
+if ! command -v npm &> /dev/null; then
+    echo "⚠️  npm not found. Please install Node.js and npm to run syntax checks."
+    exit 0
+fi
+
+# Install dependencies if needed
+if [ ! -d "node_modules" ]; then
+    echo "📦 Installing dependencies..."
+    npm install
+fi
+
+# Run syntax check
+npm run syntax-check
+SYNTAX_RESULT=$?
+
+# Run lint check (optional, won't fail commit)
+echo ""
+echo "🔧 Running ESLint (optional)..."
+npm run lint:check
+LINT_RESULT=$?
+
+if [ $SYNTAX_RESULT -eq 0 ]; then
+    echo "✅ Pre-commit checks passed!"
+    exit 0
+else
+    echo "❌ Syntax errors found. Please fix them before committing."
+    echo ""
+    echo "Run 'npm run syntax-check' to see the errors."
+    exit 1
+fi

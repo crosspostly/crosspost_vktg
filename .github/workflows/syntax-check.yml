@@ -1,0 +1,31 @@
+name: Apps Script Syntax Check
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  syntax-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run syntax check
+      run: npm run syntax-check
+      
+    - name: Run ESLint
+      run: npm run lint:check
+      continue-on-error: true  # Don't fail the build on linting issues, only on syntax errors

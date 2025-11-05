@@ -1,0 +1,71 @@
+{
+  "name": "vk-telegram-crossposter",
+  "version": "1.0.0",
+  "description": "VK to Telegram cross-posting system for Google Apps Script",
+  "scripts": {
+    "lint": "eslint *.gs --fix",
+    "lint:check": "eslint *.gs",
+    "syntax-check": "node scripts/syntax-check.js",
+    "install-hooks": "cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit",
+    "test": "npm run syntax-check && npm run lint:check"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "@eslint/js": "^9.0.0",
+    "espree": "^9.6.1",
+    "acorn": "^8.11.3"
+  },
+  "eslintConfig": {
+    "env": {
+      "browser": true,
+      "es2021": true
+    },
+    "extends": [
+      "eslint:recommended"
+    ],
+    "parserOptions": {
+      "ecmaVersion": 2021,
+      "sourceType": "script"
+    },
+    "globals": {
+      "PropertiesService": "readonly",
+      "UrlFetchApp": "readonly",
+      "Utilities": "readonly",
+      "SpreadsheetApp": "readonly",
+      "CacheService": "readonly",
+      "ContentService": "readonly",
+      "Logger": "readonly",
+      "Session": "readonly",
+      "MailApp": "readonly",
+      "HtmlService": "readonly",
+      "DocumentApp": "readonly",
+      "ScriptApp": "readonly",
+      "DriveApp": "readonly",
+      "BaseApp": "readonly",
+      "CalendarApp": "readonly",
+      "ContactsApp": "readonly",
+      "CardService": "readonly",
+      "FormApp": "readonly",
+      "GmailApp": "readonly",
+      "LockService": "readonly",
+      "Maps": "readonly",
+      "XmlService": "readonly",
+      "ChartApp": "readonly",
+      "SitesApp": "readonly",
+      "SlidesApp": "readonly",
+      "LanguageApp": "readonly",
+      "Jdbc": "readonly",
+      "UrlShortener": "readonly",
+      "Analytics": "readonly"
+    },
+    "rules": {
+      "no-unused-vars": "off",
+      "no-console": "off",
+      "no-undef": "error",
+      "no-redeclare": "error",
+      "no-case-declarations": "error",
+      "no-unreachable": "error",
+      "no-constant-condition": "error"
+    }
+  }
+}
