@@ -167,6 +167,54 @@ function saveLicenseWithCheck(licenseKey) {
   }
 }
 
+function callServer(payload, options) {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Invalid payload for server call');
+  }
+  if (!SERVER_URL || SERVER_URL.includes('YOURSERVERURL')) {
+    throw new Error('SERVER_URL is not configured');
+  }
+
+  var requestOptions = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true,
+    timeout: (options && options.timeout) || REQUEST_TIMEOUT
+  };
+
+  try {
+    logEvent('DEBUG', 'server_call_start', 'client', `Event: ${payload.event || 'unknown'}`);
+    var response = UrlFetchApp.fetch(SERVER_URL, requestOptions);
+    var responseCode = response.getResponseCode();
+    var responseText = response.getContentText();
+    var result = {};
+
+    if (responseText) {
+      try {
+        result = JSON.parse(responseText);
+      } catch (parseError) {
+        logEvent('ERROR', 'server_response_parse_error', 'client', `Event: ${payload.event || 'unknown'}, Error: ${parseError.message}`);
+        throw new Error('Failed to parse server response JSON');
+      }
+    }
+
+    result = result || {};
+    result.httpStatus = responseCode;
+
+    if (!result.success) {
+      logEvent('WARN', 'server_call_completed_with_error', 'client', `Event: ${payload.event || 'unknown'}, Status: ${responseCode}, Error: ${result.error || 'Unknown error'}`);
+    } else {
+      logEvent('DEBUG', 'server_call_success', 'client', `Event: ${payload.event || 'unknown'}, Status: ${responseCode}`);
+    }
+
+    return result;
+  } catch (error) {
+    logEvent('ERROR', 'server_call_failed', 'client', `Event: ${payload.event || 'unknown'}, Error: ${error.message}`);
+    throw error;
+  }
+}
+
 function addBinding(bindingName, bindingDescription, vkGroupUrl, tgChatId, formatSettings) {
   try {
     const license = getLicense();
@@ -205,16 +253,7 @@ function addBinding(bindingName, bindingDescription, vkGroupUrl, tgChatId, forma
       logEvent("INFO", "binding_added", "client",
                `Binding ID: ${result.binding_id}, Name: ${bindingName}, VK Group: ${result.converted?.vk_group_id || 'N/A'}`);
       
-      // 💡 НОВОЕ: Очищаем мусорный кеш при добавлении новой связки
-      const cleanupResult = cleanupOrphanedCache();
-      logEvent("INFO", "orphaned_cache_cleanup_on_add", "client", 
-               `Cleaned ${cleanupResult.cleaned} orphaned entries from ${cleanupResult.total} total cache entries`);
-      
-      // 💡 НОВОЕ: Форсированно создаем все Published листы для связок
-      const sheetsResult = ensureAllPublishedSheetsExist();
-      logEvent("INFO", "published_sheets_forced_creation", "client", 
-               `Checked ${sheetsResult.total} bindings, Created ${sheetsResult.created} new Published sheets`);
-      
+      // Published sheets and cache lifecycle are managed by server v6
       return result;
     } else {
       logEvent("WARN", "add_binding_failed", "client", result.error);
@@ -285,10 +324,7 @@ function editBinding(bindingId, bindingName, bindingDescription, vkGroupUrl, tgC
     if (result.success) {
       logEvent("INFO", "binding_edited", "client", `Binding ID: ${bindingId}, Name: ${bindingName}`);
       
-      // 💡 НОВОЕ: Форсированно обновляем Published листы после редактирования
-      const sheetsResult = ensureAllPublishedSheetsExist();
-      logEvent("INFO", "published_sheets_updated_on_edit", "client", 
-               `Checked ${sheetsResult.total} bindings, Created ${sheetsResult.created} new Published sheets`);
+      // Published sheet lifecycle is managed on the server after edits
     } else {
       logEvent("WARN", "edit_binding_failed", "client", result.error);
     }
@@ -612,116 +648,89 @@ function checkNewPosts() {
     
     const license = getLicense();
     if (!license) {
+      logEvent("ERROR", "check_posts_license_missing", "client", "License not found");
       return { success: false, error: "Лицензия не найдена" };
     }
     
     const bindingsResult = getBindings();
     if (!bindingsResult.success) {
+      logEvent("ERROR", "check_posts_bindings_failed", "client", bindingsResult.error || "Unknown error" );
       return { success: false, error: bindingsResult.error };
     }
     
     const bindings = bindingsResult.bindings || [];
-    const activeBindings = bindings.filter(b => b.status === "active");
+    const activeBindings = bindings.filter(binding => (binding.status || "").toLowerCase() === "active");
     
     logEvent("INFO", "active_bindings_count", "client", `Total: ${bindings.length}, Active: ${activeBindings.length}`);
     
     if (activeBindings.length === 0) {
-      logEvent("WARN", "no_active_bindings", "client", "No active bindings found");
       return { success: true, bindingsChecked: 0, newPostsFound: 0, postsSent: 0 };
     }
     
-    let newPostsFound = 0;
-    let postsSent = 0;
-    
-    for (const binding of activeBindings) {
-      try {
-        logEvent("DEBUG", "checking_binding", "client", 
-                 `Binding ID: ${binding.id}, VK: ${binding.vkGroupUrl}, TG: ${binding.tgChatId}`);
-        
-        const vkGroupId = extractVkGroupId(binding.vkGroupUrl);
-        if (!vkGroupId) {
-          logEvent("WARN", "invalid_vk_url", "client", `URL: ${binding.vkGroupUrl}`);
-          continue;
-        }
-        
-        // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: передаем ID, а не URL!
-        const posts = getVkPosts(vkGroupId);
-        logEvent("DEBUG", "vk_posts_fetched", "client", `VK Group: ${vkGroupId}, Posts: ${posts?.length || 0}`);
-        
-        if (!posts || posts.length === 0) {
-          logEvent("DEBUG", "no_posts_in_group", "client", `VK Group: ${vkGroupId}. This might be due to missing VK token or API error.`);
-          
-          // Если это первая связка и постов нет, возможно проблема с конфигурацией
-          if (newPostsFound === 0 && postsSent === 0) {
-            const configError = "Не удалось получить посты из VK. Возможные причины:\n" +
-              "1. VK User Access Token не настроен на сервере\n" +
-              "2. Токен истек или недействителен\n" +
-              "3. Нет доступа к группе\n" +
-              "4. Группа не найдена\n\n" +
-              "Проверьте настройки сервера и права доступа.";
-            return { success: false, error: configError };
-          }
-          continue;
-        }
-        
-        const lastPostIds = getLastPostIds();
-        const lastKnownId = lastPostIds[vkGroupId] || 0;
-        
-        const newPosts = posts.filter(post => post.id > lastKnownId);
-        newPostsFound += newPosts.length;
-        
-        logEvent("INFO", "new_posts_found", "client",
-                 `VK Group: ${vkGroupId}, New posts: ${newPosts.length}, Last known ID: ${lastKnownId}`);
-        
-        for (const post of newPosts) {
-          if (isPostAlreadySent(vkGroupId, post.id)) {
-            logEvent("DEBUG", "post_already_sent", "client", `Post ID: ${post.id}`);
-            continue;
-          }
-          
-          const sendResult = sendPostToServer(license.key, binding.id, post);
-          
-          if (sendResult.success) {
-            // УБРАЛИ МЕДЛЕННЫЕ ВЫЗОВЫ - используем имена из binding напрямую
-            // Названия теперь хранятся в самой связке (bindingName, не путать с vkGroupName)
-            const bindingName = binding.bindingName || binding.binding_name || null;
-            const tgChatId = binding.tgChatId || binding.tg_chat_id;
-            
-            // Передаем информацию в markPostAsSent БЕЗ запросов к серверу
-            markPostAsSent(vkGroupId, post.id, tgChatId, post.text, bindingName, null);
-            postsSent++;
-            
-            logEvent("INFO", "post_sent_to_telegram", "client",
-                     `VK Post: ${post.id}, Binding: ${binding.id}, Message ID: ${sendResult.message_id || 'N/A'}`);
-          } else {
-            logEvent("ERROR", "post_send_failed", "client",
-                     `VK Post: ${post.id}, Error: ${sendResult.error}`);
-          }
-        }
-        
-        // Сохраняем последний ID
-        if (posts.length > 0) {
-          lastPostIds[vkGroupId] = Math.max(...posts.map(p => p.id));
-          saveLastPostIds(lastPostIds);
-          logEvent("DEBUG", "last_post_id_saved", "client", 
-                   `VK Group: ${vkGroupId}, Last ID: ${lastPostIds[vkGroupId]}`);
-        }
-        
-      } catch (bindingError) {
-        logEvent("ERROR", "binding_check_error", "client",
-                 `Binding: ${binding.id}, Error: ${bindingError.message}`);
-      }
-    }
-    
-    logEvent("INFO", "check_posts_complete", "client",
-             `Checked: ${activeBindings.length} bindings, Found: ${newPostsFound} new posts, Sent: ${postsSent} to TG`);
-    
-    return {
+    const summary = {
       success: true,
       bindingsChecked: activeBindings.length,
-      newPostsFound: newPostsFound,
-      postsSent: postsSent
+      newPostsFound: 0,
+      postsSent: 0
     };
+    
+    activeBindings.forEach(binding => {
+      try {
+        logEvent("DEBUG", "checking_binding", "client",
+                 `Binding ID: ${binding.id}, VK: ${binding.vkGroupUrl || binding.vk_group_url}, TG: ${binding.tgChatId || binding.tg_chat_id}`);
+        
+        const vkGroupId = extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
+        if (!vkGroupId) {
+          logEvent("WARN", "vk_group_id_unresolved", "client",
+                   `Binding ID: ${binding.id}, raw URL: ${binding.vkGroupUrl || binding.vk_group_url}`);
+          return;
+        }
+        
+        const syncCount = resolveSyncPostsCount(binding);
+        const postsResult = getVkPosts(vkGroupId, syncCount);
+        
+        if (!postsResult.success) {
+          logEvent("WARN", "get_vk_posts_failed", "client",
+                   `Binding ID: ${binding.id}, Status: ${postsResult.httpStatus || 'n/a'}, Error: ${postsResult.error || 'Unknown error'}`);
+          return;
+        }
+        
+        const posts = postsResult.posts || [];
+        if (posts.length === 0) {
+          logEvent("DEBUG", "no_new_posts_for_binding", "client",
+                   `Binding ID: ${binding.id}, VK Group: ${vkGroupId}`);
+          return;
+        }
+        
+        summary.newPostsFound += posts.length;
+        
+        posts.forEach(post => {
+          try {
+            const publishResult = publishPost(binding, post, license.key);
+            
+            if (publishResult.success) {
+              summary.postsSent += 1;
+              logEvent("INFO", "post_sent_to_telegram", "client",
+                       `Binding ID: ${binding.id}, VK Post: ${post.id}, Message ID: ${publishResult.message_id || 'N/A'}`);
+            } else {
+              logEvent("ERROR", "post_send_failed", "client",
+                       `Binding ID: ${binding.id}, VK Post: ${post.id}, Error: ${publishResult.error || 'Unknown error'}`);
+            }
+          } catch (sendError) {
+            logEvent("ERROR", "post_publish_exception", "client",
+                     `Binding ID: ${binding.id}, VK Post: ${post.id}, Error: ${sendError.message}`);
+          }
+        });
+      } catch (bindingError) {
+        logEvent("ERROR", "binding_check_error", "client",
+                 `Binding ID: ${binding.id}, Error: ${bindingError.message}`);
+      }
+    });
+    
+    logEvent("INFO", "check_posts_complete", "client",
+             `Checked: ${summary.bindingsChecked} bindings, Found: ${summary.newPostsFound} posts, Sent: ${summary.postsSent} posts`);
+    
+    return summary;
     
   } catch (error) {
     logEvent("ERROR", "check_posts_error", "client", error.message);
@@ -729,54 +738,71 @@ function checkNewPosts() {
   }
 }
 
-function sendPostToServer(licenseKey, bindingId, vkPost) {
+function resolveSyncPostsCount(binding) {
+  const DEFAULT_COUNT = 10;
   try {
-    logEvent("DEBUG", "send_post_to_server_start", "client",
-             `Binding: ${bindingId}, Post ID: ${vkPost.id}, Text length: ${vkPost.text?.length || 0}, Attachments: ${vkPost.attachments?.length || 0}`);
+    const rawSettings = binding && binding.formatSettings;
+    if (!rawSettings) {
+      return DEFAULT_COUNT;
+    }
+
+    if (typeof rawSettings === 'object') {
+      const value = rawSettings.syncPostsCount;
+      if (typeof value === 'number' && !isNaN(value) && value > 0) {
+        return Math.min(value, MAX_POSTS_CHECK);
+      }
+    }
+
+    if (typeof rawSettings === 'string' && rawSettings.trim() !== '') {
+      const parsed = JSON.parse(rawSettings);
+      if (parsed && parsed.syncPostsCount) {
+        const numeric = parseInt(parsed.syncPostsCount, 10);
+        if (!isNaN(numeric) && numeric > 0) {
+          return Math.min(numeric, MAX_POSTS_CHECK);
+        }
+      }
+    }
+  } catch (error) {
+    logEvent("WARN", "resolve_sync_posts_count_failed", "client",
+             `Binding ID: ${binding?.id || 'unknown'}, Error: ${error.message}`);
+  }
+
+  return DEFAULT_COUNT;
+}
+
+function publishPost(binding, vkPost, licenseKey) {
+  try {
+    const bindingId = binding?.id;
+    logEvent("DEBUG", "publish_post_start", "client",
+             `Binding: ${bindingId || 'unknown'}, Post ID: ${vkPost?.id}, Text length: ${vkPost?.text ? vkPost.text.length : 0}, Attachments: ${vkPost?.attachments ? vkPost.attachments.length : 0}`);
     
     const payload = {
       event: "send_post",
       license_key: licenseKey,
       binding_id: bindingId,
       vk_post: {
-        id: vkPost.id,
-        text: vkPost.text ? vkPost.text.substring(0, 4096) : "",
-        date: vkPost.date,
-        attachments: vkPost.attachments || []
+        id: vkPost?.id,
+        text: vkPost?.text ? vkPost.text.substring(0, 4096) : "",
+        date: vkPost?.date,
+        attachments: vkPost?.attachments || []
       }
     };
     
-    logEvent("DEBUG", "server_request_payload", "client",
-             `Event: ${payload.event}, Payload size: ${JSON.stringify(payload).length} chars`);
-    
-    const response = UrlFetchApp.fetch(SERVER_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      payload: JSON.stringify(payload),
-      muteHttpExceptions: true,
-      timeout: REQUEST_TIMEOUT
-    });
-    
-    const responseText = response.getContentText();
-    
-    logEvent("DEBUG", "server_response", "client",
-             `Status: ${response.getResponseCode()}, Body length: ${responseText.length}, First 200 chars: ${responseText.substring(0, 200)}`);
-    
-    const result = JSON.parse(responseText);
+    const result = callServer(payload);
     
     if (result.success) {
-      logEvent("INFO", "post_sent_successfully", "client",
-               `Post ID: ${vkPost.id}, Message ID: ${result.message_id || 'unknown'}`);
+      logEvent("INFO", "publish_post_success", "client",
+               `Binding: ${bindingId || 'unknown'}, Post ID: ${vkPost?.id}, Message ID: ${result.message_id || 'unknown'}`);
     } else {
-      logEvent("WARN", "post_send_failed_server", "client",
-               `Post ID: ${vkPost.id}, Error: ${result.error}`);
+      logEvent("WARN", "publish_post_failed", "client",
+               `Binding: ${bindingId || 'unknown'}, Post ID: ${vkPost?.id}, Error: ${result.error || 'Unknown error'}`);
     }
     
     return result;
     
   } catch (error) {
-    logEvent("ERROR", "send_post_to_server_error", "client",
-             `Post ID: ${vkPost.id}, Error: ${error.message}, Stack: ${error.stack ? error.stack.substring(0, 200) : 'N/A'}`);
+    logEvent("ERROR", "publish_post_error", "client",
+             `Binding: ${binding?.id || 'unknown'}, Post ID: ${vkPost?.id || 'unknown'}, Error: ${error.message}`);
     return { success: false, error: error.message };
   }
 }
@@ -807,68 +833,46 @@ function handleGetUserBindingsWithNames(payload, clientIp) {
 // 4. VK API ФУНКЦИИ
 // ============================================
 
-function getVkPosts(vkGroupId) {
+function getVkPosts(vkGroupId, count) {
   try {
+    if (!vkGroupId) {
+      logEvent("WARN", "get_vk_posts_missing_group", "client", "VK Group ID is required");
+      return { success: false, error: "VK group ID is required", posts: [] };
+    }
+    
     logEvent("DEBUG", "get_vk_posts_start", "client", `VK Group ID: ${vkGroupId}`);
     
-    // Получаем лицензию для аутентификации на сервере
     const license = getLicense();
     if (!license) {
       logEvent("ERROR", "no_license_for_vk_posts", "client", `Group: ${vkGroupId}`);
-      return [];
+      return { success: false, error: "❌ Лицензия не найдена", posts: [] };
     }
     
-    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: отправляем vk_group_id, а не vk_group_url
     const payload = {
       event: "get_vk_posts",
       license_key: license.key,
-      vk_group_id: vkGroupId,  // Отправляем ID напрямую!
-      count: MAX_POSTS_CHECK
+      vk_group_id: vkGroupId,
+      count: Math.min(count || MAX_POSTS_CHECK, MAX_POSTS_CHECK)
     };
     
-    logEvent("DEBUG", "server_vk_request", "client", `Group ID: ${vkGroupId}, Count: ${MAX_POSTS_CHECK}`);
+    const result = callServer(payload);
     
-    const response = UrlFetchApp.fetch(SERVER_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      payload: JSON.stringify(payload),
-      muteHttpExceptions: true,
-      timeout: REQUEST_TIMEOUT
-    });
-    
-    const data = JSON.parse(response.getContentText());
-    
-    logEvent("DEBUG", "server_vk_response", "client", 
-             `Group ID: ${vkGroupId}, Success: ${!!data.success}, Status: ${response.getResponseCode()}`);
-    
-    if (!data.success) {
-      const errorMsg = data.error || "Unknown server error";
-      logEvent("ERROR", "server_vk_error", "client",
-               `Group ID: ${vkGroupId}, Server error: ${errorMsg}`);
-      
-      // Возвращаем информативную ошибку в зависимости от типа
-      if (errorMsg.includes("VK User Access Token not configured")) {
-        logEvent("WARN", "vk_token_not_configured", "client", `Group ID: ${vkGroupId}`);
-      } else if (errorMsg.includes("User authorization failed")) {
-        logEvent("WARN", "vk_token_invalid", "client", `Group ID: ${vkGroupId}`);
-      } else if (errorMsg.includes("Access denied")) {
-        logEvent("WARN", "vk_access_denied", "client", `Group ID: ${vkGroupId}`);
-      }
-      
-      return [];
+    if (!result.success) {
+      logEvent("WARN", "get_vk_posts_failed", "client", `Group ID: ${vkGroupId}, Status: ${result.httpStatus || 'n/a'}, Error: ${result.error || 'Unknown error'}`);
+      result.posts = result.posts || [];
+      return result;
     }
     
-    const posts = data.posts || [];
-    
+    result.posts = result.posts || [];
     logEvent("INFO", "vk_posts_retrieved", "client",
-             `Group ID: ${vkGroupId}, Posts count: ${posts.length}, Total available: ${data.total_count || 'unknown'}`);
+             `Group ID: ${vkGroupId}, Posts: ${result.posts.length}, Filtered: ${result.filtered_count != null ? result.filtered_count : result.posts.length}`);
     
-    return posts;
+    return result;
     
   } catch (error) {
-    logEvent("ERROR", "vk_posts_error", "client",
+    logEvent("ERROR", "get_vk_posts_exception", "client",
              `Group ID: ${vkGroupId}, Error: ${error.message}`);
-    return [];
+    return { success: false, error: error.message, posts: [] };
   }
 }
 
@@ -1234,288 +1238,101 @@ function getLicense() {
 }
 
 function getLastPostIds() {
-  try {
-    const data = PropertiesService.getUserProperties().getProperty("LAST_POST_IDS");
-    
-    if (!data) {
-      logEvent("DEBUG", "no_last_post_ids", "client", "No saved post IDs");
-      return {};
-    }
-    
-    const parsed = JSON.parse(data);
-    logEvent("DEBUG", "last_post_ids_loaded", "client", `Groups: ${Object.keys(parsed).length}`);
-    
-    return parsed;
-    
-  } catch (error) {
-    logEvent("ERROR", "get_last_post_ids_error", "client", error.message);
-    return {};
-  }
+  logEvent("DEBUG", "last_post_ids_deprecated", "client", "Local post cache is managed on the server");
+  return {};
 }
 
 function saveLastPostIds(ids) {
-  try {
-    PropertiesService.getUserProperties().setProperty("LAST_POST_IDS", JSON.stringify(ids));
-    logEvent("DEBUG", "last_post_ids_saved", "client", `Groups: ${Object.keys(ids).length}`);
-  } catch (error) {
-    logEvent("ERROR", "save_last_post_ids_error", "client", error.message);
-  }
+  logEvent("DEBUG", "save_last_post_ids_deprecated", "client", "Server v6 tracks published posts; skipping local cache update");
 }
 
 function isPostAlreadySent(vkGroupId, postId) {
-  try {
-    const sheet = getOrCreatePublishedPostsSheet(vkGroupId);
-    const data = sheet.getDataRange().getValues();
-    
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][0] === postId) {
-        logEvent("DEBUG", "post_already_sent_found", "client", `Post: ${postId}`);
-        return true;
-      }
-    }
-    
-    return false;
-    
-  } catch (error) {
-    logEvent("ERROR", "is_post_already_sent_error", "client", error.message);
-    return false;
-  }
+  logEvent("DEBUG", "is_post_already_sent_deprecated", "client", `VK Group: ${vkGroupId}, Post: ${postId}`);
+  return false;
 }
 
 function markPostAsSent(vkGroupId, postId, tgChatId, postText, bindingName, tgChatName) {
-  try {
-    // Используем bindingName для названия листа
-    const sheet = getOrCreatePublishedPostsSheet(bindingName, vkGroupId);
-    
-    // НОВЫЙ формат даты DD.MM.YYYY, HH:mm (RU)
-    const now = new Date();
-    const dateStr = now.toLocaleDateString('ru-RU', { 
-      day: '2-digit', 
-      month: '2-digit', 
-      year: 'numeric' 
-    });
-    const timeStr = now.toLocaleTimeString('ru-RU', { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
-    const formattedDateTime = `${dateStr}, ${timeStr}`;
-    
-    // Превью поста (первые 200 символов)
-    const postPreview = (postText || '').substring(0, 200) + 
-      (postText && postText.length > 200 ? '...' : '');
-    
-    // VK ссылка на пост
-    const vkPostUrl = `https://vk.com/wall${vkGroupId}_${postId}`;
-    
-    // Расширенная информация о посте с новыми колонками
-    sheet.appendRow([
-      postId, 
-      formattedDateTime,           // НОВЫЙ формат даты
-      tgChatName || tgChatId,      // Название чата вместо ID
-      "sent",
-      "auto",                      // источник отправки
-      postPreview,                 // НОВОЕ поле - превью поста
-      vkPostUrl                    // НОВОЕ поле - ссылка на VK пост
-    ]);
-    
-    // Дополнительное логирование в Logs лист
-    logEvent("INFO", "post_sent_successfully", "client", 
-             `VK Post: ${postId} sent to TG: ${tgChatName || tgChatId}, Binding: ${bindingName || 'N/A'}, Timestamp: ${formattedDateTime}`);
-    
-    // Обновляем статистику отправленных постов
-    updatePostStatistics(vkGroupId, postId);
-    
-  } catch (error) {
-    logEvent("ERROR", "mark_post_sent_error", "client", 
-             `Post: ${postId}, VK Group: ${vkGroupId}, Error: ${error.message}`);
-  }
+  logEvent("DEBUG", "mark_post_as_sent_deprecated", "client",
+           `VK Group: ${vkGroupId}, Post: ${postId}, Binding: ${bindingName || 'N/A'}`);
 }
 
 function updatePostStatistics(vkGroupId, postId) {
-  try {
-    const props = PropertiesService.getUserProperties();
-    const today = new Date().toDateString();
-    const statsKey = `post_stats_${today}`;
-    
-    let todayStats = props.getProperty(statsKey);
-    if (todayStats) {
-      todayStats = JSON.parse(todayStats);
-    } else {
-      todayStats = { date: today, totalPosts: 0, groups: {} };
-    }
-    
-    todayStats.totalPosts++;
-    todayStats.groups[vkGroupId] = (todayStats.groups[vkGroupId] || 0) + 1;
-    todayStats.lastPostTime = new Date().toISOString();
-    todayStats.lastPostId = postId;
-    
-    props.setProperty(statsKey, JSON.stringify(todayStats));
-    
-    logEvent("DEBUG", "post_stats_updated", "client", 
-             `Today: ${todayStats.totalPosts} posts, Group ${vkGroupId}: ${todayStats.groups[vkGroupId]} posts`);
-    
-  } catch (error) {
-    logEvent("WARN", "update_stats_error", "client", error.message);
-  }
+  logEvent("DEBUG", "update_post_statistics_deprecated", "client",
+           `VK Group: ${vkGroupId}, Post: ${postId}`);
 }
 
 function getOrCreatePublishedPostsSheet(bindingName, vkGroupId) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  
-  // Используем bindingName (название связки) для имени листа
-  let sheetName;
-  if (bindingName) {
-    // Безопасное имя: удаляем небезопасные символы и ограничиваем длину до 27 символов
-    const safeName = bindingName
-      .replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '')  // Удаляем небезопасные символы
-      .replace(/\s+/g, '_')                  // Заменяем пробелы на подчеркивания
-      .substring(0, 27);                     // Ограничиваем длину (Published_ = 10 символов, итого макс 37)
-    sheetName = `Published_${safeName}`;
-  } else {
-    // Fallback: если bindingName не задано, используем VK Group ID
-    sheetName = `Published_${Math.abs(parseInt(vkGroupId) || 0)}`;
-  }
-  
-  let sheet = ss.getSheetByName(sheetName);
-  
-  if (!sheet) {
-    sheet = ss.insertSheet(sheetName);
-    // Новые колонки: Post ID, Sent At, TG Chat Name, Status, Source, Post Preview, VK Post URL
-    sheet.appendRow(["Post ID", "Sent At", "TG Chat Name", "Status", "Source", "Post Preview", "VK Post URL"]);
-    
-    const headerRange = sheet.getRange(1, 1, 1, 7);  // 7 колонок теперь
-    headerRange.setBackground("#10b981");
-    headerRange.setFontColor("white");
-    headerRange.setFontWeight("bold");
-    sheet.setFrozenRows(1);
-    
-    // Устанавливаем ширину колонок для лучшего отображения
-    sheet.setColumnWidth(1, 80);  // Post ID
-    sheet.setColumnWidth(2, 120); // Sent At (DD.MM.YYYY, HH:mm)
-    sheet.setColumnWidth(3, 150); // TG Chat Name (вместо ID)
-    sheet.setColumnWidth(4, 80);  // Status
-    sheet.setColumnWidth(5, 80);  // Source
-    sheet.setColumnWidth(6, 250); // Post Preview
-    sheet.setColumnWidth(7, 200); // VK Post URL (НОВАЯ КОЛОНКА)
-    
-    logEvent("INFO", "published_sheet_created", "client", 
-             `Sheet: ${sheetName} (Binding: ${bindingName || 'N/A'}, VK Group: ${vkGroupId}) with enhanced tracking`);
-  }
-  
-  return sheet;
+  logEvent("DEBUG", "published_sheet_deprecated", "client",
+           `Binding: ${bindingName || 'N/A'}, VK Group: ${vkGroupId}`);
+  return null;
 }
 
 // ============================================
 // 6. ЛОГИРОВАНИЕ
 // ============================================
-function logEvent(level, event, source, details) {
+function logClientEvent(level, event, user, details) {
   try {
-    if (!DEV_MODE && level === "DEBUG") return;
-    
-    const sheet = getOrCreateLogsSheet();
-    
-    // Вставляем новую запись СРАЗУ ПОСЛЕ ЗАГОЛОВКА (строка 2)
-    // Это делает свежие логи видимыми сверху
-    sheet.insertRowAfter(1);
-    
-    // Форматируем дату и время в читаемом виде
-    const now = new Date();
-    const dateStr = now.toLocaleDateString('ru-RU', { 
-      day: '2-digit', 
-      month: '2-digit', 
-      year: 'numeric' 
-    });
-    const timeStr = now.toLocaleTimeString('ru-RU', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      second: '2-digit'
-    });
-    const timestamp = `${dateStr} ${timeStr}`;
-    
-    // ✅ УСТАНАВЛИВАЕМ ЗНАЧЕНИЯ В ВСЮ СТРОКУ:
-    const logRange = sheet.getRange(2, 1, 1, 5);
-    logRange.setValues([[
+    if (!DEV_MODE && level === "DEBUG") {
+      return;
+    }
+
+    const sheet = getOrCreateClientLogsSheet();
+    const timestamp = new Date();
+
+    let resolvedUser = user;
+    if (!resolvedUser) {
+      try {
+        resolvedUser = Session.getActiveUser().getEmail() || "client";
+      } catch (userError) {
+        resolvedUser = "client";
+      }
+    }
+
+    let detailsValue;
+    if (details === undefined || details === null) {
+      detailsValue = "{}";
+    } else if (typeof details === "string") {
+      detailsValue = details;
+    } else {
+      try {
+        detailsValue = JSON.stringify(details);
+      } catch (jsonError) {
+        detailsValue = String(details);
+      }
+    }
+
+    sheet.appendRow([
       timestamp,
       level,
       event,
-      source || "client",
-      details || ""
-    ]]);
-    
-    // ✅ ВСЯ СТРОКА - БЕЛАЯ С ЧЕРНЫМ ТЕКСТОМ:
-    logRange.setBackground("white");
-    logRange.setFontColor("black");
-    logRange.setFontWeight("normal");
-    
-    // 🎯 КРАСИМ ТОЛЬКО КОЛОНКУ "LEVEL" (колонка B):
-    const levelCell = sheet.getRange(2, 2, 1, 1);  // ← ТОЛЬКО КОЛОНКА B!
-    
-    switch (level) {
-      case "ERROR":
-        levelCell.setBackground("#ffebee").setFontColor("#c62828").setFontWeight("bold"); // 🔴 Красный
-        break;
-      case "WARN":
-        levelCell.setBackground("#fff3e0").setFontColor("#ef6c00").setFontWeight("bold");  // 🟠 Оранжевый
-        break;
-      case "INFO":
-        levelCell.setBackground("#e3f2fd").setFontColor("#1565c0").setFontWeight("bold");  // 🔵 СИНИЙ!
-        break;
-      case "DEBUG":
-        levelCell.setBackground("#f3e5f5").setFontColor("#7b1fa2").setFontWeight("bold");  // 🟣 Фиолетовый
-        break;
-      default:
-        levelCell.setBackground("white").setFontColor("black").setFontWeight("normal");
-    }
-    
-    // ✅ ЗАГОЛОВОК ОСТАЕТСЯ ЖИРНЫМ И СИНИМ:
-    const headerRange = sheet.getRange(1, 1, 1, 6);
-    headerRange.setBackground("#667eea");
-    headerRange.setFontColor("white");
-    headerRange.setFontWeight("bold");
-    
-    // Авточистка: оставляем только последние 5000 записей
-    const MAX_LOG_RECORDS = 5000;
-    const lastRow = sheet.getLastRow();
-    
-    if (lastRow > MAX_LOG_RECORDS + 1) { // +1 для заголовка
-      const rowsToDelete = lastRow - MAX_LOG_RECORDS - 1;
-      sheet.deleteRows(MAX_LOG_RECORDS + 2, rowsToDelete);
-      
-      console.log(`Log rotation: deleted ${rowsToDelete} old records, kept last ${MAX_LOG_RECORDS}`);
-    }
-    
-    console.log(`[${level}] ${event} (${source}): ${details}`);
-    
+      resolvedUser,
+      detailsValue
+    ]);
+
+    console.log(`[${level}] ${event} (${resolvedUser}): ${detailsValue}`);
   } catch (error) {
-    console.error("Logging error:", error.message);
+    console.error("Client logging error:", error.message);
   }
 }
 
+function logEvent(level, event, source, details) {
+  logClientEvent(level, event, source || "client", details);
+}
 
-function getOrCreateLogsSheet() {
+function getOrCreateClientLogsSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  
-  let sheet = ss.getSheetByName("Logs");
-  
+  let sheet = ss.getSheetByName("Client Logs");
+
   if (!sheet) {
-    sheet = ss.insertSheet("Logs");
-    sheet.appendRow(["Timestamp", "Level", "Event", "Source", "Details", "Version"]);
-    
-    // ✅ СНАЧАЛА ВСЯ СТРОКА ЗАГОЛОВКА - БЕЛАЯ:
-    const headerRange = sheet.getRange(1, 1, 1, 6);
-    headerRange.setBackground("white");
-    headerRange.setFontColor("black");
+    sheet = ss.insertSheet("Client Logs");
+    sheet.appendRow(["Timestamp", "Level", "Event", "User", "Details"]);
+    const headerRange = sheet.getRange(1, 1, 1, 5);
     headerRange.setFontWeight("bold");
-    
-    // 🔵 КРАСИМ ТОЛЬКО КОЛОНКУ "Level" (колонка B) В СИНИЙ:
-    const levelHeaderCell = sheet.getRange(1, 2, 1, 1);
-    levelHeaderCell.setBackground("#667eea");
-    levelHeaderCell.setFontColor("white");
-    levelHeaderCell.setFontWeight("bold");
-    
+    headerRange.setBackground("#e3f2fd");
+    headerRange.setFontColor("#0f172a");
     sheet.setFrozenRows(1);
   }
-  
+
   return sheet;
 }
 
@@ -1665,15 +1482,10 @@ function showUserStatistics() {
 function showLogsSheet() {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let logsSheet = ss.getSheetByName("Logs");
-    
-    if (!logsSheet) {
-      logsSheet = getOrCreateLogsSheet();
-    }
-    
+    const logsSheet = getOrCreateClientLogsSheet();
     ss.setActiveSheet(logsSheet);
     
-    logEvent("INFO", "logs_sheet_opened", "client", "User opened logs sheet");
+    logEvent("INFO", "logs_sheet_opened", "client", "User opened client logs sheet");
     
   } catch (error) {
     logEvent("ERROR", "show_logs_sheet_error", "client", error.message);
