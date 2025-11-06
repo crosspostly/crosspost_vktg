@@ -1480,12 +1480,23 @@ function showUserStatistics() {
     
     // Подсчитаем отправленные посты
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheets = ss.getSheets().filter(s => s.getName().startsWith("Published_"));
-    
+    const processedSheets = new Set();
     let totalPostsSent = 0;
-    sheets.forEach(sheet => {
-      const data = sheet.getDataRange().getValues();
-      totalPostsSent += Math.max(0, data.length - 1);
+    
+    bindings.forEach(binding => {
+      const bindingName = binding.bindingName || binding.binding_name;
+      if (!bindingName) {
+        return;
+      }
+      const sheet = findPublishedSheet(bindingName);
+      if (sheet) {
+        const sheetName = sheet.getName();
+        if (!processedSheets.has(sheetName)) {
+          processedSheets.add(sheetName);
+          const data = sheet.getDataRange().getValues();
+          totalPostsSent += Math.max(0, data.length - 1);
+        }
+      }
     });
     
     const triggerCount = ScriptApp.getProjectTriggers()
@@ -1496,7 +1507,7 @@ function showUserStatistics() {
       `🔗 Связок: ${bindings.length} (${activeBindings} активных, ${pausedBindings} на паузе)\n` +
       `✉️ Отправлено постов: ${totalPostsSent}\n` +
       `⏱️ Авто-проверка: ${triggerCount > 0 ? '✅ Включена' : '❌ Выключена'}\n` +
-      `📁 Листов отслеживания: ${sheets.length}\n` +
+      `📁 Листов отслеживания: ${processedSheets.size}\n` +
       `🌐 Сервер: ${SERVER_URL.substring(0, 50)}...\n`;
     
     SpreadsheetApp.getUi().alert(message);
@@ -2570,7 +2581,7 @@ function clearGroupFromCache(vkGroupId) {
 
 /**
  * 💡 НОВАЯ ФУНКЦИЯ: Форсированное создание всех Published листов для существующих связок
- * Проверяет все связки и создает отсутствующие листы Published_
+ * Проверяет все связки и создает отсутствующие листы (имя = bindingName)
  */
 function ensureAllPublishedSheetsExist() {
   try {
@@ -2701,9 +2712,66 @@ function cleanupOrphanedCache() {
 // ДОПОЛНИТЕЛЬНЫЕ УТИЛИТЫ
 // ============================================
 
+function sanitizeSheetName(name) {
+  if (!name) return "Unnamed";
+  let safeName = name
+    .replace(/[\\\/\*\?\:\[\]]/g, '_')
+    .replace(/'/g, '')
+    .replace(/"/g, '')
+    .trim();
+  if (safeName.length > 90) {
+    safeName = safeName.substring(0, 90);
+  }
+  return safeName || "Unnamed";
+}
+
+function getPublishedSheetName(bindingName) {
+  return sanitizeSheetName(bindingName || "Unnamed");
+}
+
+function getLegacyPublishedSheetName(bindingName) {
+  const baseName = bindingName || "Unnamed";
+  const legacySafe = baseName
+    .replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '')
+    .replace(/\s+/g, '_')
+    .substring(0, 27) || "Unnamed";
+  return `Published_${legacySafe}`;
+}
+
+function findPublishedSheet(bindingName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const targetName = getPublishedSheetName(bindingName);
+  let sheet = ss.getSheetByName(targetName);
+  if (sheet) {
+    return sheet;
+  }
+
+  const legacyName = getLegacyPublishedSheetName(bindingName);
+  if (legacyName !== targetName) {
+    const legacySheet = ss.getSheetByName(legacyName);
+    if (legacySheet) {
+      try {
+        if (!ss.getSheetByName(targetName)) {
+          legacySheet.setName(targetName);
+          logEvent("INFO", "client_published_sheet_renamed", "client",
+                   `${legacyName} → ${targetName}`, bindingName);
+          return legacySheet;
+        }
+      } catch (renameError) {
+        logEvent("WARN", "client_published_sheet_rename_failed", "client",
+                 `${legacyName} → ${targetName}: ${renameError.message}`, bindingName);
+        return legacySheet;
+      }
+      return legacySheet;
+    }
+  }
+
+  return null;
+}
+
 /**
- * Миграция Published листов: переименование из Published_-123456 в Published_GroupName
- * Согласно требованиям UNIFIED_TODO.md
+ * Миграция Published листов: переименование из формата Published_-123456/Published_{binding}
+ * в листы, имя которых **строго равно bindingName**
  */
 function migratePublishedSheetsNames() {
   try {
@@ -2729,7 +2797,7 @@ function migratePublishedSheetsNames() {
           for (const binding of bindingsResult.bindings) {
             const bindingGroupId = extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
             if (bindingGroupId === groupId && (binding.bindingName || binding.binding_name)) {
-              newName = (binding.bindingName || binding.binding_name).substring(0, 27);
+              newName = binding.bindingName || binding.binding_name;
               break;
             }
           }
@@ -2737,9 +2805,8 @@ function migratePublishedSheetsNames() {
         
         if (newName) {
           try {
-            const finalName = `Published_${newName.replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '').replace(/\s+/g, '_')}`;
+            const finalName = getPublishedSheetName(newName);
             
-            // Проверяем уникальность
             if (ss.getSheetByName(finalName)) {
               logEvent("WARN", "migration_name_exists", "client", `Name already exists: ${finalName}`);
               continue;
@@ -2748,6 +2815,9 @@ function migratePublishedSheetsNames() {
             sheet.setName(finalName);
             renamedCount++;
             
+            if (finalName !== newName) {
+              logEvent("WARN", "published_sheet_sanitized", "client", `${newName} → ${finalName}`);
+            }
             logEvent("INFO", "published_sheet_renamed", "client", `${currentName} → ${finalName}`);
           } catch (error) {
             logEvent("ERROR", "migration_rename_error", "client", 
@@ -2808,7 +2878,7 @@ function cleanupOrphanedCache() {
     logEvent("DEBUG", "active_groups_identified", "client", 
              `Found ${activeGroupIds.size} active VK groups: [${Array.from(activeGroupIds).join(", ")}]`);
     
-    // Получаем все листы с паттерном "Published_*"
+    // Получаем все листы в legacy-формате "Published_*"
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const allSheets = ss.getSheets();
     
@@ -2818,7 +2888,7 @@ function cleanupOrphanedCache() {
     allSheets.forEach(sheet => {
       const sheetName = sheet.getName();
       
-      // Проверяем только листы кеша (Published_*)
+      // Проверяем только legacy-листы кеша (Published_*)
       if (sheetName.startsWith("Published_")) {
         totalCacheSheets++;
         
@@ -2896,20 +2966,17 @@ function ensureAllPublishedSheetsExist() {
           return;
         }
         
-        // Создаем лист если не существует
-        const sheetName = `Published_${groupId}`;
-        let publishedSheet = ss.getSheetByName(sheetName);
+        const bindingName = binding.bindingName || binding.binding_name || groupId;
+        const targetName = getPublishedSheetName(bindingName);
+        let publishedSheet = findPublishedSheet(bindingName);
         
         if (!publishedSheet) {
-          // Создаем новый лист
-          publishedSheet = ss.insertSheet(sheetName);
+          publishedSheet = ss.insertSheet(targetName);
           
-          // Устанавливаем заголовки
           publishedSheet.appendRow([
             "Post ID", "Published Date", "Text Preview", "Media Count", "Status"
           ]);
           
-          // Форматируем заголовки
           const headerRange = publishedSheet.getRange(1, 1, 1, 5);
           headerRange.setBackground("#667eea");
           headerRange.setFontColor("white");
@@ -2918,11 +2985,14 @@ function ensureAllPublishedSheetsExist() {
           
           createdSheets++;
           
+          if (targetName !== bindingName) {
+            logEvent("WARN", "published_sheet_sanitized", "client", `${bindingName} → ${targetName}`, bindingName);
+          }
           logEvent("INFO", "published_sheet_created", "client", 
-                   `Created sheet: ${sheetName} for Binding: ${binding.id}`);
+                   `Created sheet: ${targetName} for Binding: ${binding.id}`, bindingName);
         } else {
           logEvent("DEBUG", "published_sheet_exists", "client", 
-                   `Sheet already exists: ${sheetName} for Binding: ${binding.id}`);
+                   `Sheet already exists: ${publishedSheet.getName()} for Binding: ${binding.id}`, bindingName);
         }
         
       } catch (bindingError) {

@@ -1324,13 +1324,13 @@ function handleClientLog(payload, clientIp) {
       }, 400);
     }
     
-    // Создаем уникальную метку времени
+    // Создаем уникальную метку времени (ISO + короткий UUID)
     const timestamp = new Date();
-    const timestampStr = timestamp.toISOString() + '.' + timestamp.getMilliseconds().toString().padStart(3, '0');
+    const timestampStr = `${timestamp.toISOString()}_${Utilities.getUuid().slice(0, 8)}`;
     
     // Подготавливаем данные
     const resolvedSource = source || "client";
-    const message = details || "";
+    const message = typeof details === 'string' ? details : (details === undefined || details === null ? "" : JSON.stringify(details));
     const extraJson = typeof details === 'object' ? JSON.stringify(details) : "";
     
     // Записываем в глобальный лист Logs
@@ -1730,7 +1730,7 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
             });
 
             logEvent("INFO", "post_saved_to_published_sheet", "server",
-                     `Post ${vkPost.id} saved to Published_${binding.bindingName}`);
+                     `Post ${vkPost.id} saved to ${getPublishedSheetName(binding.bindingName)}`, binding.bindingName);
           }
         } catch (saveError) {
           logEvent("WARN", "post_save_to_sheet_failed", "server",
@@ -2565,13 +2565,13 @@ function logEvent(level, event, user, details, bindingName) {
       return; // Пропускаем DEBUG логи в продакшене
     }
     
-    // Создаем уникальную метку времени с микросекундами для предотвращения дубликатов
+    // Создаем уникальную метку времени (ISO + короткий UUID) для предотвращения дубликатов
     const timestamp = new Date();
-    const timestampStr = timestamp.toISOString() + '.' + timestamp.getMilliseconds().toString().padStart(3, '0');
+    const timestampStr = `${timestamp.toISOString()}_${Utilities.getUuid().slice(0, 8)}`;
     
     // Подготавливаем данные для логирования
     const source = "server";
-    const message = details || "";
+    const message = typeof details === 'string' ? details : (details === undefined || details === null ? "" : JSON.stringify(details));
     const extraJson = typeof details === 'object' ? JSON.stringify(details) : "";
     
     // Записываем в глобальный лист Logs
@@ -2603,15 +2603,18 @@ function logEvent(level, event, user, details, bindingName) {
 function writeToGlobalLogs(timestamp, level, source, event, bindingName, message, extraJson) {
   try {
     var sheet = getSheet("Logs");
-    sheet.appendRow([
+
+    // BindingName — имя листа; новые публикации — строка 2 (верх листа).
+    sheet.insertRowAfter(1);
+    sheet.getRange(2, 1, 1, 7).setValues([[ 
       timestamp,
       level,
       source,
       event,
       bindingName || "",
-      message,
+      typeof message === 'string' ? message : String(message || ""),
       extraJson || ""
-    ]);
+    ]]);
   } catch (error) {
     console.error("Failed to write to global Logs:", error.message);
   }
@@ -2645,19 +2648,33 @@ function writeToBindingSheet(bindingName, timestamp, level, source, event, bindi
       headerRange.setFontColor("#1a5f1a");
       sheet.setFrozenRows(1);
       
+      if (sheetName !== bindingName) {
+        writeToGlobalLogs(
+          timestamp,
+          'WARN',
+          source,
+          'binding_sheet_sanitized',
+          bindingNameForLog || bindingName,
+          `Binding sheet sanitized: "${bindingName}" → "${sheetName}"`,
+          JSON.stringify({ originalName: bindingName, sanitizedName: sheetName })
+        );
+      }
+      
       // Логируем создание листа
       console.log(`Created binding sheet: ${sheetName} for binding: ${bindingName}`);
     }
     
-    sheet.appendRow([
+    // BindingName — имя листа; новые публикации — строка 2 (верх листа).
+    sheet.insertRowAfter(1);
+    sheet.getRange(2, 1, 1, 7).setValues([[
       timestamp,
       level,
       source,
       event,
       bindingNameForLog || "",
-      message,
+      typeof message === 'string' ? message : String(message || ""),
       extraJson || ""
-    ]);
+    ]]);
     
   } catch (error) {
     console.error(`Failed to write to binding sheet ${bindingName}:`, error.message);
@@ -2690,6 +2707,53 @@ function sanitizeSheetName(name) {
   }
   
   return safeName;
+}
+
+function getPublishedSheetName(bindingName) {
+  const baseName = bindingName || "Unnamed";
+  const sanitized = sanitizeSheetName(baseName);
+  return sanitized || "Unnamed";
+}
+
+function getLegacyPublishedSheetName(bindingName) {
+  const baseName = bindingName || "Unnamed";
+  const legacySafe = baseName
+    .replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '')
+    .replace(/\s+/g, '_')
+    .substring(0, 27) || "Unnamed";
+  return `Published_${legacySafe}`;
+}
+
+function findPublishedSheet(bindingName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const targetName = getPublishedSheetName(bindingName);
+  let sheet = ss.getSheetByName(targetName);
+
+  if (sheet) {
+    return sheet;
+  }
+
+  const legacyName = getLegacyPublishedSheetName(bindingName);
+  if (legacyName !== targetName) {
+    const legacySheet = ss.getSheetByName(legacyName);
+    if (legacySheet) {
+      try {
+        if (!ss.getSheetByName(targetName)) {
+          legacySheet.setName(targetName);
+          logEvent('INFO', 'published_sheet_renamed_to_binding', 'server',
+                  `Legacy sheet '${legacyName}' renamed to '${targetName}'`, bindingName);
+          return legacySheet;
+        }
+      } catch (renameError) {
+        logEvent('WARN', 'published_sheet_rename_failed', 'server',
+                 `Legacy sheet '${legacyName}' → '${targetName}': ${renameError.message}`, bindingName);
+        return legacySheet;
+      }
+      return legacySheet;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -4626,27 +4690,15 @@ function extractTelegramChatId(input) {
  */
 function createPublishedSheet(bindingName) {
   try {
-    if (!bindingName) {
-      bindingName = 'Unknown';
-    }
-    
-    // Создаем безопасное имя листа
-    const safeName = bindingName
-      .replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '')
-      .replace(/\s+/g, '_')
-      .substring(0, 27);
-    
-    const sheetName = `Published_${safeName}`;
     const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheetName = getPublishedSheetName(bindingName);
+    let sheet = findPublishedSheet(bindingName);
     
-    // Проверяем существует ли лист
-    let sheet = ss.getSheetByName(sheetName);
     if (sheet) {
-      logEvent('DEBUG', 'published_sheet_exists', 'server', `Sheet ${sheetName} already exists`);
+      logEvent('DEBUG', 'published_sheet_exists', 'server', `Sheet ${sheet.getName()} already exists`, bindingName);
       return sheet;
     }
     
-    // Создаем новый лист
     sheet = ss.insertSheet(sheetName);
     
     // Устанавливаем заголовки
@@ -4664,7 +4716,12 @@ function createPublishedSheet(bindingName) {
     headerRange.setFontWeight("bold");
     sheet.setFrozenRows(1);
     
-    logEvent('INFO', 'published_sheet_created', 'server', `Created sheet: ${sheetName}`);
+    if (sheetName !== bindingName) {
+      logEvent('WARN', 'published_sheet_sanitized', 'server',
+               `Binding sheet sanitized: "${bindingName}" → "${sheetName}"`, bindingName);
+    }
+    
+    logEvent('INFO', 'published_sheet_created', 'server', `Created sheet: ${sheetName}`, bindingName);
     
     return sheet;
     
@@ -4683,11 +4740,9 @@ function createPublishedSheet(bindingName) {
  */
 function getLastPostIdFromSheet(bindingName, vkGroupId) {
   try {
-    const sheetName = `Published_${bindingName}`;
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+    const sheet = findPublishedSheet(bindingName) || createPublishedSheet(bindingName);
     
     if (!sheet) {
-      createPublishedSheet(bindingName);
       return null; // Новый лист, нет постов
     }
     
@@ -4712,14 +4767,16 @@ function getLastPostIdFromSheet(bindingName, vkGroupId) {
  */
 function saveLastPostIdToSheet(bindingName, vkGroupId, postId, postData) {
   try {
-    const sheetName = `Published_${bindingName}`;
-    let sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+    let sheet = findPublishedSheet(bindingName);
     
     if (!sheet) {
       sheet = createPublishedSheet(bindingName);
     }
     
+    const sheetName = sheet.getName();
+    
     // Добавляем новый пост в начало (после заголовков)
+    // BindingName — имя листа; новые публикации — строка 2 (верх листа).
     sheet.insertRowAfter(1);
     sheet.getRange(2, 1, 1, 7).setValues([[
       postId,                           // Post ID
@@ -4732,10 +4789,10 @@ function saveLastPostIdToSheet(bindingName, vkGroupId, postId, postData) {
     ]]);
     
     logEvent('INFO', 'post_saved_to_sheet', 'server', 
-      `Post ${postId} saved to ${sheetName}`);
+      `Post ${postId} saved to ${sheetName}`, bindingName);
     
   } catch (error) {
-    logEvent('ERROR', 'save_post_failed', 'server', error.message);
+    logEvent('ERROR', 'save_post_failed', 'server', error.message, bindingName);
     throw error;
   }
 }
@@ -4748,8 +4805,7 @@ function saveLastPostIdToSheet(bindingName, vkGroupId, postId, postData) {
  */
 function checkPostAlreadySent(bindingName, postId) {
   try {
-    const sheetName = `Published_${bindingName}`;
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+    const sheet = findPublishedSheet(bindingName);
     
     if (!sheet) {
       return false; // Листа нет, значит пост не отправлялся
@@ -4901,12 +4957,15 @@ function testLoggingFlow() {
     }
     
     const globalData = globalLogsSheet.getDataRange().getValues();
-    const globalLastRow = globalData[globalData.length - 1];
+    const globalLatestRow = globalData.length > 1 ? globalData[1] : null; // Строка 2 — самая свежая запись
+    if (!globalLatestRow) {
+      throw new Error("Global Logs sheet has no data rows");
+    }
     
-    // Проверяем, что последняя строка содержит наш тестовый лог
-    const globalMatch = globalLastRow[3] === testEvent && // Event column
-                        globalLastRow[4] === testBindingName && // Binding Name column
-                        globalLastRow[5].includes("Test logging flow"); // Message column
+    // Проверяем, что свежая строка содержит наш тестовый лог
+    const globalMatch = globalLatestRow[3] === testEvent && // Event column
+                        globalLatestRow[4] === testBindingName && // Binding Name column
+                        String(globalLatestRow[5] || "").includes("Test logging flow"); // Message column
     
     // 3. Проверяем лист связки
     const bindingSheetName = sanitizeSheetName(testBindingName);
@@ -4916,29 +4975,32 @@ function testLoggingFlow() {
     }
     
     const bindingData = bindingSheet.getDataRange().getValues();
-    const bindingLastRow = bindingData[bindingData.length - 1];
+    const bindingLatestRow = bindingData.length > 1 ? bindingData[1] : null; // Строка 2 — свежая запись
+    if (!bindingLatestRow) {
+      throw new Error(`Binding sheet '${bindingSheetName}' has no data rows`);
+    }
     
-    // Проверяем, что последняя строка в листе связки содержит наш лог
-    const bindingMatch = bindingLastRow[3] === testEvent && // Event column
-                         bindingLastRow[4] === testBindingName && // Binding Name column
-                         bindingLastRow[5].includes("Test logging flow"); // Message column
+    // Проверяем, что свежая строка в листе связки содержит наш лог
+    const bindingMatch = bindingLatestRow[3] === testEvent && // Event column
+                         bindingLatestRow[4] === testBindingName && // Binding Name column
+                         String(bindingLatestRow[5] || "").includes("Test logging flow"); // Message column
     
     // 4. Проверяем уникальность меток времени
-    const globalTimestamp = globalLastRow[0];
-    const bindingTimestamp = bindingLastRow[0];
+    const globalTimestamp = globalLatestRow[0];
+    const bindingTimestamp = bindingLatestRow[0];
     
     const timestampsMatch = globalTimestamp === bindingTimestamp;
-    const timestampHasMillis = globalTimestamp.includes('.') && globalTimestamp.split('.')[1].length >= 3;
+    const timestampHasUniqueSuffix = typeof globalTimestamp === 'string' && globalTimestamp.includes('_');
     
     // 5. Формируем результат
     const result = {
-      success: globalMatch && bindingMatch && timestampsMatch && timestampHasMillis,
+      success: globalMatch && bindingMatch && timestampsMatch && timestampHasUniqueSuffix,
       summary: {
         globalLogsUpdated: globalMatch,
         bindingSheetCreated: true,
         bindingLogsUpdated: bindingMatch,
         timestampsMatch: timestampsMatch,
-        timestampsUnique: timestampHasMillis
+        timestampsUnique: timestampHasUniqueSuffix
       },
       details: {
         testBindingName: testBindingName,

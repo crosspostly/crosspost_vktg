@@ -5,8 +5,8 @@
 ### Server-side (server.gs)
 1. **Enhanced logEvent() function**:
    - Now accepts `bindingName` parameter
-   - Creates unique timestamps with milliseconds
-   - Writes to both global "Logs" sheet and per-binding sheets
+   - Generates unique timestamps using ISO strings + short UUID suffixes
+   - Writes to both global "Logs" sheet and per-binding sheets (new rows are inserted at row 2 right under the header)
    - Format: [timestamp, level, source, event, bindingName, message, extra JSON]
 
 2. **New helper functions**:
@@ -58,9 +58,10 @@
 
 ✅ **Global "Logs" sheet** with auto-creation and proper structure
 ✅ **Per-binding sheets** created on first log with exact binding names
-✅ **Unique timestamps** with milliseconds to prevent duplicates
+✅ **Unique timestamps** (ISO + short UUID suffix) to prevent duplicates
 ✅ **Dual logging** - both client and server write to both sheets
 ✅ **Sheet name sanitization** for invalid characters
+✅ **New entries always land in row 2** (BindingName — имя листа; свежие записи остаются наверху)
 ✅ **Comprehensive test functions** on both client and server
 ✅ **Menu integration** for easy access to test functions
 ✅ **Backward compatibility** - existing logging calls still work
