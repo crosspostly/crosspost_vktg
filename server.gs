@@ -1701,71 +1701,75 @@ function handleTestPublication(payload, clientIp) {
 function handleGetVkPosts(payload, clientIp) {
   try {
     var { license_key, vk_group_id, count = 50 } = payload;
-    
+
     // Проверяем лицензию
     var licenseCheck = handleCheckLicense({ license_key }, clientIp);
     var licenseData = JSON.parse(licenseCheck.getContent());
-    
+
     if (!licenseData.success) {
       return licenseCheck;
     }
-    
+
     if (!vk_group_id) {
       return jsonResponse({
         success: false,
         error: "vk_group_id required"
       }, 400);
     }
-    
-    // Валидация vk_group_id в формате '^-?\d+$'
-    if (!/^-?\d+$/.test(vk_group_id)) {
-      logEvent("WARN", "invalid_vk_group_id_format", license_key, 
-               `Invalid vk_group_id format: ${vk_group_id}, Expected: numeric with optional minus sign, IP: ${clientIp}`);
+
+    // Поддержка screen_name и числовых ID
+    var resolvedVkGroupId;
+    try {
+      resolvedVkGroupId = extractVkGroupId(vk_group_id);
+      logEvent("INFO", "vk_group_id_resolved", license_key,
+        `Input: ${vk_group_id} → Resolved: ${resolvedVkGroupId}, IP: ${clientIp}`);
+    } catch (resolveError) {
+      logEvent("WARN", "invalid_vk_group_id_format", license_key,
+        `Failed to resolve vk_group_id: ${vk_group_id}, Error: ${resolveError.message}, IP: ${clientIp}`);
       return jsonResponse({
         success: false,
-        error: "Invalid vk_group_id format. Expected numeric format like: -123456 or 123456"
+        error: "Invalid vk_group_id format. Expected a numeric ID or valid vk.com screen name"
       }, 400);
     }
-    
+
     // Проверяем VK User Token
     var userToken = PropertiesService.getScriptProperties().getProperty("VK_USER_ACCESS_TOKEN");
-    
+
     if (!userToken) {
-      logEvent("ERROR", "vk_user_token_missing", license_key, 
-               `Cannot fetch posts without VK User Access Token, Group ID: ${vk_group_id}, IP: ${clientIp}`);
+      logEvent("ERROR", "vk_user_token_missing", license_key,
+        `Cannot fetch posts without VK User Access Token, Group ID: ${resolvedVkGroupId}, IP: ${clientIp}`);
       return jsonResponse({
         success: false,
         error: "VK User Access Token не настроен на сервере"
       }, 500);
     }
-    
+
     // Формируем URL для VK API
-    var apiUrl = `https://api.vk.com/method/wall.get?owner_id=${encodeURIComponent(vk_group_id)}&count=${encodeURIComponent(count)}&v=${VK_API_VERSION}&access_token=${userToken}`;
-    
+    var apiUrl = `https://api.vk.com/method/wall.get?owner_id=${encodeURIComponent(resolvedVkGroupId)}&count=${encodeURIComponent(count)}&v=${VK_API_VERSION}&access_token=${userToken}`;
+
     // Логируем API запрос (без токена)
-    var logUrl = `https://api.vk.com/method/wall.get?owner_id=${vk_group_id}&count=${count}&v=${VK_API_VERSION}&access_token=***`;
-    logEvent("DEBUG", "vk_api_request", license_key, 
-             `Request URL: ${logUrl}, Group ID: ${vk_group_id}, IP: ${clientIp}`);
-    
+    var logUrl = `https://api.vk.com/method/wall.get?owner_id=${resolvedVkGroupId}&count=${count}&v=${VK_API_VERSION}&access_token=***`;
+    logEvent("DEBUG", "vk_api_request", license_key,
+      `Request URL: ${logUrl}, Group ID: ${resolvedVkGroupId}, Original Input: ${vk_group_id}, IP: ${clientIp}`);
+
     // Получаем посты из ВК
     try {
       var response = UrlFetchApp.fetch(apiUrl, {
         muteHttpExceptions: true,
         timeout: 15000
       });
-      
+
       var responseData = JSON.parse(response.getContentText());
-      
-      logEvent("DEBUG", "vk_api_response", license_key, 
-               `Group ID: ${vk_group_id}, HTTP Status: ${response.getResponseCode()}, Has VK error: ${!!responseData.error}, Response length: ${response.getContentText().length}, IP: ${clientIp}`);
-      
+
+      logEvent("DEBUG", "vk_api_response", license_key,
+        `Group ID: ${resolvedVkGroupId}, HTTP Status: ${response.getResponseCode()}, Has VK error: ${!!responseData.error}, Response length: ${response.getContentText().length}, IP: ${clientIp}`);
+
       if (responseData.error) {
         logEvent("ERROR", "vk_api_error", license_key,
-                 `Group ID: ${vk_group_id}, VK Error code: ${responseData.error.error_code}, Message: ${responseData.error.error_msg}, IP: ${clientIp}`);
-        
-        // Возвращаем информативную ошибку
+          `Group ID: ${resolvedVkGroupId}, VK Error code: ${responseData.error.error_code}, Message: ${responseData.error.error_msg}, IP: ${clientIp}`);
+
         var errorMessage = `VK API Error: ${responseData.error.error_msg}`;
-        
+
         if (responseData.error.error_code === 5) {
           errorMessage = "User authorization failed: VK Access Token is invalid or expired";
         } else if (responseData.error.error_code === 15) {
@@ -1775,89 +1779,89 @@ function handleGetVkPosts(payload, clientIp) {
         } else if (responseData.error.error_code === 200) {
           errorMessage = "Access to this VK group denied";
         }
-        
+
         return jsonResponse({
           success: false,
           error: errorMessage,
           vk_error_code: responseData.error.error_code
         }, 400);
       }
-      
+
       var posts = responseData.response ? responseData.response.items || [] : [];
-      
-      // Фильтруем уже отправленные посты используя Published листы
+
+      // Фильтруем уже отправленные посты используя листы bindingName
       try {
         var bindings = getUserBindings(license_key);
         var filteredPosts = [];
-        
+
         for (var post of posts) {
           var alreadySent = false;
-          
-          // Проверяем для каждой связки этого пользователя
+
           for (var binding of bindings) {
             if (binding.vkGroupUrl) {
               var bindingGroupId = extractVkGroupId(binding.vkGroupUrl);
-              if (bindingGroupId === vk_group_id && binding.bindingName) {
+              if (bindingGroupId === resolvedVkGroupId && binding.bindingName) {
                 if (checkPostAlreadySent(binding.bindingName, post.id)) {
                   alreadySent = true;
-                  logEvent("DEBUG", "post_already_sent", license_key, 
-                           `Post ${post.id} already sent to ${binding.bindingName}`);
+                  logEvent("DEBUG", "post_already_sent", license_key,
+                    `Post ${post.id} already sent to ${binding.bindingName}`);
                   break;
                 }
               }
             }
           }
-          
+
           if (!alreadySent) {
             filteredPosts.push(post);
           }
         }
-        
-        logEvent("INFO", "vk_posts_filtered", license_key, 
-                 `Group ID: ${vk_group_id}, Original: ${posts.length}, Filtered: ${filteredPosts.length}, IP: ${clientIp}`);
-        
+
+        logEvent("INFO", "vk_posts_filtered", license_key,
+          `Group ID: ${resolvedVkGroupId}, Original: ${posts.length}, Filtered: ${filteredPosts.length}, IP: ${clientIp}`);
+
         return jsonResponse({
           success: true,
           posts: filteredPosts,
-          group_id: vk_group_id,
+          group_id: resolvedVkGroupId,
           total_count: responseData.response ? responseData.response.count : 0,
           filtered_count: filteredPosts.length
         });
-        
+
       } catch (filterError) {
-        logEvent("WARN", "post_filtering_failed", license_key, 
-                 `Failed to filter posts: ${filterError.message}, returning all posts`);
-        
-        logEvent("INFO", "vk_posts_retrieved", license_key, 
-                 `Group ID: ${vk_group_id}, Posts count: ${posts.length}, IP: ${clientIp}`);
-        
+        logEvent("WARN", "post_filtering_failed", license_key,
+          `Failed to filter posts: ${filterError.message}, returning all posts`);
+
+        logEvent("INFO", "vk_posts_retrieved", license_key,
+          `Group ID: ${resolvedVkGroupId}, Posts count: ${posts.length}, IP: ${clientIp}`);
+
         return jsonResponse({
           success: true,
           posts: posts,
-          group_id: vk_group_id,
+          group_id: resolvedVkGroupId,
           total_count: responseData.response ? responseData.response.count : 0
         });
       }
-      
+
     } catch (vkError) {
-      logEvent("ERROR", "vk_posts_fetch_error", license_key, 
-               `Group ID: ${vk_group_id}, Error: ${vkError.message}, IP: ${clientIp}`);
-      
+      logEvent("ERROR", "vk_posts_fetch_error", license_key,
+        `Group ID: ${resolvedVkGroupId}, Error: ${vkError.message}, IP: ${clientIp}`);
+
       return jsonResponse({
         success: false,
         error: `Не удалось получить посты из ВК: ${vkError.message}`,
         details: {
-          group_id: vk_group_id,
+          group_id: resolvedVkGroupId,
           vk_error: vkError.message
         }
       }, 500);
     }
-    
+
   } catch (error) {
     logEvent("ERROR", "get_vk_posts_error", payload.license_key, error.message);
     return jsonResponse({ success: false, error: error.message }, 500);
   }
 }
+
 
 
 
