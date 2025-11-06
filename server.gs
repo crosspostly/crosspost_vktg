@@ -1010,14 +1010,12 @@ function sanitizeBindingSheetSuffix(name) {
   if (!base) {
     base = "Binding";
   }
-  var safe = base
-    .replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '')
-    .replace(/\s+/g, '_')
-    .substring(0, 27);
-  if (!safe) {
-    safe = "Binding";
+  var cleaned = base
+    .replace(/[^a-zA-Z0-9а-яА-ЯёЁ]/g, '');
+  if (!cleaned) {
+    cleaned = "Binding";
   }
-  return safe;
+  return cleaned.substring(0, 30);
 }
 
 function normalizeBindingMetadata(bindingName, bindingDescription, context) {
@@ -1025,35 +1023,41 @@ function normalizeBindingMetadata(bindingName, bindingDescription, context) {
   var normalizedDescription = sanitizeBindingText(bindingDescription);
   var effectiveName = normalizedName || deriveBindingFallbackName(context);
   if (!effectiveName) {
-    effectiveName = context && context.bindingId ? "Binding " + context.bindingId.substring(0, 8) : "Binding";
+    effectiveName = context && context.bindingId ? "Binding" + context.bindingId.substring(0, 8) : "Binding";
   }
   var sheetSuffix = sanitizeBindingSheetSuffix(effectiveName);
   if (!normalizedName && sheetSuffix === "Binding" && context && context.bindingId) {
-    effectiveName = "Binding " + context.bindingId.substring(0, 8);
+    effectiveName = "Binding" + context.bindingId.substring(0, 8);
     sheetSuffix = sanitizeBindingSheetSuffix(effectiveName);
   }
+  var strictName = sheetSuffix;
   return {
-    name: effectiveName,
+    name: strictName,
     description: normalizedDescription,
     fallbackApplied: normalizedName.length === 0,
-    sheetSuffix: sheetSuffix
+    sheetSuffix: sheetSuffix,
+    originalName: normalizedName
   };
 }
 
 function resolveBindingName(storedName, context) {
   var normalizedStored = sanitizeBindingText(storedName);
   if (normalizedStored) {
-    return normalizedStored;
+    return sanitizeBindingSheetSuffix(normalizedStored);
   }
   return normalizeBindingMetadata(null, null, context).name;
 }
 
 function getPublishedSheetNameFromSuffix(suffix) {
-  return "Published_" + suffix;
+  return suffix;
 }
 
 function getPublishedSheetNameFromBindingName(bindingName) {
-  return getPublishedSheetNameFromSuffix(sanitizeBindingSheetSuffix(bindingName));
+  var sanitized = sanitizeBindingSheetSuffix(bindingName);
+  if (!validateBindingName(sanitized)) {
+    throw new Error("Unable to resolve binding sheet name: invalid characters after sanitization");
+  }
+  return getPublishedSheetNameFromSuffix(sanitized);
 }
 
 function renameBindingArtifacts(oldName, newName) {
@@ -1064,35 +1068,93 @@ function renameBindingArtifacts(oldName, newName) {
   }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var mappings = [
-    { prefix: 'Published_', suffix: oldSuffix, newSuffix: newSuffix },
-    { prefix: 'Log_', suffix: oldSuffix, newSuffix: newSuffix },
-    { prefix: 'Logs_', suffix: oldSuffix, newSuffix: newSuffix }
+    { from: 'Published_' + oldSuffix, to: newSuffix },
+    { from: oldSuffix, to: newSuffix },
+    { from: 'Log_' + oldSuffix, to: 'Log_' + newSuffix },
+    { from: 'Logs_' + oldSuffix, to: 'Logs_' + newSuffix }
   ];
   mappings.forEach(function(mapping) {
-    var oldSheetName = mapping.prefix + mapping.suffix;
-    var newSheetName = mapping.prefix + mapping.newSuffix;
     try {
-      var oldSheet = ss.getSheetByName(oldSheetName);
+      var oldSheet = ss.getSheetByName(mapping.from);
       if (!oldSheet) {
         return;
       }
-      var existing = ss.getSheetByName(newSheetName);
+      var existing = ss.getSheetByName(mapping.to);
       if (existing && existing.getSheetId() === oldSheet.getSheetId()) {
         return;
       }
       if (existing && existing.getSheetId() !== oldSheet.getSheetId()) {
         logEvent("WARN", "binding_sheet_rename_conflict", "server",
-          "Skipping rename " + oldSheetName + " -> " + newSheetName + ": target already exists");
+          "Skipping rename " + mapping.from + " -> " + mapping.to + ": target already exists");
         return;
       }
-      oldSheet.setName(newSheetName);
+      oldSheet.setName(mapping.to);
       logEvent("INFO", "binding_sheet_renamed", "server",
-        oldSheetName + " -> " + newSheetName);
+        mapping.from + " -> " + mapping.to);
     } catch (renameError) {
       logEvent("WARN", "binding_sheet_rename_failed", "server",
-        "Failed to rename " + oldSheetName + " -> " + newSheetName + ": " + renameError.message);
+        "Failed to rename " + mapping.from + " -> " + mapping.to + ": " + renameError.message);
     }
   });
+}
+
+function legacySanitizeBindingSheetSuffix(name) {
+  var base = sanitizeBindingText(name);
+  if (!base) {
+    base = "Binding";
+  }
+  var safe = base
+    .replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '')
+    .replace(/\s+/g, '_')
+    .substring(0, 27);
+  if (!safe) {
+    safe = "Binding";
+  }
+  return safe;
+}
+
+function migrateLegacyBindingSheets(rawName, sanitizedName) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var legacyCandidates = [];
+    var legacySuffixFromRaw = legacySanitizeBindingSheetSuffix(rawName);
+    var legacySuffixFromSanitized = legacySanitizeBindingSheetSuffix(sanitizedName);
+    var sanitized = sanitizeBindingSheetSuffix(sanitizedName);
+    legacyCandidates.push('Published_' + legacySuffixFromRaw);
+    legacyCandidates.push(legacySuffixFromRaw);
+    legacyCandidates.push('Published_' + legacySuffixFromSanitized);
+    legacyCandidates.push(legacySuffixFromSanitized);
+    legacyCandidates.push('Published_' + sanitized);
+    var uniqueCandidates = legacyCandidates
+      .filter(function(name) { return name && name !== sanitized; })
+      .filter(function(value, index, self) { return self.indexOf(value) === index; });
+    uniqueCandidates.forEach(function(oldSheetName) {
+      try {
+        var oldSheet = ss.getSheetByName(oldSheetName);
+        if (!oldSheet) {
+          return;
+        }
+        var existing = ss.getSheetByName(sanitized);
+        if (existing && existing.getSheetId() !== oldSheet.getSheetId()) {
+          logEvent("WARN", "binding_sheet_migration_conflict", "server",
+            `Cannot rename ${oldSheetName} to ${sanitized}: destination already exists`);
+          return;
+        }
+        if (existing && existing.getSheetId() === oldSheet.getSheetId()) {
+          return;
+        }
+        oldSheet.setName(sanitized);
+        logEvent("INFO", "binding_sheet_migrated", "server",
+          `Legacy sheet ${oldSheetName} renamed to ${sanitized}`);
+      } catch (innerError) {
+        logEvent("WARN", "binding_sheet_migration_failed", "server",
+          `Failed to migrate sheet ${oldSheetName} -> ${sanitized}: ${innerError.message}`);
+      }
+    });
+  } catch (migrationError) {
+    logEvent("WARN", "binding_sheet_migration_error", "server",
+      `Migration failed for binding "${rawName}" -> "${sanitizedName}": ${migrationError.message}`);
+  }
 }
 
 function buildBindingObjectFromRow(row) {
@@ -1112,10 +1174,12 @@ function buildBindingObjectFromRow(row) {
   } catch (vkError) {
     fallbackContext.processedVkGroupId = "";
   }
-  var bindingName = resolveBindingName(row[9], fallbackContext);
+  var storedBindingNameCell = row[9];
+  var rawBindingName = resolveBindingName(storedBindingNameCell, fallbackContext);
+  var sanitizedBindingName = sanitizeBindingSheetSuffix(rawBindingName);
+  migrateLegacyBindingSheets(storedBindingNameCell, sanitizedBindingName);
   var bindingDescription = sanitizeBindingText(row[10]);
-  var sheetSuffix = sanitizeBindingSheetSuffix(bindingName);
-  var sheetName = getPublishedSheetNameFromSuffix(sheetSuffix);
+  var sheetName = getPublishedSheetNameFromBindingName(sanitizedBindingName);
   return {
     id: bindingId,
     licenseKey: row[1],
@@ -1126,14 +1190,16 @@ function buildBindingObjectFromRow(row) {
     createdAt: row[6],
     lastCheck: row[7],
     formatSettings: row[8] || "",
-    bindingName: bindingName,
-    binding_name: bindingName,
+    bindingName: sanitizedBindingName,
+    binding_name: sanitizedBindingName,
     bindingDescription: bindingDescription,
     binding_description: bindingDescription,
-    bindingSheetSuffix: sheetSuffix,
-    binding_sheet_suffix: sheetSuffix,
+    bindingSheetSuffix: sanitizedBindingName,
+    binding_sheet_suffix: sanitizedBindingName,
     bindingSheetName: sheetName,
-    binding_sheet_name: sheetName
+    binding_sheet_name: sheetName,
+    bindingOriginalName: rawBindingName,
+    binding_original_name: rawBindingName
   };
 }
 
@@ -1946,24 +2012,6 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
           results: results
         };
 
-        // Сохраняем информацию об отправленном посте в Published лист
-        try {
-          if (binding && binding.bindingName && vkPost && vkPost.id) {
-            saveLastPostIdToSheet(binding.bindingName, binding.vkGroupId || 'unknown', vkPost.id, {
-              tgChatName: chatId,
-              preview: (vkPost.text || '').substring(0, 100) + (vkPost.text && vkPost.text.length > 100 ? '...' : '')
-            });
-
-            var publishedSheetName = getPublishedSheetNameFromBindingName(binding.bindingName);
-            logEvent("INFO", "post_saved_to_published_sheet", "server",
-                     `Post ${vkPost.id} saved to ${publishedSheetName}`);
-          }
-        } catch (saveError) {
-          logEvent("WARN", "post_save_to_sheet_failed", "server",
-                   `Post ID: ${vkPost?.id}, Error: ${saveError.message}`);
-          // Не прерываем успешную отправку из-за ошибки сохранения
-        }
-
         return finalResult;
       }
 
@@ -1993,8 +2041,10 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
          // SUCCESS fallback case
          fallbackPublicationData.status = 'success';
          fallbackPublicationData.notes = 'Successfully sent text only (fallback mode)';
-         fallbackPublicationData.tgMessageIds = fallbackResult.message_id ? fallbackResult.message_id.toString() : '';
-         fallbackPublicationData.tgMessageUrls = generateTelegramMessageUrls(chatId, [fallbackResult.message_id]);
+         if (fallbackResult.message_id) {
+           fallbackPublicationData.tgMessageIds = fallbackResult.message_id.toString();
+           fallbackPublicationData.tgMessageUrls = generateTelegramMessageUrls(chatId, [fallbackResult.message_id]);
+         }
        } else {
          // ERROR fallback case
          fallbackPublicationData.status = 'error';
@@ -2004,18 +2054,6 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
        // Write to binding sheet (regardless of binding name validation)
        if (binding && binding.bindingName) {
          writePublicationRowToBindingSheet(binding.bindingName, fallbackPublicationData);
-       }
-
-       // Сохраняем информацию даже для fallback
-       if (fallbackResult.success && binding && binding.bindingName && vkPost && vkPost.id) {
-         try {
-           saveLastPostIdToSheet(binding.bindingName, binding.vkGroupId || 'unknown', vkPost.id, {
-             tgChatName: chatId,
-             preview: (vkPost.text || '').substring(0, 100) + (vkPost.text && vkPost.text.length > 100 ? '...' : '')
-           });
-         } catch (saveError) {
-           logEvent("WARN", "fallback_post_save_failed", "server", saveError.message);
-         }
        }
 
        return fallbackResult;
@@ -4825,56 +4863,24 @@ function extractTelegramChatId(input) {
 // ============================================
 
 /**
- * Создает Published лист для отслеживания отправленных постов
+ * Ensures the binding-specific publication sheet exists (uses bindingName as the sheet name)
  * @param {string} bindingName - название связки
- * @return {Sheet} - созданный лист
+ * @return {Sheet} - лист с заголовками публикаций
  */
 function createPublishedSheet(bindingName) {
   try {
-    var effectiveName = sanitizeBindingText(bindingName);
-    if (!effectiveName) {
-      effectiveName = 'Unknown';
-    }
-    var safeSuffix = sanitizeBindingSheetSuffix(effectiveName);
-    var sheetName = getPublishedSheetNameFromSuffix(safeSuffix);
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(sheetName);
-    
-    if (sheet) {
-      logEvent('DEBUG', 'published_sheet_exists', 'server', `Sheet ${sheetName} already exists`);
-      return sheet;
-    }
-    
-    sheet = ss.insertSheet(sheetName);
-    
-    var headers = [
-      "Post ID", "Sent At", "TG Chat Name", 
-      "Status", "Source", "Post Preview", "VK Post URL"
-    ];
-    
-    sheet.appendRow(headers);
-    
-    var headerRange = sheet.getRange(1, 1, 1, headers.length);
-    headerRange.setBackground("#667eea");
-    headerRange.setFontColor("white");
-    headerRange.setFontWeight("bold");
-    sheet.setFrozenRows(1);
-    
-    logEvent('INFO', 'published_sheet_created', 'server', `Created sheet: ${sheetName} (binding: ${effectiveName})`);
-    
-    return sheet;
-    
+    return getOrCreateBindingSheet(bindingName);
   } catch (error) {
-    logEvent('ERROR', 'published_sheet_creation_failed', 'server', 
+    logEvent('ERROR', 'binding_sheet_creation_failed', 'server', 
       `Binding: ${bindingName}, Error: ${error.message}`);
     throw error;
   }
 }
 
 /**
- * Получает последний ID поста из Published листа
+ * Получает последний успешно отправленный ID поста из листа связки
  * @param {string} bindingName - название связки
- * @param {string} vkGroupId - ID группы VK
+ * @param {string} vkGroupId - ID группы VK (необязателен, для совместимости)
  * @return {string|null} - последний ID поста или null
  */
 function getLastPostIdFromSheet(bindingName, vkGroupId) {
@@ -4884,14 +4890,24 @@ function getLastPostIdFromSheet(bindingName, vkGroupId) {
     var sheet = ss.getSheetByName(sheetName);
     
     if (!sheet) {
-      sheet = createPublishedSheet(bindingName);
-      return null; // Новый лист, нет постов
+      return null;
     }
     
-    var data = sheet.getDataRange().getValues();
-    if (data.length <= 1) return null; // Только заголовки
+    var lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return null;
+    }
     
-    return data[1][0]; // Post ID из колонки A
+    var rows = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+    for (var i = 0; i < rows.length; i++) {
+      var status = (rows[i][1] || '').toString().toLowerCase();
+      var postId = rows[i][3];
+      if ((status === 'success' || status === 'partial') && postId) {
+        return postId.toString();
+      }
+    }
+    
+    return null;
     
   } catch (error) {
     logEvent('ERROR', 'get_last_post_failed', 'server', error.message);
@@ -4900,35 +4916,31 @@ function getLastPostIdFromSheet(bindingName, vkGroupId) {
 }
 
 /**
- * Сохраняет информацию об отправленном посте в Published лист
- * @param {string} bindingName - название связки
- * @param {string} vkGroupId - ID группы VK
- * @param {string} postId - ID поста
- * @param {Object} postData - данные поста
+ * Совместимая функция сохранения поста (используется старыми вызовами)
+ * Делегирует запись в универсальную систему bindingName листов
  */
 function saveLastPostIdToSheet(bindingName, vkGroupId, postId, postData) {
   try {
-    var sheetName = getPublishedSheetNameFromBindingName(bindingName);
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(sheetName);
+    var publicationData = {
+      status: 'success',
+      vkGroupId: vkGroupId || '',
+      vkPostId: postId,
+      vkPostUrl: vkGroupId ? `https://vk.com/wall${vkGroupId}_${postId}` : '',
+      vkPostDate: postData?.vkPostDate || new Date().toISOString(),
+      mediaSummary: postData?.mediaSummary || 'legacy-entry',
+      captionChars: postData?.captionChars || 0,
+      captionParts: postData?.captionParts || 1,
+      tgChat: postData?.tgChat || postData?.tgChatName || '',
+      tgMessageIds: Array.isArray(postData?.tgMessageIds) ? postData.tgMessageIds.join(',') : (postData?.tgMessageIds || ''),
+      tgMessageUrls: Array.isArray(postData?.tgMessageUrls) ? postData.tgMessageUrls.join(', ') : (postData?.tgMessageUrls || ''),
+      notes: postData?.notes || (postData?.preview ? `Legacy entry: ${postData.preview}` : 'Legacy saveLastPostIdToSheet call')
+    };
     
-    if (!sheet) {
-      sheet = createPublishedSheet(bindingName);
-    }
+    var targetBindingName = sanitizeBindingSheetSuffix(bindingName);
+    writePublicationRowToBindingSheet(targetBindingName, publicationData);
     
-    sheet.insertRowAfter(1);
-    sheet.getRange(2, 1, 1, 7).setValues([[
-      postId,
-      new Date().toISOString(),
-      postData.tgChatName || 'Unknown',
-      'sent',
-      'VK',
-      postData.preview || '',
-      `https://vk.com/wall${vkGroupId}_${postId}`
-    ]]);
-    
-    logEvent('INFO', 'post_saved_to_sheet', 'server', 
-      `Post ${postId} saved to ${sheetName}`);
+    logEvent('INFO', 'post_saved_to_binding_sheet', 'server', 
+      `Post ${postId} saved to binding sheet ${targetBindingName} via legacy helper`);
     
   } catch (error) {
     logEvent('ERROR', 'save_post_failed', 'server', error.message);
@@ -4937,13 +4949,17 @@ function saveLastPostIdToSheet(bindingName, vkGroupId, postId, postData) {
 }
 
 /**
- * Проверяет, был ли пост уже отправлен
+ * Проверяет, был ли пост уже отправлен (статусы success/partial) для указанной связки
  * @param {string} bindingName - название связки
  * @param {string} postId - ID поста
  * @return {boolean} - true если пост уже был отправлен
  */
 function checkPostAlreadySent(bindingName, postId) {
   try {
+    if (!postId) {
+      return false;
+    }
+    
     var sheetName = getPublishedSheetNameFromBindingName(bindingName);
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(sheetName);
@@ -4952,11 +4968,16 @@ function checkPostAlreadySent(bindingName, postId) {
       return false;
     }
     
-    var data = sheet.getDataRange().getValues();
-    if (data.length <= 1) return false;
+    var lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return false;
+    }
     
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][0] == postId) {
+    var rows = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+    for (var i = 0; i < rows.length; i++) {
+      var status = (rows[i][1] || '').toString().toLowerCase();
+      var loggedPostId = rows[i][3];
+      if ((status === 'success' || status === 'partial') && loggedPostId && loggedPostId.toString() === postId.toString()) {
         return true;
       }
     }
@@ -5107,81 +5128,37 @@ function validateBindingName(bindingName) {
 }
 
 /**
- * Sanitizes binding text for use in sheet names
- * @param {string} text - text to sanitize
- * @return {string} - sanitized text
- */
-function sanitizeBindingText(text) {
-  if (!text || typeof text !== 'string') {
-    return '';
-  }
-  
-  return text.trim().replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '').replace(/\s+/g, ' ').substring(0, 50);
-}
-
-/**
- * Creates a safe sheet suffix from binding name
- * @param {string} bindingName - binding name
- * @return {string} - safe suffix for sheet name
- */
-function sanitizeBindingSheetSuffix(bindingName) {
-  if (!bindingName) {
-    return 'unknown';
-  }
-  
-  // Remove invalid characters and replace spaces with underscores
-  var safe = bindingName
-    .replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '')
-    .replace(/\s+/g, '_')
-    .substring(0, 30); // Google Sheets limit for sheet names
-  
-  return safe || 'unknown';
-}
-
-/**
- * Gets Published sheet name from binding name (for existing Published_ sheets)
- * @param {string} bindingName - binding name
- * @return {string} - Published sheet name
- */
-function getPublishedSheetNameFromBindingName(bindingName) {
-  if (!bindingName) {
-    return 'Published_Unknown';
-  }
-  
-  var safeSuffix = sanitizeBindingSheetSuffix(bindingName);
-  return getPublishedSheetNameFromSuffix(safeSuffix);
-}
-
-/**
- * Gets Published sheet name from suffix
- * @param {string} suffix - safe suffix
- * @return {string} - Published sheet name
- */
-function getPublishedSheetNameFromSuffix(suffix) {
-  return 'Published_' + suffix;
-}
-
-/**
  * Creates or gets a binding sheet for publication logging
  * @param {string} bindingName - validated binding name (used as sheet name)
  * @return {Sheet} - the sheet object
  */
 function getOrCreateBindingSheet(bindingName) {
   try {
-    if (!validateBindingName(bindingName)) {
+    var sanitizedName = sanitizeBindingSheetSuffix(bindingName);
+    if (!validateBindingName(sanitizedName)) {
       throw new Error(`Invalid binding name: "${bindingName}". Only letters and digits allowed.`);
     }
     
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(bindingName);
+    var sheet = ss.getSheetByName(sanitizedName);
+    
+    if (!sheet) {
+      var legacySheet = ss.getSheetByName('Published_' + sanitizedName);
+      if (legacySheet) {
+        legacySheet.setName(sanitizedName);
+        logEvent('INFO', 'binding_sheet_promoted', 'server',
+          `Legacy sheet "Published_${sanitizedName}" renamed to "${sanitizedName}" during creation`);
+        sheet = legacySheet;
+      }
+    }
     
     if (sheet) {
-      logEvent('DEBUG', 'binding_sheet_exists', 'server', `Sheet "${bindingName}" already exists`);
+      logEvent('DEBUG', 'binding_sheet_exists', 'server', `Sheet "${sanitizedName}" already exists`);
       return sheet;
     }
     
     // Create new sheet with bindingName as exact sheet name
-    sheet = ss.insertSheet(bindingName);
+    sheet = ss.insertSheet(sanitizedName);
     
     // Define headers according to ticket requirements
     var headers = [
@@ -5199,7 +5176,7 @@ function getOrCreateBindingSheet(bindingName) {
     headerRange.setFontWeight("bold");
     sheet.setFrozenRows(1);
     
-    logEvent('INFO', 'binding_sheet_created', 'server', `Created binding sheet: "${bindingName}"`);
+    logEvent('INFO', 'binding_sheet_created', 'server', `Created binding sheet: "${sanitizedName}"`);
     
     return sheet;
     
@@ -5217,13 +5194,14 @@ function getOrCreateBindingSheet(bindingName) {
  */
 function writePublicationRowToBindingSheet(bindingName, publicationData) {
   try {
-    if (!validateBindingName(bindingName)) {
+    var sanitizedName = sanitizeBindingSheetSuffix(bindingName);
+    if (!validateBindingName(sanitizedName)) {
       logEvent('WARN', 'invalid_binding_name_skip', 'server', 
         `Skipping publication row for invalid binding name: "${bindingName}"`);
       return;
     }
     
-    var sheet = getOrCreateBindingSheet(bindingName);
+    var sheet = getOrCreateBindingSheet(sanitizedName);
     
     // Prepare row data according to column order
     var rowData = [
@@ -5247,7 +5225,7 @@ function writePublicationRowToBindingSheet(bindingName, publicationData) {
     sheet.getRange(2, 1, 1, rowData.length).setValues([rowData]);
     
     logEvent('INFO', 'publication_row_written', 'server', 
-      `Binding: "${bindingName}", Status: ${publicationData.status}, VK Post: ${publicationData.vkPostId}`);
+      `Binding: "${sanitizedName}", Status: ${publicationData.status}, VK Post: ${publicationData.vkPostId}`);
     
   } catch (error) {
     logEvent('ERROR', 'publication_row_write_failed', 'server', 

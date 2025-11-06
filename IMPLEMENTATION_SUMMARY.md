@@ -5,6 +5,7 @@
 ### 1. Core Functionality
 - **Per-binding publication logging**: Writes to bindingName sheets (not Published_ sheets)
 - **Binding name validation**: Only Latin/Cyrillic letters and digits allowed
+- **Binding name normalization**: Automatically strips unsupported characters so stored bindingName matches sheet name
 - **Exact sheet naming**: Uses bindingName as sheet name after validation
 - **Top-insert behavior**: Uses `sheet.insertRowAfter(1)` to insert at row 2
 
@@ -54,15 +55,21 @@ Integrated into `sendVkPostToTelegram` function at all critical points:
   - Invalid binding name (should be skipped)
 - Integrated into admin panel with button
 
-### 8. Utility Functions Added
+### 8. Deduplication & Legacy Compatibility
+- `createPublishedSheet`, `getLastPostIdFromSheet`, `saveLastPostIdToSheet`, `checkPostAlreadySent` reworked to operate on bindingName sheets
+- Legacy `Published_*` sheets are auto-migrated to the new naming convention when bindings are loaded
+- Deduplication now considers only `success` and `partial` statuses, ignoring failed attempts
+- No `Published_` prefixes remain; sheet names align exactly with `bindingName`
+
+### 9. Utility Functions Added
 - `validateBindingName()` - Validates binding name format
-- `sanitizeBindingText()` - Cleans text for sheet names
-- `sanitizeBindingSheetSuffix()` - Creates safe sheet suffix
-- `getOrCreateBindingSheet()` - Gets/creates binding sheets
+- `getPublishedSheetNameFromBindingName()` - Resolves binding sheet name (exact bindingName)
+- `getOrCreateBindingSheet()` - Gets/creates binding sheets with canonical headers
 - `writePublicationRowToBindingSheet()` - Main logging function
 - `generateTelegramMessageUrls()` - Creates TG message URLs
 - `createMediaSummary()` - Creates media summary strings
-- Missing utility functions restored for Published_ sheets
+- `legacySanitizeBindingSheetSuffix()` / `migrateLegacyBindingSheets()` - Auto-detect and rename legacy `Published_*` sheets
+- Legacy helpers (`createPublishedSheet`, `getLastPostIdFromSheet`, `saveLastPostIdToSheet`, `checkPostAlreadySent`) now delegate to the bindingName sheets system
 
 ## 🔧 TECHNICAL DETAILS
 
