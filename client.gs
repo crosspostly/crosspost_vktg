@@ -685,11 +685,14 @@ function checkNewPosts() {
         logEvent("DEBUG", "checking_binding", "client",
                  `Binding ID: ${binding.id}, VK: ${binding.vkGroupUrl || binding.vk_group_url}, TG: ${binding.tgChatId || binding.tg_chat_id}`);
         
-        const vkGroupId = extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
+        // Сначала пробуем извлечь ID локально
+        let vkGroupId = extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
+        
+        // Если не удалось (screen_name), отправляем исходный URL на сервер для резолвинга
         if (!vkGroupId) {
-          logEvent("WARN", "vk_group_id_unresolved", "client",
-                   `Binding ID: ${binding.id}, raw URL: ${binding.vkGroupUrl || binding.vk_group_url}`);
-          return;
+          vkGroupId = binding.vkGroupUrl || binding.vk_group_url;
+          logEvent("INFO", "vk_group_id_server_resolve", "client",
+                   `Binding ID: ${binding.id}, will resolve on server: ${vkGroupId}`);
         }
         
         const syncCount = resolveSyncPostsCount(binding);
@@ -2565,12 +2568,14 @@ function ensureAllPublishedSheetsExist() {
     for (const binding of bindings) {
       try {
         const bindingName = binding.bindingName || binding.binding_name;
-        const vkGroupId = extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
+        // Сначала пробуем извлечь ID локально
+        let vkGroupId = extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
         
+        // Если не удалось (screen_name), отправляем исходный URL на сервер для резолвинга
         if (!vkGroupId) {
-          logEvent("WARN", "invalid_vk_group_in_binding", "client", 
-                   `Binding ID: ${binding.id}, invalid VK URL: ${binding.vkGroupUrl || binding.vk_group_url}`);
-          continue;
+          vkGroupId = binding.vkGroupUrl || binding.vk_group_url;
+          logEvent("INFO", "vk_group_id_server_resolve_send", "client", 
+                   `Binding ID: ${binding.id}, will resolve on server for sending: ${vkGroupId}`);
         }
         
         // Получаем или создаем лист (функция создаст если нужно)
@@ -2865,11 +2870,12 @@ function ensureAllPublishedSheetsExist() {
     bindingsResult.bindings.forEach(binding => {
       try {
         // Извлекаем VK Group ID
-        const groupId = extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
+        let groupId = extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
         if (!groupId) {
-          logEvent("WARN", "invalid_vk_group_id", "client", 
-                   `Binding ID: ${binding.id}, URL: ${binding.vkGroupUrl}`);
-          return;
+          // Для screen_name используем оригинальный URL как имя листа
+          groupId = binding.vkGroupUrl || binding.vk_group_url;
+          logEvent("INFO", "using_original_url_for_sheet", "client", 
+                   `Binding ID: ${binding.id}, using original URL: ${groupId}`);
         }
         
         // Создаем лист если не существует
