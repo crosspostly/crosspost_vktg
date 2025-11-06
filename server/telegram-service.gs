@@ -1,234 +1,120 @@
 // @ts-nocheck
 /**
- * VK→Telegram Crossposter - TELEGRAM SERVICE MODULE
- * Telegram API сервисы: отправка сообщений, медиа групп, документов
- * 
- * Автор: f_den
- * Дата: 2025-11-06
+ * VK→Telegram Crossposter - TELEGRAM SERVICE MODULE (continued)
+ * Дополнение: media group helpers, long text, video/document, chat utils
  */
 
-// ============================================
-// TELEGRAM ОТПРАВКА VK ПОСТОВ
-// ============================================
+function sendMediaGroupWithoutCaption(token, chatId, mediaUrls) {
+  try {
+    var url = `https://api.telegram.org/bot${token}/sendMediaGroup`;
+    var media = mediaUrls.slice(0, 10).map(item => ({ type: item.type, media: item.url }));
+    var response = UrlFetchApp.fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, payload: JSON.stringify({ chat_id: chatId, media: media }), muteHttpExceptions: true, timeout: TIMEOUTS.MEDIUM });
+    var result = JSON.parse(response.getContentText());
+    if (result.ok) { return { success: true, message_id: result.result[0].message_id }; }
+    return { success: false, error: result.description || 'Media group failed' };
+  } catch (e) { return { success: false, error: e.message }; }
+}
 
-function sendVkPostToTelegram(chatId, vkPost, binding) {
+function sendMediaGroupWithCaption(token, chatId, mediaUrls, caption) {
+  try {
+    var url = `https://api.telegram.org/bot${token}/sendMediaGroup`;
+    var media = mediaUrls.slice(0, 10).map((item, i) => ({ type: item.type, media: item.url, caption: i === 0 ? caption : undefined, parse_mode: i === 0 ? 'Markdown' : undefined }));
+    var response = UrlFetchApp.fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, payload: JSON.stringify({ chat_id: chatId, media }), muteHttpExceptions: true, timeout: REQUEST_TIMEOUT });
+    var result = JSON.parse(response.getContentText());
+    if (result.ok) { return { success: true, message_id: result.result[0].message_id }; }
+    return { success: false, error: result.description || 'Media group failed' };
+  } catch (e) { return { success: false, error: e.message }; }
+}
+
+function sendLongTextMessage(token, chatId, text) {
+  try {
+    var MAX_MESSAGE_LENGTH = 4096;
+    if (!text || text.length === 0) { return { success: true, message_id: null }; }
+    if (text.length <= MAX_MESSAGE_LENGTH) { return sendTelegramMessage(token, chatId, text); }
+    var parts = splitTextIntoChunks(text, MAX_MESSAGE_LENGTH);
+    var lastId = null;
+    for (var i = 0; i < parts.length; i++) { var res = sendTelegramMessage(token, chatId, (parts.length>1?`(${i+1}/${parts.length}) `:'') + parts[i]); if (!res.success) return res; lastId = res.message_id; Utilities.sleep(400); }
+    return { success: true, message_id: lastId, parts_count: parts.length };
+  } catch (e) { return { success: false, error: e.message }; }
+}
+
+function splitTextIntoChunks(text, maxLength) {
+  if (!text) return [''];
+  if (text.length <= maxLength) return [text];
+  var chunks = [];
+  var cursor = 0;
+  while (cursor < text.length) {
+    var end = Math.min(cursor + maxLength, text.length);
+    var slice = text.substring(cursor, end);
+    var breakPoint = Math.max(slice.lastIndexOf('\n'), slice.lastIndexOf(' '));
+    if (breakPoint > maxLength * 0.6) { end = cursor + breakPoint; slice = text.substring(cursor, end); }
+    chunks.push(slice.trim());
+    cursor = end;
+    if (text[cursor] === ' ' || text[cursor] === '\n') cursor++;
+  }
+  return chunks.filter(Boolean);
+}
+
+function sendTelegramVideo(token, chatId, videoUrl, caption) {
+  try {
+    var url = `https://api.telegram.org/bot${token}/sendVideo`;
+    var payload = { chat_id: chatId, video: videoUrl };
+    if (caption) { payload.caption = caption; payload.parse_mode = 'Markdown'; }
+    var response = UrlFetchApp.fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, payload: JSON.stringify(payload), muteHttpExceptions: true, timeout: TIMEOUTS.SLOW });
+    var result = JSON.parse(response.getContentText());
+    if (result.ok) { return { success: true, message_id: result.result.message_id }; }
+    return { success: false, error: result.description || 'Video send failed' };
+  } catch (e) { return { success: false, error: e.message }; }
+}
+
+function sendTelegramDocument(token, chatId, documentUrl, caption) {
+  try {
+    var url = `https://api.telegram.org/bot${token}/sendDocument`;
+    var payload = { chat_id: chatId, document: documentUrl };
+    if (caption) { payload.caption = caption; payload.parse_mode = 'HTML'; }
+    var response = UrlFetchApp.fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, payload: JSON.stringify(payload), muteHttpExceptions: true, timeout: TIMEOUTS.MEDIUM });
+    var result = JSON.parse(response.getContentText());
+    if (result.ok) { return { success: true, message_id: result.result.message_id }; }
+    return { success: false, error: result.description || 'Document send failed' };
+  } catch (e) { return { success: false, error: e.message }; }
+}
+
+function getTelegramChatName(chatId) {
   try {
     var botToken = PropertiesService.getScriptProperties().getProperty('BOT_TOKEN');
-    if (!botToken) {
-      return { success: false, error: 'Bot token not configured' };
-    }
-
-    var text = formatVkPostForTelegram(vkPost, binding);
-    var mediaData = getVkMediaUrls(vkPost.attachments);
-    
-    var allMedia = [];
-    allMedia = allMedia.concat(mediaData.photos);
-    allMedia = allMedia.concat(mediaData.videos);
-    
-    var results = [];
-    
-    try {
-      if (allMedia.length > 0) {
-        var optimizedResult = sendMixedMediaOptimized(botToken, chatId, allMedia, text, { parsemode: 'HTML' });
-        results.push(optimizedResult);
-      } else {
-        const textResult = sendTelegramMessage(botToken, chatId, text);
-        results.push(textResult);
-      }
-      
-      var additionalContent = [];
-      if (mediaData.docLinks.length > 0) {
-        additionalContent.push(mediaData.docLinks.join('\n'));
-      }
-      if (mediaData.audioLinks.length > 0) {
-        additionalContent.push(mediaData.audioLinks.join('\n'));
-      }
-      
-      if (additionalContent.length > 0) {
-        const additionalText = additionalContent.join('\n\n');
-        const additionalResult = sendTelegramMessage(botToken, chatId, additionalText);
-        results.push(additionalResult);
-      }
-      
-      const successCount = results.filter(function(r) { return r.success; }).length;
-      const totalCount = results.length;
-      
-      var publicationData = {
-        vkGroupId: binding.vkGroupId || 'unknown',
-        vkPostId: vkPost.id || 'unknown',
-        vkPostUrl: `https://vk.com/wall${binding.vkGroupId || 'unknown'}_${vkPost.id || 'unknown'}`,
-        vkPostDate: vkPost.date ? new Date(vkPost.date * 1000).toISOString() : new Date().toISOString(),
-        mediaSummary: createMediaSummary(vkPost.attachments),
-        captionChars: (vkPost.text || '').length,
-        captionParts: 1,
-        tgChat: chatId,
-        tgMessageIds: '',
-        tgMessageUrls: '',
-        notes: ''
-      };
-      
-      var successfulResults = results.filter(function(r) { return r.success; });
-      var messageIds = successfulResults.map(function(r) { return r.message_id; }).filter(function(id) { return id; });
-      
-      if (messageIds.length > 0) {
-        publicationData.tgMessageIds = messageIds.join(',');
-        publicationData.tgMessageUrls = generateTelegramMessageUrls(chatId, messageIds);
-      }
-      
-      if (successCount === 0) {
-        publicationData.status = 'error';
-        publicationData.notes = 'All media parts failed to send';
-        if (binding && binding.bindingName) {
-          writePublicationRowToBindingSheet(binding.bindingName, publicationData);
-        }
-        return { success: false, error: 'All media parts failed to send' };
-      } else if (successCount < totalCount) {
-        publicationData.status = 'partial';
-        publicationData.notes = `Partial success: ${successCount}/${totalCount} parts sent`;
-        if (binding && binding.bindingName) {
-          writePublicationRowToBindingSheet(binding.bindingName, publicationData);
-        }
-        return { 
-          success: true, 
-          message_id: results.find(r => r.success)?.message_id,
-          warning: `Partial success: ${successCount}/${totalCount} parts sent`,
-          results: results
-        };
-      } else {
-        publicationData.status = 'success';
-        publicationData.notes = 'Successfully sent all media';
-        if (binding && binding.bindingName) {
-          writePublicationRowToBindingSheet(binding.bindingName, publicationData);
-        }
-        return { 
-          success: true, 
-          message_id: results.find(r => r.success)?.message_id,
-          results: results
-        };
-      }
-      
-    } catch (mediaError) {
-      if (text) {
-        var fallbackResult = sendTelegramMessage(botToken, chatId, text);
-        var fallbackPublicationData = {
-          vkGroupId: binding.vkGroupId || 'unknown',
-          vkPostId: vkPost.id || 'unknown',
-          vkPostUrl: `https://vk.com/wall${binding.vkGroupId || 'unknown'}_${vkPost.id || 'unknown'}`,
-          vkPostDate: vkPost.date ? new Date(vkPost.date * 1000).toISOString() : new Date().toISOString(),
-          mediaSummary: createMediaSummary(vkPost.attachments),
-          captionChars: (vkPost.text || '').length,
-          captionParts: 1,
-          tgChat: chatId,
-          tgMessageIds: '',
-          tgMessageUrls: '',
-          notes: ''
-        };
-        
-        if (fallbackResult.success) {
-          fallbackPublicationData.status = 'success';
-          fallbackPublicationData.notes = 'Successfully sent text only (fallback mode)';
-          if (fallbackResult.message_id) {
-            fallbackPublicationData.tgMessageIds = fallbackResult.message_id.toString();
-            fallbackPublicationData.tgMessageUrls = generateTelegramMessageUrls(chatId, [fallbackResult.message_id]);
-          }
-        } else {
-          fallbackPublicationData.status = 'error';
-          fallbackPublicationData.notes = `Fallback text send failed: ${fallbackResult.error || 'Unknown error'}`;
-        }
-        
-        if (binding && binding.bindingName) {
-          writePublicationRowToBindingSheet(binding.bindingName, fallbackPublicationData);
-        }
-        return fallbackResult;
-      }
-      
-      var errorPublicationData = {
-        status: 'error',
-        vkGroupId: binding.vkGroupId || 'unknown',
-        vkPostId: vkPost.id || 'unknown',
-        vkPostUrl: `https://vk.com/wall${binding.vkGroupId || 'unknown'}_${vkPost.id || 'unknown'}`,
-        vkPostDate: vkPost.date ? new Date(vkPost.date * 1000).toISOString() : new Date().toISOString(),
-        mediaSummary: createMediaSummary(vkPost.attachments),
-        captionChars: (vkPost.text || '').length,
-        captionParts: 1,
-        tgChat: chatId,
-        tgMessageIds: '',
-        tgMessageUrls: '',
-        notes: `Media send failed: ${mediaError.message}`
-      };
-      
-      if (binding && binding.bindingName) {
-        writePublicationRowToBindingSheet(binding.bindingName, errorPublicationData);
-      }
-      return { success: false, error: mediaError.message };
-    }
-    
-  } catch (error) {
-    if (binding && binding.bindingName && vkPost) {
-      var errorPublicationData = {
-        status: 'error',
-        vkGroupId: binding.vkGroupId || 'unknown',
-        vkPostId: vkPost.id || 'unknown',
-        vkPostUrl: `https://vk.com/wall${binding.vkGroupId || 'unknown'}_${vkPost.id || 'unknown'}`,
-        vkPostDate: vkPost.date ? new Date(vkPost.date * 1000).toISOString() : new Date().toISOString(),
-        mediaSummary: createMediaSummary(vkPost.attachments),
-        captionChars: (vkPost.text || '').length,
-        captionParts: 1,
-        tgChat: chatId,
-        tgMessageIds: '',
-        tgMessageUrls: '',
-        notes: `General error: ${error.message}`
-      };
-      writePublicationRowToBindingSheet(binding.bindingName, errorPublicationData);
-    }
-    return { success: false, error: error.message };
-  }
-}
-
-function sendTelegramMessage(token, chatId, text) {
-  try {
-    var url = `https://api.telegram.org/bot${token}/sendMessage`;
-    var payload = { chat_id: chatId, text: text, parse_mode: 'Markdown', disable_web_page_preview: true };
-    var response = UrlFetchApp.fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, payload: JSON.stringify(payload), muteHttpExceptions: true, timeout: TIMEOUTS.FAST });
+    if (!botToken) return null;
+    var response = UrlFetchApp.fetch(`https://api.telegram.org/bot${botToken}/getChat`, { method: 'POST', headers: {'Content-Type':'application/json'}, payload: JSON.stringify({ chat_id: chatId }), muteHttpExceptions: true, timeout: 8000 });
     var result = JSON.parse(response.getContentText());
-    if (result.ok) {
-      return { success: true, message_id: result.result.message_id };
-    } else {
-      return { success: false, error: result.description || 'Unknown error' };
-    }
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
+    if (result.ok) { var chat = result.result; return chat.title || (chat.first_name && chat.last_name ? `${chat.first_name} ${chat.last_name}`.trim() : (chat.username?('@'+chat.username):'Unknown Chat')); }
+    return null;
+  } catch (e) { return null; }
 }
 
-function sendTelegramMediaGroup(token, chatId, mediaUrls, caption) {
+function getCachedTelegramChatName(chatId) {
   try {
-    if (mediaUrls.length === 0) { return sendTelegramMessage(token, chatId, caption); }
-    var MAX_CAPTION_LENGTH = 1024;
-    if (caption && caption.length > MAX_CAPTION_LENGTH) {
-      var mediaResult = sendMediaGroupWithoutCaption(token, chatId, mediaUrls);
-      if (mediaResult.success && caption) { var textResult = sendLongTextMessage(token, chatId, caption); return { success: textResult.success, message_id: mediaResult.message_id, text_message_id: textResult.message_id, split_message: true }; }
-      return mediaResult;
-    }
-    return sendMediaGroupWithCaption(token, chatId, mediaUrls, caption);
-  } catch (error) { return { success: false, error: error.message }; }
+    var props = PropertiesService.getScriptProperties();
+    var key = `tg_name_${chatId}`;
+    var cached = props.getProperty(key);
+    if (cached) return cached;
+    var fresh = getTelegramChatName(chatId);
+    if (fresh) props.setProperty(key, fresh);
+    return fresh || chatId.toString();
+  } catch (e) { return chatId.toString(); }
 }
 
-function sendMixedMediaOptimized(botToken, chatId, mediaUrls, caption, options) {
+function generateTelegramMessageUrls(chatId, messageIds) {
   try {
-    if (!mediaUrls || mediaUrls.length === 0) { return sendTelegramMessage(botToken, chatId, caption); }
-    var photos = mediaUrls.filter(function(m) { return m.type === 'photo'; });
-    var videos = mediaUrls.filter(function(m) { return m.type === 'video'; });
-    var results = [];
-    var apiCallsSaved = 0;
-    var MAX_MEDIA_GROUP_SIZE = 10;
-    if (photos.length > 0) {
-      var photoGroups = []; for (var i = 0; i < photos.length; i += MAX_MEDIA_GROUP_SIZE) { photoGroups.push(photos.slice(i, i + MAX_MEDIA_GROUP_SIZE)); }
-      photoGroups.forEach(function(group, index) { var groupCaption = (index === 0) ? caption : null; var groupResult = sendTelegramMediaGroup(botToken, chatId, group, groupCaption, options); results.push(groupResult); });
-      apiCallsSaved = photos.length - photoGroups.length;
-    }
-    videos.forEach(function(video, index) { var videoCaption = (photos.length === 0 && index === 0) ? caption : null; var videoResult = sendTelegramVideo(botToken, chatId, video.url, videoCaption); results.push(videoResult); if (index < videos.length - 1) { Utilities.sleep(1000); } });
-    var successCount = results.filter(function(r) { return r.success; }).length; var totalCount = results.length;
-    if (successCount === 0) { return { success: false, error: 'All media parts failed to send' }; } else if (successCount < totalCount) { return { success: true, message_id: results.find(function(r) { return r.success; }).message_id, warning: `Partial success: ${successCount}/${totalCount} parts sent`, results: results, optimization_stats: { api_calls_saved: apiCallsSaved, photo_groups: photos.length > 0 ? Math.ceil(photos.length / MAX_MEDIA_GROUP_SIZE) : 0 } }; } else { return { success: true, message_id: results.find(function(r) { return r.success; }).message_id, results: results, optimization_stats: { api_calls_saved: apiCallsSaved, photo_groups: photos.length > 0 ? Math.ceil(photos.length / MAX_MEDIA_GROUP_SIZE) : 0 } }; }
-  } catch (error) { return { success: false, error: error.message }; }
+    if (!messageIds || messageIds.length === 0) return '';
+    var botToken = PropertiesService.getScriptProperties().getProperty('BOT_TOKEN');
+    var username = null;
+    try {
+      var response = UrlFetchApp.fetch(`https://api.telegram.org/bot${botToken}/getChat`, { method: 'POST', headers: {'Content-Type':'application/json'}, payload: JSON.stringify({ chat_id: chatId }), muteHttpExceptions: true, timeout: TIMEOUTS.FAST });
+      var result = JSON.parse(response.getContentText());
+      if (result.ok && result.result.username) username = result.result.username;
+    } catch (e) {}
+    var cleanChatId = chatId.toString().replace('-', '');
+    if (cleanChatId.startsWith('100')) cleanChatId = cleanChatId.substring(4);
+    var urls = messageIds.map(function(id){ return username ? `https://t.me/${username}/${id}` : `https://t.me/c/${cleanChatId}/${id}`; });
+    return urls.join(', ');
+  } catch (e) { return ''; }
 }
