@@ -1,35 +1,19 @@
 {
-  "name": "vk-telegram-crossposter",
-  "version": "6.0.0",
-  "description": "VK→Telegram Crossposter with automatic deployment to Google Apps Script",
-  "main": "index.js",
+  "name": "vk-telegram-crossposter-glasp",
+  "version": "6.1.0",
+  "description": "Google Apps Script build tools for VK→Telegram Crossposter",
   "scripts": {
-    "deploy:server": "node glasp/deploy-server.js",
-    "deploy:client": "node glasp/deploy-client.js",
-    "deploy:all": "npm run deploy:server && npm run deploy:client",
-    "build:server": "node glasp/build-server.js",
-    "build:client": "node glasp/build-client.js",
-    "build:all": "npm run build:server && npm run build:client"
+    "build:server": "node deploy-server.js",
+    "build:client": "node deploy-client.js",
+    "build": "npm run build:server && npm run build:client",
+    "lint": "eslint ../server/*.gs ../client/*.gs || true"
   },
-  "keywords": [
-    "vk",
-    "telegram",
-    "crossposter",
-    "google-apps-script",
-    "automation"
-  ],
+  "keywords": ["google-apps-script", "vk", "telegram", "crossposter"],
   "author": "f_den",
   "license": "MIT",
-  "dependencies": {
-    "fs": "^0.0.1-security",
-    "path": "^0.12.7",
-    "@google/clasp": "^2.4.2"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "eslint": "^8.0.0",
-    "prettier": "^2.8.0"
-  },
-  "engines": {
-    "node": ">=14.0.0"
+    "@google/clasp": "^2.4.2",
+    "eslint": "^8.57.0"
   }
 }
