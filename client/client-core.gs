@@ -1,167 +1,68 @@
+// @ts-nocheck
 /**
- * VK→Telegram Crossposter - CLIENT CORE MODULE
- * Стабильные проверенные функции, которые работают идеально
- * 
- * Размер: ~2000 строк
- * Зависимости: utils.gs
- * 
- * Автор: f_den
- * Дата: 2025-11-06
+ * VK→Telegram Crossposter - CLIENT CORE
+ * Константы, меню, логирование, лицензия
  */
 
-// ============================================
-// КОНФИГУРАЦИЯ КЛИЕНТА
-// ============================================
+var CLIENT_DEV_MODE = false;
+var CLIENT_VERSION = '6.1';
+var REQUEST_TIMEOUT = 15000;
+var SERVER_URL = (function(){ try { return PropertiesService.getScriptProperties().getProperty('SERVER_URL') || ''; } catch(e) { return ''; } })();
 
-const DEV_MODE = true; // true для подробного логирования
-const CLIENT_VERSION = "6.0";
-
-// ⭐ ВСТАВЬТЕ ПРАВИЛЬНЫЙ URL ВАШЕГО СЕРВЕРА ⭐
-const SERVER_URL = "https://script.google.com/macros/s/AKfycbzNlXEfpsiMi1UAgaXJWCA9rF35swkvl2Amr2exZ1AWVfCiI7HttGq_yxZWgcceG_zG/exec";
-
-const CACHE_DURATION = 10 * 60 * 1000; // 10 минут
-const MAX_POSTS_CHECK = 50;
-const REQUEST_TIMEOUT = 30000;
-var LICENSE_CACHE_TTL_MS = 30 * 60 * 1000; // 30 минут
-var USER_PROP_LICENSE_KEY = 'LICENSE_KEY';
-var USER_PROP_LICENSE_META = 'LICENSE_META'; // JSON: { type, maxGroups, expires, cachedAt }
-
-// ============================================
-// SERVER COMMUNICATION (СТАБИЛЬНО)
-// ============================================
-
-function callServer(payload, options) {
-  // TODO: Перенести из client.gs
+function onOpen() {
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('📱 VK→TG Client')
+    .addItem('🔌 Подключить сервер', 'doFirstAuth')
+    .addItem('🔁 Обновить данные', 'getInitialData')
+    .addSeparator()
+    .addItem('🧪 Тест VarSmana → TG', 'testDuplicateVarsmanaToTG')
+    .addItem('⚙️ Настроить триггер', 'setupTrigger')
+    .addSeparator()
+    .addItem('📄 Логи клиента', 'showClientLogsSheet')
+    .addToUi();
 }
 
-function getInitialData() {
-  // TODO: Перенести из client.gs
-}
-
-function saveLicenseWithCheck(licenseKey) {
-  // TODO: Перенести из client.gs
-}
-
-function getLicense() {
-  // TODO: Перенести из client.gs
-}
-
-// ============================================
-// BINDINGS CRUD (СТАБИЛЬНО)
-// ============================================
-
-function getBindings() {
-  // TODO: Перенести из client.gs
-}
-
-function addBinding(vkUrl, tgChatId, bindingName, bindingDescription) {
-  // TODO: Перенести из client.gs
-}
-
-function editBinding(bindingId, vkUrl, tgChatId, bindingName, bindingDescription) {
-  // TODO: Перенести из client.gs
-}
-
-function deleteBinding(bindingId) {
-  // TODO: Перенести из client.gs
-}
-
-function toggleBindingStatus(bindingId) {
-  // TODO: Перенести из client.gs
-}
-
-// ============================================
-// VK PROCESSING (СТАБИЛЬНО)
-// ============================================
-
-function extractVkGroupId(url) {
-  // TODO: Перенести из client.gs
-}
-
-function validateVkGroupId(id) {
-  // TODO: Перенести из client.gs
-}
-
-function extractTelegramChatId(input) {
-  // TODO: Перенести из client.gs
-}
-
-// ============================================
-// POST PROCESSING (СТАБИЛЬНО)
-// ============================================
-
-function getVkPosts(vkGroupId, count) {
-  // TODO: Перенести из client.gs
-}
-
-function publishPost(binding, vkPost, key) {
-  // TODO: Перенести из client.gs
-}
-
-function publishLastPost(bindingId) {
-  // TODO: Перенести из client.gs
-}
-
-function resolveSyncPostsCount(binding) {
-  // TODO: Перенести из client.gs
-}
-
-// ============================================
-// GLOBAL SETTINGS (СТАБИЛЬНО)
-// ============================================
-
-function setGlobalSetting(key, value) {
-  // TODO: Перенести из client.gs
-}
-
-function getGlobalSetting(key) {
-  // TODO: Перенести из client.gs
-}
-
-function toggleAllStores() {
-  // TODO: Перенести из client.gs
-}
-
-// ============================================
-// DEPRECATED FUNCTIONS (СТАБИЛЬНО)
-// ============================================
-
-function getLastPostIds() {
-  // TODO: Перенести из client.gs (правильно deprecated)
-}
-
-function saveLastPostIds(ids) {
-  // TODO: Перенести из client.gs (безопасно пустая)
-}
-
-function isPostAlreadySent(groupId, postId) {
-  // TODO: Перенести из client.gs (корректно возвращает false)
-}
-
-function markPostAsSent(groupId, postId, vkPostUrl) {
-  // TODO: Перенести из client.gs (правильно deprecated)
-}
-
-function updatePostStatistics(binding) {
-  // TODO: Перенести из client.gs (безопасно пустая)
-}
-
-function getOrCreatePublishedPostsSheet(bindingName) {
-  // TODO: Перенести из client.gs (корректно deprecated)
-}
-
-// ============================================
-// LOGGING (СТАБИЛЬНО)
-// ============================================
-
-function logEvent(level, event, source, details) {
-  // TODO: Перенести из client.gs
-}
-
-function logClientEvent(level, event, details) {
-  // TODO: Перенести из client.gs
+function logClient(level, event, details) {
+  try {
+    var sheet = getOrCreateClientLogsSheet();
+    sheet.appendRow([new Date().toISOString(), level, event, Session.getActiveUser().getEmail() || 'anonymous', details || '']);
+  } catch(e) { console.log('Client log error: ' + e.message); }
 }
 
 function getOrCreateClientLogsSheet() {
-  // TODO: Перенести из client.gs
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Client Logs');
+  if (!sheet) {
+    sheet = ss.insertSheet('Client Logs');
+    sheet.appendRow(['Timestamp','Level','Event','User','Details']);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function showClientLogsSheet() { SpreadsheetApp.setActiveSheet(getOrCreateClientLogsSheet()); }
+
+function cleanOldLogsClient(daysToKeep) {
+  try {
+    var cutoff = new Date(); cutoff.setDate(cutoff.getDate() - (daysToKeep || 30));
+    var sheet = getOrCreateClientLogsSheet();
+    var data = sheet.getDataRange().getValues();
+    var rows = [];
+    for (var i=1;i<data.length;i++){ var ts = new Date(data[i][0]); if (ts < cutoff) rows.push(i+1); }
+    for (var j=rows.length-1;j>=0;j--) sheet.deleteRow(rows[j]);
+    logClient('INFO','client_logs_cleaned','rows='+rows.length);
+  } catch(e) { logClient('ERROR','client_logs_cleanup_error', e.message); }
+}
+
+function getLicense() {
+  try {
+    var cache = CacheService.getScriptCache();
+    var cached = cache.get('license_info');
+    if (cached) return JSON.parse(cached);
+    var email = Session.getActiveUser().getEmail() || 'anonymous@local';
+    var key = PropertiesService.getUserProperties().getProperty('LICENSE_KEY') || '';
+    var info = { email: email, license_key: key };
+    cache.put('license_info', JSON.stringify(info), 3600);
+    return info;
+  } catch(e) { return { email: 'anonymous', license_key: '' }; }
 }
