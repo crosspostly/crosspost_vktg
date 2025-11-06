@@ -48,7 +48,7 @@ jobs:
 
     - name: Setup server clasp config
       run: |
-        echo '{"scriptId": "${{ secrets.SERVER_SCRIPT_ID }}"}' > dist/.clasp.json
+        echo '{"scriptId": "1swkg5t74hsAma2H6KevvHNATgYVQ0L1WZx6jZH-FUC45EXxhXXXsjvC9"}' > dist/.clasp.json
 
     - name: Deploy server to Apps Script
       working-directory: ./dist
@@ -88,7 +88,7 @@ jobs:
 
     - name: Setup client clasp config
       run: |
-        echo '{"scriptId": "${{ secrets.CLIENT_SCRIPT_ID }}"}' > dist/.clasp.json
+        echo '{"scriptId": "1QkeuN2Fa47W06HGJRPUVzHmWJV_vZ2xk3lwJKetDnH049YFxV9aGrO9h"}' > dist/.clasp.json
 
     - name: Deploy client to Apps Script
       working-directory: ./dist
