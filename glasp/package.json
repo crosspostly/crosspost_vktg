@@ -1,0 +1,35 @@
+{
+  "name": "vk-telegram-crossposter",
+  "version": "6.0.0",
+  "description": "VK→Telegram Crossposter with automatic deployment to Google Apps Script",
+  "main": "index.js",
+  "scripts": {
+    "deploy:server": "node glasp/deploy-server.js",
+    "deploy:client": "node glasp/deploy-client.js",
+    "deploy:all": "npm run deploy:server && npm run deploy:client",
+    "build:server": "node glasp/build-server.js",
+    "build:client": "node glasp/build-client.js",
+    "build:all": "npm run build:server && npm run build:client"
+  },
+  "keywords": [
+    "vk",
+    "telegram",
+    "crossposter",
+    "google-apps-script",
+    "automation"
+  ],
+  "author": "f_den",
+  "license": "MIT",
+  "dependencies": {
+    "fs": "^0.0.1-security",
+    "path": "^0.12.7",
+    "@google/clasp": "^2.4.2"
+  },
+  "devDependencies": {
+    "eslint": "^8.0.0",
+    "prettier": "^2.8.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
