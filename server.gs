@@ -939,6 +939,204 @@ function handleGetUserBindingsWithNames(payload, clientIp) {
   }
 }
 
+function sanitizeBindingText(value) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  var text = String(value).trim();
+  if (text.length > 250) {
+    text = text.substring(0, 250);
+  }
+  return text;
+}
+
+function normalizeTgBindingLabel(value) {
+  var text = sanitizeBindingText(value);
+  if (!text) {
+    return "";
+  }
+  if (/^-?\d+$/.test(text)) {
+    return text;
+  }
+  var urlMatch = text.match(/t\.me\/([^\/?#]+)/i);
+  if (urlMatch && urlMatch[1]) {
+    return '@' + urlMatch[1];
+  }
+  if (text.charAt(0) === '@') {
+    return text;
+  }
+  return '@' + text.replace(/^@/, '');
+}
+
+function getVkLabelFromContext(context) {
+  if (!context) {
+    return "";
+  }
+  var url = sanitizeBindingText(context.vkGroupUrl);
+  if (url) {
+    var screenMatch = url.match(/vk\.com\/([^\/?#]+)/i);
+    if (screenMatch && screenMatch[1]) {
+      return screenMatch[1];
+    }
+    var idMatch = url.match(/(public|club)(\d+)/i);
+    if (idMatch && idMatch[0]) {
+      return idMatch[0];
+    }
+  }
+  var processed = sanitizeBindingText(context.processedVkGroupId || context.vkGroupId);
+  if (processed) {
+    return processed;
+  }
+  return "";
+}
+
+function deriveBindingFallbackName(context) {
+  var vkLabel = getVkLabelFromContext(context);
+  var tgLabel = normalizeTgBindingLabel(context ? (context.processedTgChatId || context.tgChatId || context.tgChatUrl) : "");
+  if (!vkLabel && context && context.bindingId) {
+    vkLabel = context.bindingId.substring(0, 6);
+  }
+  if (!vkLabel) {
+    vkLabel = "VK";
+  }
+  if (!tgLabel) {
+    tgLabel = "Telegram";
+  }
+  return vkLabel + " → " + tgLabel;
+}
+
+function sanitizeBindingSheetSuffix(name) {
+  var base = sanitizeBindingText(name);
+  if (!base) {
+    base = "Binding";
+  }
+  var safe = base
+    .replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '')
+    .replace(/\s+/g, '_')
+    .substring(0, 27);
+  if (!safe) {
+    safe = "Binding";
+  }
+  return safe;
+}
+
+function normalizeBindingMetadata(bindingName, bindingDescription, context) {
+  var normalizedName = sanitizeBindingText(bindingName);
+  var normalizedDescription = sanitizeBindingText(bindingDescription);
+  var effectiveName = normalizedName || deriveBindingFallbackName(context);
+  if (!effectiveName) {
+    effectiveName = context && context.bindingId ? "Binding " + context.bindingId.substring(0, 8) : "Binding";
+  }
+  var sheetSuffix = sanitizeBindingSheetSuffix(effectiveName);
+  if (!normalizedName && sheetSuffix === "Binding" && context && context.bindingId) {
+    effectiveName = "Binding " + context.bindingId.substring(0, 8);
+    sheetSuffix = sanitizeBindingSheetSuffix(effectiveName);
+  }
+  return {
+    name: effectiveName,
+    description: normalizedDescription,
+    fallbackApplied: normalizedName.length === 0,
+    sheetSuffix: sheetSuffix
+  };
+}
+
+function resolveBindingName(storedName, context) {
+  var normalizedStored = sanitizeBindingText(storedName);
+  if (normalizedStored) {
+    return normalizedStored;
+  }
+  return normalizeBindingMetadata(null, null, context).name;
+}
+
+function getPublishedSheetNameFromSuffix(suffix) {
+  return "Published_" + suffix;
+}
+
+function getPublishedSheetNameFromBindingName(bindingName) {
+  return getPublishedSheetNameFromSuffix(sanitizeBindingSheetSuffix(bindingName));
+}
+
+function renameBindingArtifacts(oldName, newName) {
+  var oldSuffix = sanitizeBindingSheetSuffix(oldName);
+  var newSuffix = sanitizeBindingSheetSuffix(newName);
+  if (oldSuffix === newSuffix) {
+    return;
+  }
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var mappings = [
+    { prefix: 'Published_', suffix: oldSuffix, newSuffix: newSuffix },
+    { prefix: 'Log_', suffix: oldSuffix, newSuffix: newSuffix },
+    { prefix: 'Logs_', suffix: oldSuffix, newSuffix: newSuffix }
+  ];
+  mappings.forEach(function(mapping) {
+    var oldSheetName = mapping.prefix + mapping.suffix;
+    var newSheetName = mapping.prefix + mapping.newSuffix;
+    try {
+      var oldSheet = ss.getSheetByName(oldSheetName);
+      if (!oldSheet) {
+        return;
+      }
+      var existing = ss.getSheetByName(newSheetName);
+      if (existing && existing.getSheetId() === oldSheet.getSheetId()) {
+        return;
+      }
+      if (existing && existing.getSheetId() !== oldSheet.getSheetId()) {
+        logEvent("WARN", "binding_sheet_rename_conflict", "server",
+          "Skipping rename " + oldSheetName + " -> " + newSheetName + ": target already exists");
+        return;
+      }
+      oldSheet.setName(newSheetName);
+      logEvent("INFO", "binding_sheet_renamed", "server",
+        oldSheetName + " -> " + newSheetName);
+    } catch (renameError) {
+      logEvent("WARN", "binding_sheet_rename_failed", "server",
+        "Failed to rename " + oldSheetName + " -> " + newSheetName + ": " + renameError.message);
+    }
+  });
+}
+
+function buildBindingObjectFromRow(row) {
+  if (!row) {
+    return null;
+  }
+  var bindingId = row[0];
+  var vkGroupUrl = row[3];
+  var tgChatId = row[4];
+  var fallbackContext = {
+    bindingId: bindingId,
+    vkGroupUrl: vkGroupUrl,
+    processedTgChatId: tgChatId
+  };
+  try {
+    fallbackContext.processedVkGroupId = extractVkGroupId(vkGroupUrl);
+  } catch (vkError) {
+    fallbackContext.processedVkGroupId = "";
+  }
+  var bindingName = resolveBindingName(row[9], fallbackContext);
+  var bindingDescription = sanitizeBindingText(row[10]);
+  var sheetSuffix = sanitizeBindingSheetSuffix(bindingName);
+  var sheetName = getPublishedSheetNameFromSuffix(sheetSuffix);
+  return {
+    id: bindingId,
+    licenseKey: row[1],
+    userEmail: row[2],
+    vkGroupUrl: vkGroupUrl,
+    tgChatId: tgChatId,
+    status: row[5],
+    createdAt: row[6],
+    lastCheck: row[7],
+    formatSettings: row[8] || "",
+    bindingName: bindingName,
+    binding_name: bindingName,
+    bindingDescription: bindingDescription,
+    binding_description: bindingDescription,
+    bindingSheetSuffix: sheetSuffix,
+    binding_sheet_suffix: sheetSuffix,
+    bindingSheetName: sheetName,
+    binding_sheet_name: sheetName
+  };
+}
+
 function handleAddBinding(payload, clientIp) {
   try {
     var { license_key, vk_group_url, tg_chat_id, formatSettings, binding_name, binding_description } = payload;
@@ -1002,6 +1200,18 @@ function handleAddBinding(payload, clientIp) {
       }
     }
 
+    var normalizedBinding = normalizeBindingMetadata(binding_name, binding_description, {
+      bindingId: bindingId,
+      vkGroupUrl: vk_group_url,
+      processedVkGroupId: processedVkGroupId,
+      processedTgChatId: processedTgChatId
+    });
+
+    if (normalizedBinding.fallbackApplied) {
+      logEvent("INFO", "binding_name_fallback_applied", license_key,
+               `Binding ${bindingId}: generated fallback name "${normalizedBinding.name}"`);
+    }
+
     var bindingsSheet = getSheet("Bindings");
     bindingsSheet.appendRow([
       bindingId,
@@ -1013,15 +1223,15 @@ function handleAddBinding(payload, clientIp) {
       new Date().toISOString(),
       new Date().toISOString(),
       formatSettingsString,  // Format Settings
-      binding_name || "",    // Binding Name
-      binding_description || "" // Binding Description
+      normalizedBinding.name,    // Binding Name
+      normalizedBinding.description // Binding Description
     ]);
     
     // Создаем Published лист для отслеживания постов
     try {
-      createPublishedSheet(binding_name || `Binding_${bindingId.substring(0, 8)}`);
+      createPublishedSheet(normalizedBinding.name);
       logEvent("INFO", "published_sheet_created_for_binding", license_key, 
-               `Created Published sheet for binding: ${binding_name || bindingId}`);
+               `Created Published sheet for binding: ${normalizedBinding.name}`);
     } catch (sheetError) {
       logEvent("WARN", "published_sheet_creation_warning", license_key, 
                `Failed to create Published sheet for binding ${bindingId}: ${sheetError.message}`);
@@ -1029,11 +1239,13 @@ function handleAddBinding(payload, clientIp) {
     }
     
     logEvent("INFO", "binding_added", license_key, 
-             `Binding ID: ${bindingId}, VK: ${vk_group_url} (${processedVkGroupId}), TG: ${processedTgChatId}, IP: ${clientIp}`);
+             `Binding ID: ${bindingId}, Name: ${normalizedBinding.name}, VK: ${vk_group_url} (${processedVkGroupId}), TG: ${processedTgChatId}, IP: ${clientIp}`);
     
     return jsonResponse({
       success: true,
       binding_id: bindingId,
+      binding_name: normalizedBinding.name,
+      binding_description: normalizedBinding.description,
       converted: {
         vk_group_id: processedVkGroupId,
         tg_chat_id: processedTgChatId
@@ -1066,6 +1278,10 @@ function handleEditBinding(payload, clientIp) {
         error: "Binding not found"
       }, 404);
     }
+    
+    var bindingsSheet = getSheet("Bindings");
+    var existingRowValues = bindingsSheet.getRange(bindingRow, 1, 1, 11).getValues()[0];
+    var oldBinding = buildBindingObjectFromRow(existingRowValues);
     
     // АВТОМАТИЧЕСКОЕ ПРЕОБРАЗОВАНИЕ ССЫЛОК В ID
     var processedVkGroupId;
@@ -1105,22 +1321,43 @@ function handleEditBinding(payload, clientIp) {
       }
     }
 
-    // Обновляем связку с обработанными ID
-    var bindingsSheet = getSheet("Bindings");
+    var normalizedBinding = normalizeBindingMetadata(binding_name, binding_description, {
+      bindingId: binding_id,
+      vkGroupUrl: vk_group_url,
+      processedVkGroupId: processedVkGroupId,
+      processedTgChatId: processedTgChatId
+    });
+
+    if (normalizedBinding.fallbackApplied) {
+      logEvent("INFO", "binding_name_fallback_applied", license_key,
+               `Binding ${binding_id}: fallback name "${normalizedBinding.name}" applied on edit`);
+    }
+
     bindingsSheet.getRange(bindingRow, 4).setValue(vk_group_url);      // VK Group URL (оригинальная ссылка)
     bindingsSheet.getRange(bindingRow, 5).setValue(processedTgChatId); // TG Chat ID (обработанный)
     bindingsSheet.getRange(bindingRow, 8).setValue(new Date().toISOString()); // Last Check
     bindingsSheet.getRange(bindingRow, 9).setValue(formatSettingsString); // Format Settings
     
-    // ✅ ДОБАВЛЕНЫ НОВЫЕ ПОЛЯ:
-    bindingsSheet.getRange(bindingRow, 10).setValue(binding_name || "");        // Binding Name
-    bindingsSheet.getRange(bindingRow, 11).setValue(binding_description || ""); // Binding Description
+    bindingsSheet.getRange(bindingRow, 10).setValue(normalizedBinding.name);        // Binding Name
+    bindingsSheet.getRange(bindingRow, 11).setValue(normalizedBinding.description); // Binding Description
+
+    try {
+      if (oldBinding && oldBinding.bindingName !== normalizedBinding.name) {
+        renameBindingArtifacts(oldBinding.bindingName, normalizedBinding.name);
+      }
+      createPublishedSheet(normalizedBinding.name);
+    } catch (sheetError) {
+      logEvent("WARN", "binding_sheet_update_warning", license_key,
+               `Binding ${binding_id}: ${sheetError.message}`);
+    }
     
     logEvent("INFO", "binding_edited", license_key, 
-             `Binding ID: ${binding_id}, Name: ${binding_name}, VK: ${vk_group_url} (${processedVkGroupId}), TG: ${processedTgChatId}, IP: ${clientIp}`);
+             `Binding ID: ${binding_id}, Name: ${normalizedBinding.name}, VK: ${vk_group_url} (${processedVkGroupId}), TG: ${processedTgChatId}, IP: ${clientIp}`);
     
     return jsonResponse({ 
       success: true,
+      binding_name: normalizedBinding.name,
+      binding_description: normalizedBinding.description,
       converted: {
         vk_group_id: processedVkGroupId,
         tg_chat_id: processedTgChatId
@@ -1666,8 +1903,9 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
               preview: (vkPost.text || '').substring(0, 100) + (vkPost.text && vkPost.text.length > 100 ? '...' : '')
             });
 
+            var publishedSheetName = getPublishedSheetNameFromBindingName(binding.bindingName);
             logEvent("INFO", "post_saved_to_published_sheet", "server",
-                     `Post ${vkPost.id} saved to Published_${binding.bindingName}`);
+                     `Post ${vkPost.id} saved to ${publishedSheetName}`);
           }
         } catch (saveError) {
           logEvent("WARN", "post_save_to_sheet_failed", "server",
@@ -2362,19 +2600,10 @@ function findBindingById(bindingId, licenseKey) {
     
     for (let i = 1; i < data.length; i++) {
       if (data[i][0] === bindingId && data[i][1] === licenseKey) {
-        return {
-          id: data[i][0],
-          licenseKey: data[i][1],
-          userEmail: data[i][2],
-          vkGroupUrl: data[i][3],
-          tgChatId: data[i][4],
-          status: data[i][5],
-          createdAt: data[i][6],
-          lastCheck: data[i][7],
-          formatSettings: data[i][8] || "",
-          bindingName: data[i][9] || "",
-          bindingDescription: data[i][10] || ""
-        };
+        var bindingObject = buildBindingObjectFromRow(data[i]);
+        if (bindingObject) {
+          return bindingObject;
+        }
       }
     }
     
@@ -2410,19 +2639,10 @@ function getUserBindings(licenseKey) {
     
     for (let i = 1; i < data.length; i++) {
       if (data[i][1] === licenseKey) {
-        bindings.push({
-          id: data[i][0],
-          licenseKey: data[i][1],
-          userEmail: data[i][2],
-          vkGroupUrl: data[i][3],
-          tgChatId: data[i][4],
-          status: data[i][5],
-          createdAt: data[i][6],
-          lastCheck: data[i][7],
-          formatSettings: data[i][8],
-          bindingName: data[i][9],
-          bindingDescription: data[i][10]
-        });
+        var bindingObject = buildBindingObjectFromRow(data[i]);
+        if (bindingObject) {
+          bindings.push(bindingObject);
+        }
       }
     }
     
@@ -2467,20 +2687,19 @@ function getUserBindingsWithNames(licenseKey) {
                    `Chat ID: ${tgChatId}, Error: ${tgError.message}`);
         }
         
-        bindings.push({
-          id: data[i][0],
-          vkGroupUrl: vkGroupUrl,
+        var bindingObject = buildBindingObjectFromRow(data[i]);
+        if (!bindingObject) {
+          continue;
+        }
+
+        var bindingWithNames = Object.assign({}, bindingObject, {
           vkGroupName: vkGroupName,
-          tgChatId: tgChatId,
           tgChatName: tgChatName,
-          status: data[i][5],
-          createdAt: data[i][6],
-          lastCheck: data[i][7],
-          
-          // ✅ ДОБАВЛЕНЫ НОВЫЕ ПОЛЯ:
-          bindingName: data[i][9] || "",        // Поле 10
-          bindingDescription: data[i][10] || ""  // Поле 11
+          vk_group_name: vkGroupName,
+          tg_chat_name: tgChatName
         });
+
+        bindings.push(bindingWithNames);
       }
     }
     
@@ -2790,16 +3009,36 @@ function getSystemStats() {
         .reverse(),
       
       recentBindings: bindingsData
-        .map(binding => ({
-          id: binding[0],
-          userEmail: binding[2],
-          vkGroupUrl: binding[3],
-          tgChatId: binding[4],
-          status: binding[5],
-          createdAt: binding[6],
-          bindingName: binding[9] || "",
-          bindingDescription: binding[10] || ""
-        }))
+        .map(function(bindingRow) {
+          var bindingObject = buildBindingObjectFromRow(bindingRow);
+          if (bindingObject) {
+            return {
+              id: bindingObject.id,
+              userEmail: bindingObject.userEmail,
+              vkGroupUrl: bindingObject.vkGroupUrl,
+              tgChatId: bindingObject.tgChatId,
+              status: bindingObject.status,
+              createdAt: bindingObject.createdAt,
+              bindingName: bindingObject.bindingName,
+              bindingDescription: bindingObject.bindingDescription
+            };
+          }
+          var fallbackName = resolveBindingName(bindingRow[9], {
+            bindingId: bindingRow[0],
+            vkGroupUrl: bindingRow[3],
+            processedTgChatId: bindingRow[4]
+          });
+          return {
+            id: bindingRow[0],
+            userEmail: bindingRow[2],
+            vkGroupUrl: bindingRow[3],
+            tgChatId: bindingRow[4],
+            status: bindingRow[5],
+            createdAt: bindingRow[6],
+            bindingName: fallbackName,
+            bindingDescription: sanitizeBindingText(bindingRow[10])
+          };
+        })
         .slice(-10)
         .reverse()
     };
@@ -3713,13 +3952,10 @@ function handlePublishLastPost(payload, clientIp) {
         
         for (var i = 1; i < data.length; i++) {
           if (data[i][0] === binding_id && data[i][1] === license_key) {
-            binding = {
-              id: data[i][0],
-              tgChatId: data[i][4],
-              formatSettings: data[i][8] || "{}",
-              bindingName: data[i][9] || "",
-              bindingDescription: data[i][10] || ""
-            };
+            binding = buildBindingObjectFromRow(data[i]);
+            if (binding) {
+              binding.formatSettings = binding.formatSettings || "";
+            }
             break;
           }
         }
@@ -4454,45 +4690,36 @@ function extractTelegramChatId(input) {
  */
 function createPublishedSheet(bindingName) {
   try {
-    if (!bindingName) {
-      bindingName = 'Unknown';
+    var effectiveName = sanitizeBindingText(bindingName);
+    if (!effectiveName) {
+      effectiveName = 'Unknown';
     }
+    var safeSuffix = sanitizeBindingSheetSuffix(effectiveName);
+    var sheetName = getPublishedSheetNameFromSuffix(safeSuffix);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(sheetName);
     
-    // Создаем безопасное имя листа
-    const safeName = bindingName
-      .replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '')
-      .replace(/\s+/g, '_')
-      .substring(0, 27);
-    
-    const sheetName = `Published_${safeName}`;
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    
-    // Проверяем существует ли лист
-    let sheet = ss.getSheetByName(sheetName);
     if (sheet) {
       logEvent('DEBUG', 'published_sheet_exists', 'server', `Sheet ${sheetName} already exists`);
       return sheet;
     }
     
-    // Создаем новый лист
     sheet = ss.insertSheet(sheetName);
     
-    // Устанавливаем заголовки
-    const headers = [
+    var headers = [
       "Post ID", "Sent At", "TG Chat Name", 
       "Status", "Source", "Post Preview", "VK Post URL"
     ];
     
     sheet.appendRow(headers);
     
-    // Форматируем заголовки
-    const headerRange = sheet.getRange(1, 1, 1, headers.length);
+    var headerRange = sheet.getRange(1, 1, 1, headers.length);
     headerRange.setBackground("#667eea");
     headerRange.setFontColor("white");
     headerRange.setFontWeight("bold");
     sheet.setFrozenRows(1);
     
-    logEvent('INFO', 'published_sheet_created', 'server', `Created sheet: ${sheetName}`);
+    logEvent('INFO', 'published_sheet_created', 'server', `Created sheet: ${sheetName} (binding: ${effectiveName})`);
     
     return sheet;
     
@@ -4511,18 +4738,18 @@ function createPublishedSheet(bindingName) {
  */
 function getLastPostIdFromSheet(bindingName, vkGroupId) {
   try {
-    const sheetName = `Published_${bindingName}`;
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+    var sheetName = getPublishedSheetNameFromBindingName(bindingName);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(sheetName);
     
     if (!sheet) {
-      createPublishedSheet(bindingName);
+      sheet = createPublishedSheet(bindingName);
       return null; // Новый лист, нет постов
     }
     
-    const data = sheet.getDataRange().getValues();
+    var data = sheet.getDataRange().getValues();
     if (data.length <= 1) return null; // Только заголовки
     
-    // Последний пост в первой строке данных
     return data[1][0]; // Post ID из колонки A
     
   } catch (error) {
@@ -4540,23 +4767,23 @@ function getLastPostIdFromSheet(bindingName, vkGroupId) {
  */
 function saveLastPostIdToSheet(bindingName, vkGroupId, postId, postData) {
   try {
-    const sheetName = `Published_${bindingName}`;
-    let sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+    var sheetName = getPublishedSheetNameFromBindingName(bindingName);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(sheetName);
     
     if (!sheet) {
       sheet = createPublishedSheet(bindingName);
     }
     
-    // Добавляем новый пост в начало (после заголовков)
     sheet.insertRowAfter(1);
     sheet.getRange(2, 1, 1, 7).setValues([[
-      postId,                           // Post ID
-      new Date().toISOString(),         // Sent At  
-      postData.tgChatName || 'Unknown', // TG Chat Name
-      'sent',                           // Status
-      'VK',                            // Source
-      postData.preview || '',          // Post Preview
-      `https://vk.com/wall${vkGroupId}_${postId}` // VK Post URL
+      postId,
+      new Date().toISOString(),
+      postData.tgChatName || 'Unknown',
+      'sent',
+      'VK',
+      postData.preview || '',
+      `https://vk.com/wall${vkGroupId}_${postId}`
     ]]);
     
     logEvent('INFO', 'post_saved_to_sheet', 'server', 
@@ -4576,17 +4803,17 @@ function saveLastPostIdToSheet(bindingName, vkGroupId, postId, postData) {
  */
 function checkPostAlreadySent(bindingName, postId) {
   try {
-    const sheetName = `Published_${bindingName}`;
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+    var sheetName = getPublishedSheetNameFromBindingName(bindingName);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(sheetName);
     
     if (!sheet) {
-      return false; // Листа нет, значит пост не отправлялся
+      return false;
     }
     
-    const data = sheet.getDataRange().getValues();
-    if (data.length <= 1) return false; // Только заголовки
+    var data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return false;
     
-    // Ищем пост в колонке A (Post ID)
     for (let i = 1; i < data.length; i++) {
       if (data[i][0] == postId) {
         return true;
