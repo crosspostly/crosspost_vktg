@@ -1879,9 +1879,51 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
       const successCount = results.filter(function(r) { return r.success; }).length;
       const totalCount = results.length;
       
+      // Prepare publication data for binding sheet logging
+      var publicationData = {
+        vkGroupId: binding.vkGroupId || '',
+        vkPostId: vkPost.id || '',
+        vkPostUrl: `https://vk.com/wall${binding.vkGroupId || 'unknown'}_${vkPost.id || 'unknown'}`,
+        vkPostDate: vkPost.date ? new Date(vkPost.date * 1000).toISOString() : new Date().toISOString(),
+        mediaSummary: createMediaSummary(vkPost.attachments || []),
+        captionChars: (vkPost.text || '').length,
+        captionParts: 1, // Will be updated if text is split
+        tgChat: chatId,
+        tgMessageIds: '',
+        tgMessageUrls: '',
+        notes: ''
+      };
+      
+      // Extract message IDs from successful results
+      var successfulResults = results.filter(function(r) { return r.success; });
+      var messageIds = successfulResults.map(function(r) { return r.message_id; }).filter(function(id) { return id; });
+      
+      if (messageIds.length > 0) {
+        publicationData.tgMessageIds = messageIds.join(',');
+        publicationData.tgMessageUrls = generateTelegramMessageUrls(chatId, messageIds);
+      }
+      
       if (successCount === 0) {
+        // ERROR case - log to binding sheet
+        publicationData.status = 'error';
+        publicationData.notes = 'All media parts failed to send';
+        
+        // Write to binding sheet (regardless of binding name validation)
+        if (binding && binding.bindingName) {
+          writePublicationRowToBindingSheet(binding.bindingName, publicationData);
+        }
+        
         return { success: false, error: "All media parts failed to send" };
       } else if (successCount < totalCount) {
+        // PARTIAL case - log to binding sheet
+        publicationData.status = 'partial';
+        publicationData.notes = `Partial success: ${successCount}/${totalCount} parts sent`;
+        
+        // Write to binding sheet (regardless of binding name validation)
+        if (binding && binding.bindingName) {
+          writePublicationRowToBindingSheet(binding.bindingName, publicationData);
+        }
+        
         return { 
           success: true, 
           message_id: results.find(r => r.success)?.message_id,
@@ -1889,6 +1931,15 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
           results: results
         };
       } else {
+        // SUCCESS case - log to binding sheet
+        publicationData.status = 'success';
+        publicationData.notes = 'Successfully sent all media';
+        
+        // Write to binding sheet (regardless of binding name validation)
+        if (binding && binding.bindingName) {
+          writePublicationRowToBindingSheet(binding.bindingName, publicationData);
+        }
+        
         var finalResult = {
           success: true,
           message_id: results.find(r => r.success)?.message_id,
@@ -1923,6 +1974,38 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
       if (text) {
        var fallbackResult = sendTelegramMessage(botToken, chatId, text);
 
+       // Prepare publication data for fallback case
+       var fallbackPublicationData = {
+         vkGroupId: binding.vkGroupId || '',
+         vkPostId: vkPost.id || '',
+         vkPostUrl: `https://vk.com/wall${binding.vkGroupId || 'unknown'}_${vkPost.id || 'unknown'}`,
+         vkPostDate: vkPost.date ? new Date(vkPost.date * 1000).toISOString() : new Date().toISOString(),
+         mediaSummary: createMediaSummary(vkPost.attachments || []),
+         captionChars: (vkPost.text || '').length,
+         captionParts: 1,
+         tgChat: chatId,
+         tgMessageIds: '',
+         tgMessageUrls: '',
+         notes: ''
+       };
+
+       if (fallbackResult.success) {
+         // SUCCESS fallback case
+         fallbackPublicationData.status = 'success';
+         fallbackPublicationData.notes = 'Successfully sent text only (fallback mode)';
+         fallbackPublicationData.tgMessageIds = fallbackResult.message_id ? fallbackResult.message_id.toString() : '';
+         fallbackPublicationData.tgMessageUrls = generateTelegramMessageUrls(chatId, [fallbackResult.message_id]);
+       } else {
+         // ERROR fallback case
+         fallbackPublicationData.status = 'error';
+         fallbackPublicationData.notes = `Fallback text send failed: ${fallbackResult.error || 'Unknown error'}`;
+       }
+
+       // Write to binding sheet (regardless of binding name validation)
+       if (binding && binding.bindingName) {
+         writePublicationRowToBindingSheet(binding.bindingName, fallbackPublicationData);
+       }
+
        // Сохраняем информацию даже для fallback
        if (fallbackResult.success && binding && binding.bindingName && vkPost && vkPost.id) {
          try {
@@ -1938,11 +2021,53 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
        return fallbackResult;
       }
 
+      // Complete failure case - log to binding sheet
+      var errorPublicationData = {
+        status: 'error',
+        vkGroupId: binding.vkGroupId || '',
+        vkPostId: vkPost.id || '',
+        vkPostUrl: `https://vk.com/wall${binding.vkGroupId || 'unknown'}_${vkPost.id || 'unknown'}`,
+        vkPostDate: vkPost.date ? new Date(vkPost.date * 1000).toISOString() : new Date().toISOString(),
+        mediaSummary: createMediaSummary(vkPost.attachments || []),
+        captionChars: (vkPost.text || '').length,
+        captionParts: 1,
+        tgChat: chatId,
+        tgMessageIds: '',
+        tgMessageUrls: '',
+        notes: `Media send failed: ${mediaError.message}`
+      };
+
+      // Write to binding sheet (regardless of binding name validation)
+      if (binding && binding.bindingName) {
+        writePublicationRowToBindingSheet(binding.bindingName, errorPublicationData);
+      }
+
       return { success: false, error: mediaError.message };
     }
     
   } catch (error) {
     logEvent("ERROR", "send_telegram_error", "server", error.message);
+    
+    // Log to binding sheet for any other errors
+    if (binding && binding.bindingName && vkPost) {
+      var errorPublicationData = {
+        status: 'error',
+        vkGroupId: binding.vkGroupId || '',
+        vkPostId: vkPost.id || '',
+        vkPostUrl: `https://vk.com/wall${binding.vkGroupId || 'unknown'}_${vkPost.id || 'unknown'}`,
+        vkPostDate: vkPost.date ? new Date(vkPost.date * 1000).toISOString() : new Date().toISOString(),
+        mediaSummary: createMediaSummary(vkPost.attachments || []),
+        captionChars: (vkPost.text || '').length,
+        captionParts: 1,
+        tgChat: chatId,
+        tgMessageIds: '',
+        tgMessageUrls: '',
+        notes: `General error: ${error.message}`
+      };
+      
+      writePublicationRowToBindingSheet(binding.bindingName, errorPublicationData);
+    }
+    
     return { success: false, error: error.message };
   }
 }
@@ -2915,10 +3040,11 @@ function getAdminPanelHtml() {
   html += '    </table>';
   html += '    <hr>';
   html += '    <h2>🛠️ Управление системой</h2>';
-  html += '    <p>';
-  html += '      <button onclick="ensureBindingsStructure()">🔧 Обеспечить структуру Bindings (11 колонок)</button>';
-  html += '      <button onclick="google.script.run.withSuccessHandler(function(result) { alert(\'Логи очищены: \' + result.totalDeleted + \' записей из \' + result.sheetsProcessed + \' листов\'); }).withFailureHandler(function(error) { alert(\'Ошибка: \' + error.message); }).cleanOldLogs();">🧹 Очистить старые логи (>30 дней)</button>';
-  html += '    </p>';
+      html += '    <p>';
+      html += '      <button onclick="ensureBindingsStructure()">🔧 Обеспечить структуру Bindings (11 колонок)</button>';
+      html += '      <button onclick="google.script.run.withSuccessHandler(function(result) { alert(\'Логи очищены: \' + result.totalDeleted + \' записей из \' + result.sheetsProcessed + \' листов\'); }).withFailureHandler(function(error) { alert(\'Ошибка: \' + error.message); }).cleanOldLogs();">🧹 Очистить старые логи (>30 дней)</button>';
+      html += '      <button onclick="testPublicationRows()">🧪 Тестировать запись строк публикации</button>';
+      html += '    </p>';
   html += '  </div>';
   html += '</body>';
   html += '</html>';
@@ -2938,6 +3064,21 @@ function getAdminPanelHtml() {
   html += '  }).withFailureHandler(function(error) {';
   html += '    alert("❌ Критическая ошибка: " + error.message);';
   html += '  }).ensureBindingsSheetStructure();';
+  html += '}';
+  html += 'function testPublicationRows() {';
+  html += '  google.script.run.withSuccessHandler(function(result) {';
+  html += '    if (result.success) {';
+  html += '      var message = "✅ Тесты завершены успешно!\\n\\n";';
+  html += '      message += "Тестовый лист: " + result.testBindingName + "\\n";';
+  html += '      message += "Протестировано: " + result.testsRun.join(", ") + "\\n\\n";';
+  html += '      message += "Проверьте лист \\"" + result.testBindingName + "\\" в таблице.";';
+  html += '      alert(message);';
+  html += '    } else {';
+  html += '      alert("❌ Ошибка тестирования: " + result.error);';
+  html += '    }';
+  html += '  }).withFailureHandler(function(error) {';
+  html += '    alert("❌ Критическая ошибка тестирования: " + error.message);';
+  html += '  }).testPublicationRowWrites();';
   html += '}';
   html += '</script>';
   
@@ -4928,6 +5069,389 @@ function cleanOldLogs() {
   } catch (error) {
     logEvent('ERROR', 'log_cleanup_failed', 'server', error.message);
     return { success: false, error: error.message, totalDeleted: 0, sheetResults: [] };
+  }
+}
+
+// ============================================
+// 9. BINDING NAME PUBLICATION LOGGING
+// ============================================
+//
+// This section implements per-binding publication logging as per ticket requirements:
+// - Writes publication rows to bindingName sheets (not Published_ sheets)
+// - Validates bindingName (Latin/Cyrillic letters and digits only)
+// - Uses bindingName exactly as sheet name after validation
+// - Inserts at row 2 using sheet.insertRowAfter(1) for top-insert behavior
+// - Tracks status: success | partial | error for each send attempt
+// - Columns: timestamp, status, vkGroupId, vkPostId, vkPostUrl, vkPostDate,
+//           mediaSummary, captionChars, captionParts, tgChat, tgMessageIds, 
+//           tgMessageUrls, notes
+// - Generates TG links preferring https://t.me/username/messageId format
+// - Auto-creates sheets with correct headers if missing
+// - Integrates into send pipeline after each attempt, regardless of outcome
+// - Includes test harness (testPublicationRowWrites) for validation
+// ============================================
+
+/**
+ * Validates binding name according to requirements: letters (Latin/Cyrillic) and digits only
+ * @param {string} bindingName - binding name to validate
+ * @return {boolean} - true if valid
+ */
+function validateBindingName(bindingName) {
+  if (!bindingName || typeof bindingName !== 'string') {
+    return false;
+  }
+  
+  // Allow Latin letters, Cyrillic letters, and digits only
+  const validPattern = /^[a-zA-Zа-яА-ЯёЁ0-9]+$/;
+  return validPattern.test(bindingName.trim());
+}
+
+/**
+ * Sanitizes binding text for use in sheet names
+ * @param {string} text - text to sanitize
+ * @return {string} - sanitized text
+ */
+function sanitizeBindingText(text) {
+  if (!text || typeof text !== 'string') {
+    return '';
+  }
+  
+  return text.trim().replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '').replace(/\s+/g, ' ').substring(0, 50);
+}
+
+/**
+ * Creates a safe sheet suffix from binding name
+ * @param {string} bindingName - binding name
+ * @return {string} - safe suffix for sheet name
+ */
+function sanitizeBindingSheetSuffix(bindingName) {
+  if (!bindingName) {
+    return 'unknown';
+  }
+  
+  // Remove invalid characters and replace spaces with underscores
+  var safe = bindingName
+    .replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '')
+    .replace(/\s+/g, '_')
+    .substring(0, 30); // Google Sheets limit for sheet names
+  
+  return safe || 'unknown';
+}
+
+/**
+ * Gets Published sheet name from binding name (for existing Published_ sheets)
+ * @param {string} bindingName - binding name
+ * @return {string} - Published sheet name
+ */
+function getPublishedSheetNameFromBindingName(bindingName) {
+  if (!bindingName) {
+    return 'Published_Unknown';
+  }
+  
+  var safeSuffix = sanitizeBindingSheetSuffix(bindingName);
+  return getPublishedSheetNameFromSuffix(safeSuffix);
+}
+
+/**
+ * Gets Published sheet name from suffix
+ * @param {string} suffix - safe suffix
+ * @return {string} - Published sheet name
+ */
+function getPublishedSheetNameFromSuffix(suffix) {
+  return 'Published_' + suffix;
+}
+
+/**
+ * Creates or gets a binding sheet for publication logging
+ * @param {string} bindingName - validated binding name (used as sheet name)
+ * @return {Sheet} - the sheet object
+ */
+function getOrCreateBindingSheet(bindingName) {
+  try {
+    if (!validateBindingName(bindingName)) {
+      throw new Error(`Invalid binding name: "${bindingName}". Only letters and digits allowed.`);
+    }
+    
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(bindingName);
+    
+    if (sheet) {
+      logEvent('DEBUG', 'binding_sheet_exists', 'server', `Sheet "${bindingName}" already exists`);
+      return sheet;
+    }
+    
+    // Create new sheet with bindingName as exact sheet name
+    sheet = ss.insertSheet(bindingName);
+    
+    // Define headers according to ticket requirements
+    var headers = [
+      "timestamp", "status", "vkGroupId", "vkPostId", "vkPostUrl", 
+      "vkPostDate", "mediaSummary", "captionChars", "captionParts", 
+      "tgChat", "tgMessageIds", "tgMessageUrls", "notes"
+    ];
+    
+    sheet.appendRow(headers);
+    
+    // Format headers
+    var headerRange = sheet.getRange(1, 1, 1, headers.length);
+    headerRange.setBackground("#4285f4");
+    headerRange.setFontColor("white");
+    headerRange.setFontWeight("bold");
+    sheet.setFrozenRows(1);
+    
+    logEvent('INFO', 'binding_sheet_created', 'server', `Created binding sheet: "${bindingName}"`);
+    
+    return sheet;
+    
+  } catch (error) {
+    logEvent('ERROR', 'binding_sheet_creation_failed', 'server', 
+      `Binding: "${bindingName}", Error: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
+ * Writes a publication row to binding sheet with top-insert behavior
+ * @param {string} bindingName - validated binding name
+ * @param {Object} publicationData - publication data
+ */
+function writePublicationRowToBindingSheet(bindingName, publicationData) {
+  try {
+    if (!validateBindingName(bindingName)) {
+      logEvent('WARN', 'invalid_binding_name_skip', 'server', 
+        `Skipping publication row for invalid binding name: "${bindingName}"`);
+      return;
+    }
+    
+    var sheet = getOrCreateBindingSheet(bindingName);
+    
+    // Prepare row data according to column order
+    var rowData = [
+      publicationData.timestamp || new Date().toISOString(),
+      publicationData.status || 'unknown',
+      publicationData.vkGroupId || '',
+      publicationData.vkPostId || '',
+      publicationData.vkPostUrl || '',
+      publicationData.vkPostDate || '',
+      publicationData.mediaSummary || '',
+      publicationData.captionChars || 0,
+      publicationData.captionParts || 0,
+      publicationData.tgChat || '',
+      publicationData.tgMessageIds || '',
+      publicationData.tgMessageUrls || '',
+      publicationData.notes || ''
+    ];
+    
+    // Insert at row 2 (top-insert behavior)
+    sheet.insertRowAfter(1);
+    sheet.getRange(2, 1, 1, rowData.length).setValues([rowData]);
+    
+    logEvent('INFO', 'publication_row_written', 'server', 
+      `Binding: "${bindingName}", Status: ${publicationData.status}, VK Post: ${publicationData.vkPostId}`);
+    
+  } catch (error) {
+    logEvent('ERROR', 'publication_row_write_failed', 'server', 
+      `Binding: "${bindingName}", Error: ${error.message}`);
+    // Don't throw - publication logging failure shouldn't break the main flow
+  }
+}
+
+/**
+ * Generates Telegram message URLs from message IDs and chat info
+ * @param {string} chatId - Telegram chat ID
+ * @param {Array} messageIds - array of message IDs
+ * @return {string} - comma-separated URLs
+ */
+function generateTelegramMessageUrls(chatId, messageIds) {
+  try {
+    if (!messageIds || messageIds.length === 0) {
+      return '';
+    }
+    
+    var urls = [];
+    
+    // Try to get chat info to determine if we have username
+    var chatInfo = null;
+    try {
+      var botToken = PropertiesService.getScriptProperties().getProperty("BOT_TOKEN");
+      if (botToken) {
+        var response = UrlFetchApp.fetch(`https://api.telegram.org/bot${botToken}/getChat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          payload: JSON.stringify({ chat_id: chatId }),
+          muteHttpExceptions: true,
+          timeout: TIMEOUTS.FAST
+        });
+        
+        var result = JSON.parse(response.getContentText());
+        if (result.ok) {
+          chatInfo = result.result;
+        }
+      }
+    } catch (chatError) {
+      logEvent('DEBUG', 'tg_chat_info_failed', 'server', `Chat: ${chatId}, Error: ${chatError.message}`);
+    }
+    
+    // Generate URLs
+    for (var i = 0; i < messageIds.length; i++) {
+      var messageId = messageIds[i];
+      
+      if (chatInfo && chatInfo.username) {
+        // Prefer username format: https://t.me/username/messageId
+        urls.push(`https://t.me/${chatInfo.username}/${messageId}`);
+      } else {
+        // Fallback to internal format: https://t.me/c/chatId/messageId
+        // Remove @ if present and handle negative chat IDs
+        var cleanChatId = chatId.toString().replace('@', '');
+        if (cleanChatId.startsWith('-100')) {
+          cleanChatId = cleanChatId.substring(4); // Remove -100 prefix for /c/ format
+        }
+        urls.push(`https://t.me/c/${cleanChatId}/${messageId}`);
+      }
+    }
+    
+    return urls.join(', ');
+    
+  } catch (error) {
+    logEvent('ERROR', 'tg_url_generation_failed', 'server', error.message);
+    return '';
+  }
+}
+
+/**
+ * Creates media summary string from attachments
+ * @param {Array} attachments - VK post attachments
+ * @return {string} - media summary
+ */
+function createMediaSummary(attachments) {
+  try {
+    if (!attachments || attachments.length === 0) {
+      return 'no media';
+    }
+    
+    var counts = {
+      photo: 0,
+      video: 0,
+      audio: 0,
+      doc: 0,
+      link: 0,
+      other: 0
+    };
+    
+    for (var i = 0; i < attachments.length; i++) {
+      var type = attachments[i].type;
+      if (counts.hasOwnProperty(type)) {
+        counts[type]++;
+      } else {
+        counts.other++;
+      }
+    }
+    
+    var parts = [];
+    if (counts.photo > 0) parts.push(`${counts.photo} photo${counts.photo > 1 ? 's' : ''}`);
+    if (counts.video > 0) parts.push(`${counts.video} video${counts.video > 1 ? 's' : ''}`);
+    if (counts.audio > 0) parts.push(`${counts.audio} audio${counts.audio > 1 ? 's' : ''}`);
+    if (counts.doc > 0) parts.push(`${counts.doc} doc${counts.doc > 1 ? 's' : ''}`);
+    if (counts.link > 0) parts.push(`${counts.link} link${counts.link > 1 ? 's' : ''}`);
+    if (counts.other > 0) parts.push(`${counts.other} other`);
+    
+    return parts.length > 0 ? parts.join(', ') : 'no media';
+    
+  } catch (error) {
+    logEvent('ERROR', 'media_summary_failed', 'server', error.message);
+    return 'error counting media';
+  }
+}
+
+/**
+ * Test harness for publication row writes
+ * Tests success, partial, and error cases
+ */
+function testPublicationRowWrites() {
+  try {
+    logEvent('INFO', 'test_publication_row_writes_start', 'server', 'Starting publication row write tests');
+    
+    var testBindingName = 'TestBinding123';
+    var testVkGroupId = '-123456789';
+    var testVkPostId = '98765';
+    var testChatId = '@testchannel';
+    
+    // Test 1: Success case
+    logEvent('INFO', 'test_success_case', 'server', 'Testing success case');
+    writePublicationRowToBindingSheet(testBindingName, {
+      status: 'success',
+      vkGroupId: testVkGroupId,
+      vkPostId: testVkPostId,
+      vkPostUrl: `https://vk.com/wall${testVkGroupId}_${testVkPostId}`,
+      vkPostDate: new Date().toISOString(),
+      mediaSummary: '3 photos, 1 video',
+      captionChars: 250,
+      captionParts: 1,
+      tgChat: testChatId,
+      tgMessageIds: '12345',
+      tgMessageUrls: 'https://t.me/testchannel/12345',
+      notes: 'Successfully sent all media'
+    });
+    
+    // Test 2: Partial case
+    logEvent('INFO', 'test_partial_case', 'server', 'Testing partial case');
+    writePublicationRowToBindingSheet(testBindingName, {
+      status: 'partial',
+      vkGroupId: testVkGroupId,
+      vkPostId: '98766',
+      vkPostUrl: `https://vk.com/wall${testVkGroupId}_98766`,
+      vkPostDate: new Date().toISOString(),
+      mediaSummary: '5 photos',
+      captionChars: 300,
+      captionParts: 2,
+      tgChat: testChatId,
+      tgMessageIds: '12346,12347',
+      tgMessageUrls: 'https://t.me/testchannel/12346, https://t.me/testchannel/12347',
+      notes: 'Some media failed to send'
+    });
+    
+    // Test 3: Error case
+    logEvent('INFO', 'test_error_case', 'server', 'Testing error case');
+    writePublicationRowToBindingSheet(testBindingName, {
+      status: 'error',
+      vkGroupId: testVkGroupId,
+      vkPostId: '98767',
+      vkPostUrl: `https://vk.com/wall${testVkGroupId}_98767`,
+      vkPostDate: new Date().toISOString(),
+      mediaSummary: '2 photos',
+      captionChars: 150,
+      captionParts: 1,
+      tgChat: testChatId,
+      tgMessageIds: '',
+      tgMessageUrls: '',
+      notes: 'Failed to send: Network timeout'
+    });
+    
+    // Test 4: Invalid binding name (should be skipped)
+    logEvent('INFO', 'test_invalid_binding', 'server', 'Testing invalid binding name');
+    writePublicationRowToBindingSheet('Invalid@Binding#Name', {
+      status: 'success',
+      vkGroupId: testVkGroupId,
+      vkPostId: '98768',
+      notes: 'This should be skipped due to invalid name'
+    });
+    
+    logEvent('INFO', 'test_publication_row_writes_complete', 'server', 
+      'Publication row write tests completed successfully');
+    
+    return {
+      success: true,
+      message: 'Publication row write tests completed',
+      testBindingName: testBindingName,
+      testsRun: ['success', 'partial', 'error', 'invalid_name']
+    };
+    
+  } catch (error) {
+    logEvent('ERROR', 'test_publication_row_writes_failed', 'server', error.message);
+    return {
+      success: false,
+      error: error.message
+    };
   }
 }
 
