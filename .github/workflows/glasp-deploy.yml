@@ -1,0 +1,97 @@
+name: Deploy VK-Telegram Crossposter
+
+on:
+  push:
+    branches: [main, refactor-split-client-server-modules-limit-500-lines-glasp-apps-script]
+    paths:
+      - 'server/**'
+      - 'client/**'
+      - 'glasp/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - 'client/**'
+      - 'glasp/**'
+  workflow_dispatch:
+
+jobs:
+  deploy-server:
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.message, '[server]') || github.event_name == 'workflow_dispatch'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: glasp/package.json
+
+    - name: Install dependencies
+      working-directory: ./glasp
+      run: npm install
+
+    - name: Install clasp globally
+      run: npm install -g @google/clasp
+
+    - name: Setup clasp credentials
+      run: |
+        echo '${{ secrets.CLASPRC_JSON }}' > ~/.clasprc.json
+        chmod 600 ~/.clasprc.json
+
+    - name: Build server modules
+      working-directory: .
+      run: node glasp/deploy-server.js
+
+    - name: Setup server clasp config
+      run: |
+        echo '{"scriptId": "${{ secrets.SERVER_SCRIPT_ID }}"}' > dist/.clasp.json
+
+    - name: Deploy server to Apps Script
+      working-directory: ./dist
+      run: |
+        clasp status || true
+        clasp push --force
+
+  deploy-client:
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.message, '[client]') || github.event_name == 'workflow_dispatch'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: glasp/package.json
+
+    - name: Install dependencies
+      working-directory: ./glasp
+      run: npm install
+
+    - name: Install clasp globally
+      run: npm install -g @google/clasp
+
+    - name: Setup clasp credentials
+      run: |
+        echo '${{ secrets.CLASPRC_JSON }}' > ~/.clasprc.json
+        chmod 600 ~/.clasprc.json
+
+    - name: Build client modules
+      working-directory: .
+      run: node glasp/deploy-client.js
+
+    - name: Setup client clasp config
+      run: |
+        echo '{"scriptId": "${{ secrets.CLIENT_SCRIPT_ID }}"}' > dist/.clasp.json
+
+    - name: Deploy client to Apps Script
+      working-directory: ./dist
+      run: |
+        clasp status || true
+        clasp push --force
