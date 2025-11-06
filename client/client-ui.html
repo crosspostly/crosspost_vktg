@@ -1,68 +1,65 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VK→Telegram Manager v<?= CLIENT_VERSION ?></title>
-  
-  <!-- TODO: Перенести все CSS стили из оригинального getMainPanelHtml() -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    /* TODO: Перенести 400+ строк CSS */
-    body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
-    .container { max-width: 1000px; margin: 0 auto; }
-    /* ... остальные стили */
+    body { font-family: Arial, sans-serif; padding: 16px; }
+    .row { margin-bottom: 12px; }
+    label { display:block; font-weight: bold; margin-bottom: 6px; }
+    input, textarea { width:100%; padding: 8px; border:1px solid #ddd; border-radius: 4px; }
+    button { padding: 10px 16px; border:none; background:#667eea; color:#fff; border-radius: 4px; cursor:pointer; }
+    button:hover { background:#5568d3; }
+    .muted { color:#666; font-size: 12px; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; grid-gap: 12px; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <!-- TODO: Перенести всю HTML структуру (800+ строк) -->
-    <header>
-      <h1>VK→Telegram Manager</h1>
-      <div class="version">v<?= CLIENT_VERSION ?></div>
-    </header>
-    
-    <!-- License Section -->
-    <section id="license-section">
-      <!-- TODO: License UI -->
-    </section>
-    
-    <!-- Bindings Section -->
-    <section id="bindings-section">
-      <!-- TODO: Bindings UI -->
-    </section>
-    
-    <!-- Status Section -->
-    <section id="status-section">
-      <!-- TODO: Status UI -->
-    </section>
-    
-    <!-- Modal dialogs -->
-    <div id="modal-container">
-      <!-- TODO: Modal dialogs -->
+  <h2>VK→Telegram Client</h2>
+  <div class="row">
+    <label>Лицензия</label>
+    <div id="license">—</div>
+  </div>
+
+  <div class="grid">
+    <div>
+      <label>VK Group URL / screen_name</label>
+      <input id="vk" placeholder="https://vk.com/varsmana или varsmana" />
+    </div>
+    <div>
+      <label>Telegram Chat ID</label>
+      <input id="tg" placeholder="@channel или -100123…" />
     </div>
   </div>
 
+  <div class="row">
+    <button onclick="publishLast()">Опубликовать последний пост</button>
+    <button onclick="testDirect()">Тест: send_post_direct</button>
+  </div>
+
+  <div class="row">
+    <label>Логи</label>
+    <pre id="logs" class="muted"></pre>
+  </div>
+
   <script>
-    // TODO: Перенести весь клиентский JavaScript (300+ строк)
-    // Template variables
-    const SERVERURL = "<?= SERVER_URL ?>";
-    const CLIENT_VERSION = "<?= CLIENT_VERSION ?>";
-    
-    // App state
-    let appState = {
-      license: null,
-      bindings: [],
-      loading: false
-    };
-    
-    // TODO: UI event handlers
-    // TODO: DOM manipulation
-    // TODO: Frontend логика
-    
-    // Initialize app
-    document.addEventListener('DOMContentLoaded', function() {
-      // TODO: Инициализация приложения
-    });
+    function log(msg) { const el = document.getElementById('logs'); el.textContent += (msg + "\n"); }
+    function setLicense(info) { document.getElementById('license').textContent = JSON.stringify(info); }
+
+    google.script.run.withSuccessHandler(setLicense).getLicense();
+
+    function publishLast(){
+      const vk = document.getElementById('vk').value.trim();
+      const tg = document.getElementById('tg').value.trim();
+      if(!vk||!tg){ alert('Укажите VK и TG'); return; }
+      google.script.run.withSuccessHandler(function(res){ log('publish_last_post: '+JSON.stringify(res)); }).withFailureHandler(function(err){ log('ERR: '+err.message); }).publishLastPost('BINDING_ID_NOT_USED_UI', vk);
+    }
+    function testDirect(){
+      const vk = document.getElementById('vk').value.trim() || 'varsmana';
+      const tg = document.getElementById('tg').value.trim();
+      if(!tg){ alert('Укажите TG'); return; }
+      google.script.run.withSuccessHandler(function(res){ log('send_post_direct: '+JSON.stringify(res)); }).withFailureHandler(function(err){ log('ERR: '+err.message); }).testDuplicateVarsmanaToTG();
+    }
   </script>
 </body>
 </html>
