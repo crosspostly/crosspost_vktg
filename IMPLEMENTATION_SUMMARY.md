@@ -8,6 +8,7 @@
 - **Binding name normalization**: Automatically strips unsupported characters so stored bindingName matches sheet name
 - **Exact sheet naming**: Uses bindingName as sheet name after validation
 - **Top-insert behavior**: Uses `sheet.insertRowAfter(1)` to insert at row 2
+- **VK group resolution**: Accepts numeric IDs and vk.com screen names (auto-resolved via VK API)
 
 ### 2. Required Columns Implemented
 All ticket-required columns are implemented in correct order:
