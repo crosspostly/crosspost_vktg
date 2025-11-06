@@ -21,8 +21,16 @@ const SERVER_DIR = path.join(__dirname, '..', 'server');
 const OUTPUT_FILE = path.join(__dirname, '..', 'dist', 'server.gs');
 const SERVER_MODULES = [
   'server.gs',
-  'utils.gs',
-  'license-service.gs',
+  'utils-core.gs',
+  'utils-stats.gs',
+  'utils-url.gs',
+  'utils-binding.gs',
+  'utils-media.gs',
+  'license-core.gs',
+  'license-config.gs',
+  'license-security.gs',
+  'license-handlers.gs',
+  'license-admin.gs',
   'bindings-service.gs',
   'published-sheets-service.gs',
   'vk-service.gs',
