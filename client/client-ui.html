@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VK→Telegram Manager v<?= CLIENT_VERSION ?></title>
+  
+  <!-- TODO: Перенести все CSS стили из оригинального getMainPanelHtml() -->
+  <style>
+    /* TODO: Перенести 400+ строк CSS */
+    body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+    .container { max-width: 1000px; margin: 0 auto; }
+    /* ... остальные стили */
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- TODO: Перенести всю HTML структуру (800+ строк) -->
+    <header>
+      <h1>VK→Telegram Manager</h1>
+      <div class="version">v<?= CLIENT_VERSION ?></div>
+    </header>
+    
+    <!-- License Section -->
+    <section id="license-section">
+      <!-- TODO: License UI -->
+    </section>
+    
+    <!-- Bindings Section -->
+    <section id="bindings-section">
+      <!-- TODO: Bindings UI -->
+    </section>
+    
+    <!-- Status Section -->
+    <section id="status-section">
+      <!-- TODO: Status UI -->
+    </section>
+    
+    <!-- Modal dialogs -->
+    <div id="modal-container">
+      <!-- TODO: Modal dialogs -->
+    </div>
+  </div>
+
+  <script>
+    // TODO: Перенести весь клиентский JavaScript (300+ строк)
+    // Template variables
+    const SERVERURL = "<?= SERVER_URL ?>";
+    const CLIENT_VERSION = "<?= CLIENT_VERSION ?>";
+    
+    // App state
+    let appState = {
+      license: null,
+      bindings: [],
+      loading: false
+    };
+    
+    // TODO: UI event handlers
+    // TODO: DOM manipulation
+    // TODO: Frontend логика
+    
+    // Initialize app
+    document.addEventListener('DOMContentLoaded', function() {
+      // TODO: Инициализация приложения
+    });
+  </script>
+</body>
+</html>
