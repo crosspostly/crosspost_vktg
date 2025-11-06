@@ -21,6 +21,7 @@ const SERVER_DIR = path.join(__dirname, '..', 'server');
 const OUTPUT_FILE = path.join(__dirname, '..', 'dist', 'server.gs');
 const SERVER_MODULES = [
   'server.gs',
+  'dependency-test.gs',
   'utils-core.gs',
   'utils-stats.gs',
   'utils-url.gs',
