@@ -220,14 +220,17 @@ function addBinding(bindingName, bindingDescription, vkGroupUrl, tgChatId, forma
     const license = getLicense();
     if (!license) return { success: false, error: "❌ Лицензия не найдена" };
     
+    const sanitizedName = typeof bindingName === "string" ? bindingName.trim() : "";
+    const sanitizedDescription = typeof bindingDescription === "string" ? bindingDescription.trim() : "";
+    
     logEvent("INFO", "add_binding_start", "client", 
-             `Name: ${bindingName}, VK URL: ${vkGroupUrl}, TG Chat: ${tgChatId}`);
+             `Name: ${sanitizedName}, VK URL: ${vkGroupUrl}, TG Chat: ${tgChatId}`);
     
     const payload = {
       event: "add_binding",
       license_key: license.key,
-      binding_name: bindingName,
-      binding_description: bindingDescription || "",
+      binding_name: sanitizedName,
+      binding_description: sanitizedDescription,
       vk_group_url: vkGroupUrl,
       tg_chat_id: tgChatId,
       formatSettings: formatSettings || {
@@ -251,7 +254,7 @@ function addBinding(bindingName, bindingDescription, vkGroupUrl, tgChatId, forma
     
     if (result.success) {
       logEvent("INFO", "binding_added", "client",
-               `Binding ID: ${result.binding_id}, Name: ${bindingName}, VK Group: ${result.converted?.vk_group_id || 'N/A'}`);
+               `Binding ID: ${result.binding_id}, Name: ${sanitizedName}, VK Group: ${result.converted?.vk_group_id || 'N/A'}`);
       
       // Published sheets and cache lifecycle are managed by server v6
       return result;
@@ -271,8 +274,11 @@ function editBinding(bindingId, bindingName, bindingDescription, vkGroupUrl, tgC
     const license = getLicense();
     if (!license) return { success: false, error: "❌ Лицензия не найдена" };
     
+    const sanitizedName = typeof bindingName === "string" ? bindingName.trim() : "";
+    const sanitizedDescription = typeof bindingDescription === "string" ? bindingDescription.trim() : "";
+    
     logEvent("INFO", "edit_binding_start", "client",
-             `Binding ID: ${bindingId}, Name: ${bindingName}, VK URL: ${vkGroupUrl}`);
+             `Binding ID: ${bindingId}, Name: ${sanitizedName}, VK URL: ${vkGroupUrl}`);
     
     // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Получаем старую связку для сравнения групп
     const bindingsResult = getBindings();
@@ -300,8 +306,8 @@ function editBinding(bindingId, bindingName, bindingDescription, vkGroupUrl, tgC
       event: "edit_binding",
       license_key: license.key,
       binding_id: bindingId,
-      binding_name: bindingName,
-      binding_description: bindingDescription || "",
+      binding_name: sanitizedName,
+      binding_description: sanitizedDescription,
       vk_group_url: vkGroupUrl,
       tg_chat_id: tgChatId,
       formatSettings: formatSettings || {
@@ -322,7 +328,7 @@ function editBinding(bindingId, bindingName, bindingDescription, vkGroupUrl, tgC
     const result = JSON.parse(response.getContentText());
     
     if (result.success) {
-      logEvent("INFO", "binding_edited", "client", `Binding ID: ${bindingId}, Name: ${bindingName}`);
+      logEvent("INFO", "binding_edited", "client", `Binding ID: ${bindingId}, Name: ${sanitizedName}`);
       
       // Published sheet lifecycle is managed on the server after edits
     } else {
