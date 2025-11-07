@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * VK→Telegram Crossposter - LICENSE SERVICE MODULE
  * Управление лицензиями, конфигурацией и проверкой здоровья сервера
@@ -14,8 +13,12 @@
 /**
  * Обработка запроса на проверку лицензии
  * @param {Object} payload - Данные запроса
+ * @param {string} payload.license_key - Ключ лицензии
  * @param {string} clientIp - IP адрес клиента
  * @returns {ContentService.TextOutput} - JSON ответ
+ * @returns {boolean} returns.success - Успешность проверки
+ * @returns {Object} [returns.license] - Информация о лицензии
+ * @returns {string} [returns.error] - Сообщение об ошибке
  */
 function handleCheckLicense(payload, clientIp) {
   try {
@@ -60,7 +63,7 @@ function handleCheckLicense(payload, clientIp) {
 /**
  * Поиск лицензии по ключу
  * @param {string} licenseKey - Лицензионный ключ
- * @returns {Object|null} - Объект лицензии или null
+ * @returns {LicenseRecord|null} - Объект лицензии или null
  */
 function findLicense(licenseKey) {
   try {
@@ -95,6 +98,7 @@ function findLicense(licenseKey) {
 
 /**
  * Показывает диалог конфигурации сервера
+ * @returns {void}
  */
 function showConfigDialog() {
   try {

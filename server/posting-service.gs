@@ -1,9 +1,24 @@
-// @ts-nocheck
 /**
  * VK→Telegram Crossposter - POSTING SERVICE MODULE
  * Обработчики публикации: send_post, send_post_direct, test_publication
  */
 
+/**
+ * Обработка запроса на отправку поста
+ * @param {Object} payload - Данные запроса
+ * @param {string} payload.license_key - Ключ лицензии
+ * @param {VkPost} payload.post - VK пост
+ * @param {string} payload.binding_id - ID связки
+ * @param {string} payload.format_settings - Настройки форматирования
+ * @param {string} payload.tg_chat_id - ID Telegram чата
+ * @param {string} payload.vk_group_id - ID VK группы
+ * @param {string} clientIp - IP адрес клиента
+ * @returns {ContentService.TextOutput} - JSON ответ
+ * @returns {boolean} returns.success - Успешность отправки
+ * @returns {number} [returns.message_id] - ID сообщения
+ * @returns {Object} [returns.result] - Результат отправки
+ * @returns {string} [returns.error] - Ошибка если была
+ */
 function handleSendPost(payload, clientIp) {
   try {
     var { license_key, post, binding_id, format_settings, tg_chat_id, vk_group_id } = payload;
@@ -34,6 +49,21 @@ function handleSendPost(payload, clientIp) {
   }
 }
 
+/**
+ * Обработка запроса на прямую отправку поста
+ * @param {Object} payload - Данные запроса
+ * @param {string} payload.license_key - Ключ лицензии
+ * @param {VkPost} payload.post - VK пост
+ * @param {string} payload.tg_chat_id - ID Telegram чата
+ * @param {string} payload.format_settings - Настройки форматирования
+ * @param {string} payload.vk_group_id - ID VK группы
+ * @param {string} clientIp - IP адрес клиента
+ * @returns {ContentService.TextOutput} - JSON ответ
+ * @returns {boolean} returns.success - Успешность отправки
+ * @returns {number} [returns.message_id] - ID сообщения
+ * @returns {Object} [returns.result] - Результат отправки
+ * @returns {string} [returns.error] - Ошибка если была
+ */
 function handleSendPostDirect(payload, clientIp) {
   try {
     var { license_key, post, tg_chat_id, format_settings, vk_group_id } = payload;
@@ -58,6 +88,19 @@ function handleSendPostDirect(payload, clientIp) {
   }
 }
 
+/**
+ * Обработка запроса на тестовую публикацию
+ * @param {Object} payload - Данные запроса
+ * @param {string} payload.license_key - Ключ лицензии
+ * @param {string} payload.vk_group_id - ID VK группы
+ * @param {string} payload.tg_chat_id - ID Telegram чата
+ * @param {string} clientIp - IP адрес клиента
+ * @returns {ContentService.TextOutput} - JSON ответ
+ * @returns {boolean} returns.success - Успешность отправки
+ * @returns {number} [returns.message_id] - ID сообщения
+ * @returns {Object} [returns.result] - Результат отправки
+ * @returns {string} [returns.error] - Ошибка если была
+ */
 function handleTestPublication(payload, clientIp) {
   try {
     var { license_key, vk_group_id, tg_chat_id } = payload;

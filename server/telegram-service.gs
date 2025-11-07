@@ -1,9 +1,18 @@
-// @ts-nocheck
 /**
  * VK→Telegram Crossposter - TELEGRAM SERVICE MODULE (continued)
  * Дополнение: media group helpers, long text, video/document, chat utils
  */
 
+/**
+ * Отправка медиа группы без подписи
+ * @param {string} token - Telegram bot token
+ * @param {string} chatId - ID чата
+ * @param {Array<Object>} mediaUrls - Массив медиа объектов
+ * @returns {Object} - Результат отправки
+ * @returns {boolean} returns.success - Успешность отправки
+ * @returns {number} [returns.message_id] - ID сообщения
+ * @returns {string} [returns.error] - Ошибка если была
+ */
 function sendMediaGroupWithoutCaption(token, chatId, mediaUrls) {
   try {
     var url = `https://api.telegram.org/bot${token}/sendMediaGroup`;
@@ -15,6 +24,17 @@ function sendMediaGroupWithoutCaption(token, chatId, mediaUrls) {
   } catch (e) { return { success: false, error: e.message }; }
 }
 
+/**
+ * Отправка медиа группы с подписью
+ * @param {string} token - Telegram bot token
+ * @param {string} chatId - ID чата
+ * @param {Array<Object>} mediaUrls - Массив медиа объектов
+ * @param {string} caption - Подпись к медиа
+ * @returns {Object} - Результат отправки
+ * @returns {boolean} returns.success - Успешность отправки
+ * @returns {number} [returns.message_id] - ID сообщения
+ * @returns {string} [returns.error] - Ошибка если была
+ */
 function sendMediaGroupWithCaption(token, chatId, mediaUrls, caption) {
   try {
     var url = `https://api.telegram.org/bot${token}/sendMediaGroup`;
@@ -26,6 +46,17 @@ function sendMediaGroupWithCaption(token, chatId, mediaUrls, caption) {
   } catch (e) { return { success: false, error: e.message }; }
 }
 
+/**
+ * Отправка длинного текстового сообщения
+ * @param {string} token - Telegram bot token
+ * @param {string} chatId - ID чата
+ * @param {string} text - Текст сообщения
+ * @returns {Object} - Результат отправки
+ * @returns {boolean} returns.success - Успешность отправки
+ * @returns {number} [returns.message_id] - ID последнего сообщения
+ * @returns {number} [returns.parts_count] - Количество частей
+ * @returns {string} [returns.error] - Ошибка если была
+ */
 function sendLongTextMessage(token, chatId, text) {
   try {
     var MAX_MESSAGE_LENGTH = 4096;

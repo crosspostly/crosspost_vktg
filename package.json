@@ -15,7 +15,12 @@
     "prepare": "npm run build",
     "ci": "npm run lint && npm run test && npm run module-check && npm run build"
   },
-  "keywords": ["google-apps-script", "vk", "telegram", "crossposter"],
+  "keywords": [
+    "google-apps-script",
+    "vk",
+    "telegram",
+    "crossposter"
+  ],
   "author": "f_den",
   "license": "MIT",
   "devDependencies": {
@@ -24,6 +29,7 @@
     "@google/clasp": "^2.4.2",
     "babel-jest": "^29.7.0",
     "eslint": "^8.57.0",
+    "eslint-plugin-jsdoc": "^61.1.12",
     "jest": "^29.7.0"
   },
   "workspaces": [

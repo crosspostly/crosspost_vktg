@@ -5,7 +5,8 @@ module.exports = {
     node: true
   },
   extends: [
-    'eslint:recommended'
+    'eslint:recommended',
+    'plugin:jsdoc/recommended'
   ],
   parserOptions: {
     ecmaVersion: 'latest',
@@ -81,7 +82,18 @@ module.exports = {
     'no-prototype-builtins': 'warn',
     'no-var': 'warn',
     'prefer-const': 'warn',
-    'no-use-before-define': 'warn'
+    'no-use-before-define': 'warn',
+    // JSDoc specific rules
+    'jsdoc/require-jsdoc': 'warn', // Require JSDoc comments for functions
+    'jsdoc/require-description': 'warn', // Require description in JSDoc
+    'jsdoc/require-param': 'warn', // Require @param tags
+    'jsdoc/require-returns': 'warn', // Require @returns tags
+    'jsdoc/require-throws': 'off', // Don't require @throws for now
+    'jsdoc/valid-types': 'warn', // Validate JSDoc types
+    'jsdoc/check-tag-names': 'warn', // Check tag names are valid
+    'jsdoc/check-param-names': 'warn', // Check param names match function
+    'jsdoc/check-alignment': 'warn', // Check JSDoc alignment
+    'jsdoc/check-indentation': 'off' // Don't enforce specific indentation
   },
   overrides: [
     {

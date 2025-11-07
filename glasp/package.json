@@ -12,16 +12,21 @@
     "module-check": "node -e \"console.log('Checking module integrity...'); const fs = require('fs'); const serverFiles = fs.readdirSync('../server').filter(f => f.endsWith('.gs')); const clientFiles = fs.readdirSync('../client').filter(f => f.endsWith('.gs')); console.log('Server modules:', serverFiles.length, 'files'); console.log('Client modules:', clientFiles.length, 'files'); if (serverFiles.length === 0 || clientFiles.length === 0) { process.exit(1); } console.log('✓ Module integrity check passed');\"",
     "prepare": "npm run build"
   },
-  "keywords": ["google-apps-script", "vk", "telegram", "crossposter"],
+  "keywords": [
+    "google-apps-script",
+    "vk",
+    "telegram",
+    "crossposter"
+  ],
   "author": "f_den",
   "license": "MIT",
-  "dependencies": {},
   "devDependencies": {
-    "@google/clasp": "^2.4.2",
-    "eslint": "^8.57.0",
     "@babel/core": "^7.23.0",
     "@babel/preset-env": "^7.23.0",
+    "@google/clasp": "^2.4.2",
     "babel-jest": "^29.7.0",
+    "eslint": "^8.57.0",
+    "eslint-plugin-jsdoc": "^61.1.12",
     "jest": "^29.7.0"
   }
 }
