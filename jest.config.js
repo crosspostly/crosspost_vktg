@@ -13,7 +13,9 @@ module.exports = {
   
   // Test file patterns
   testMatch: [
-    '**/__tests__/**/*.js',
+    '**/tests/unit/**/*.test.js',
+    '**/tests/integration/**/*.test.js',
+    '**/__tests__/**/*.test.js',
     '**/?(*.)+(spec|test).js'
   ],
   
@@ -24,6 +26,8 @@ module.exports = {
     'client/**/*.gs',
     '!**/node_modules/**',
     '!**/dist/**',
+    '!**/tests/**',
+    '!**/__tests__/**',
     '!**/*.test.js',
     '!**/*.spec.js'
   ],
@@ -39,7 +43,10 @@ module.exports = {
   },
   
   // Setup files
-  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+  setupFilesAfterEnv: [
+    '<rootDir>/jest.setup.js',
+    '<rootDir>/tests/setupAppsScript.js'
+  ],
   
   // Verbose output
   verbose: true,

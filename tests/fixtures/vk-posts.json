@@ -1,0 +1,367 @@
+{
+  "sampleTextPost": {
+    "id": 12345,
+    "owner_id": -123456789,
+    "from_id": -123456789,
+    "date": 1699891200,
+    "text": "Sample VK post text content\n\nWith multiple lines and emoji 🚀",
+    "attachments": [],
+    "comments": {
+      "count": 5
+    },
+    "likes": {
+      "count": 42
+    },
+    "reposts": {
+      "count": 3
+    },
+    "views": {
+      "count": 1500
+    },
+    "post_type": "post",
+    "marked_as_ads": 0
+  },
+  
+  "postWithPhoto": {
+    "id": 12346,
+    "owner_id": -123456789,
+    "from_id": -123456789,
+    "date": 1699977600,
+    "text": "Check out this photo! 📸",
+    "attachments": [
+      {
+        "type": "photo",
+        "photo": {
+          "id": 456789123,
+          "album_id": -7,
+          "owner_id": -123456789,
+          "sizes": [
+            {
+              "type": "s",
+              "url": "https://sun9-1.userapi.com/s/v1/path/photo_75.jpg",
+              "width": 75,
+              "height": 100
+            },
+            {
+              "type": "m",
+              "url": "https://sun9-1.userapi.com/s/v1/path/photo_130.jpg",
+              "width": 130,
+              "height": 173
+            },
+            {
+              "type": "x",
+              "url": "https://sun9-1.userapi.com/s/v1/path/photo_604.jpg",
+              "width": 604,
+              "height": 805
+            },
+            {
+              "type": "y",
+              "url": "https://sun9-1.userapi.com/s/v1/path/photo_807.jpg",
+              "width": 807,
+              "height": 1076
+            },
+            {
+              "type": "z",
+              "url": "https://sun9-1.userapi.com/s/v1/path/photo_1280.jpg",
+              "width": 1280,
+              "height": 1707
+            },
+            {
+              "type": "w",
+              "url": "https://sun9-1.userapi.com/s/v1/path/photo_2560.jpg",
+              "width": 2560,
+              "height": 3413
+            }
+          ],
+          "text": "",
+          "date": 1699977600,
+          "access_key": "abc123xyz"
+        }
+      }
+    ],
+    "comments": {
+      "count": 8
+    },
+    "likes": {
+      "count": 156
+    },
+    "reposts": {
+      "count": 12
+    },
+    "views": {
+      "count": 2300
+    }
+  },
+  
+  "postWithMultiplePhotos": {
+    "id": 12347,
+    "owner_id": -123456789,
+    "from_id": -123456789,
+    "date": 1700064000,
+    "text": "Photo album with 3 images",
+    "attachments": [
+      {
+        "type": "photo",
+        "photo": {
+          "id": 456789124,
+          "album_id": -7,
+          "owner_id": -123456789,
+          "sizes": [
+            {
+              "type": "w",
+              "url": "https://sun9-1.userapi.com/s/v1/path/photo1_2560.jpg",
+              "width": 2560,
+              "height": 1440
+            }
+          ],
+          "date": 1700064000
+        }
+      },
+      {
+        "type": "photo",
+        "photo": {
+          "id": 456789125,
+          "album_id": -7,
+          "owner_id": -123456789,
+          "sizes": [
+            {
+              "type": "w",
+              "url": "https://sun9-1.userapi.com/s/v1/path/photo2_2560.jpg",
+              "width": 2560,
+              "height": 1440
+            }
+          ],
+          "date": 1700064000
+        }
+      },
+      {
+        "type": "photo",
+        "photo": {
+          "id": 456789126,
+          "album_id": -7,
+          "owner_id": -123456789,
+          "sizes": [
+            {
+              "type": "w",
+              "url": "https://sun9-1.userapi.com/s/v1/path/photo3_2560.jpg",
+              "width": 2560,
+              "height": 1440
+            }
+          ],
+          "date": 1700064000
+        }
+      }
+    ],
+    "comments": {
+      "count": 15
+    },
+    "likes": {
+      "count": 234
+    },
+    "reposts": {
+      "count": 20
+    }
+  },
+  
+  "postWithVideo": {
+    "id": 12348,
+    "owner_id": -123456789,
+    "from_id": -123456789,
+    "date": 1700150400,
+    "text": "Watch this amazing video! 🎥",
+    "attachments": [
+      {
+        "type": "video",
+        "video": {
+          "id": 456123789,
+          "owner_id": -123456789,
+          "title": "Sample Video Title",
+          "description": "Sample video description",
+          "duration": 120,
+          "image": [
+            {
+              "url": "https://sun9-1.userapi.com/s/v1/path/video_thumb.jpg",
+              "width": 1280,
+              "height": 720
+            }
+          ],
+          "first_frame": [
+            {
+              "url": "https://sun9-1.userapi.com/s/v1/path/video_frame.jpg",
+              "width": 1280,
+              "height": 720
+            }
+          ],
+          "date": 1700150400,
+          "views": 5600,
+          "player": "https://vk.com/video-123456789_456123789",
+          "access_key": "video_access_key"
+        }
+      }
+    ],
+    "comments": {
+      "count": 25
+    },
+    "likes": {
+      "count": 378
+    },
+    "reposts": {
+      "count": 45
+    }
+  },
+  
+  "postWithLink": {
+    "id": 12349,
+    "owner_id": -123456789,
+    "from_id": -123456789,
+    "date": 1700236800,
+    "text": "Interesting article to read 📖",
+    "attachments": [
+      {
+        "type": "link",
+        "link": {
+          "url": "https://example.com/article",
+          "title": "Interesting Article Title",
+          "description": "This is a description of the article",
+          "photo": {
+            "sizes": [
+              {
+                "type": "w",
+                "url": "https://sun9-1.userapi.com/s/v1/path/link_preview.jpg",
+                "width": 1200,
+                "height": 630
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  
+  "postWithDoc": {
+    "id": 12350,
+    "owner_id": -123456789,
+    "from_id": -123456789,
+    "date": 1700323200,
+    "text": "Important document attached 📄",
+    "attachments": [
+      {
+        "type": "doc",
+        "doc": {
+          "id": 789456123,
+          "owner_id": -123456789,
+          "title": "document.pdf",
+          "size": 1048576,
+          "ext": "pdf",
+          "url": "https://vk.com/doc-123456789_789456123",
+          "date": 1700323200,
+          "type": 1,
+          "preview": {
+            "photo": {
+              "sizes": [
+                {
+                  "src": "https://sun9-1.userapi.com/s/v1/path/doc_preview.jpg",
+                  "width": 800,
+                  "height": 1131
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  
+  "postWithAudio": {
+    "id": 12351,
+    "owner_id": -123456789,
+    "from_id": -123456789,
+    "date": 1700409600,
+    "text": "New music track! 🎵",
+    "attachments": [
+      {
+        "type": "audio",
+        "audio": {
+          "id": 321654987,
+          "owner_id": -123456789,
+          "artist": "Artist Name",
+          "title": "Track Title",
+          "duration": 240,
+          "url": "https://vk.com/audio-123456789_321654987",
+          "date": 1700409600
+        }
+      }
+    ]
+  },
+  
+  "postWithMixedMedia": {
+    "id": 12352,
+    "owner_id": -123456789,
+    "from_id": -123456789,
+    "date": 1700496000,
+    "text": "Post with various media types 🎨📸🎵",
+    "attachments": [
+      {
+        "type": "photo",
+        "photo": {
+          "id": 456789127,
+          "sizes": [
+            {
+              "type": "w",
+              "url": "https://sun9-1.userapi.com/s/v1/path/mixed_photo.jpg",
+              "width": 2560,
+              "height": 1440
+            }
+          ]
+        }
+      },
+      {
+        "type": "doc",
+        "doc": {
+          "id": 789456124,
+          "title": "info.txt",
+          "url": "https://vk.com/doc-123456789_789456124"
+        }
+      }
+    ]
+  },
+  
+  "longPost": {
+    "id": 12353,
+    "owner_id": -123456789,
+    "from_id": -123456789,
+    "date": 1700582400,
+    "text": "This is a very long post that exceeds typical Telegram message limits. This is a very long post that exceeds typical Telegram message limits. This is a very long post that exceeds typical Telegram message limits. This is a very long post that exceeds typical Telegram message limits. This is a very long post that exceeds typical Telegram message limits. This is a very long post that exceeds typical Telegram message limits. This is a very long post that exceeds typical Telegram message limits. This is a very long post that exceeds typical Telegram message limits. This is a very long post that exceeds typical Telegram message limits. This is a very long post that exceeds typical Telegram message limits. This is a very long post that exceeds typical Telegram message limits. This is a very long post that exceeds typical Telegram message limits. This is a very long post that exceeds typical Telegram message limits. This is a very long post that exceeds typical Telegram message limits. This is a very long post that exceeds typical Telegram message limits. This is a very long post that exceeds typical Telegram message limits. This is a very long post that exceeds typical Telegram message limits. This is a very long post that exceeds typical Telegram message limits. This is a very long post that exceeds typical Telegram message limits. This is a very long post that exceeds typical Telegram message limits.\n\nWith multiple paragraphs and formatting.\n\nLorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+    "attachments": [],
+    "comments": {
+      "count": 2
+    },
+    "likes": {
+      "count": 15
+    }
+  },
+  
+  "emptyPost": {
+    "id": 12354,
+    "owner_id": -123456789,
+    "from_id": -123456789,
+    "date": 1700668800,
+    "text": "",
+    "attachments": [
+      {
+        "type": "photo",
+        "photo": {
+          "id": 456789128,
+          "sizes": [
+            {
+              "type": "w",
+              "url": "https://sun9-1.userapi.com/s/v1/path/photo_only.jpg",
+              "width": 1920,
+              "height": 1080
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
