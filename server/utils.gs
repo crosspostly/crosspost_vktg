@@ -1,7 +1,7 @@
 /**
  * VK→Telegram Crossposter - UTILS MODULE
  * Общие утилиты и helper функции
- * 
+ *
  * Автор: f_den
  * Дата: 2025-11-06
  */
@@ -16,7 +16,9 @@
  * @returns {string} - Экранированный текст
  */
 function escapeHtml(text) {
-  if (!text) return '';
+  if (!text) {
+return '';
+}
   return String(text)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -42,11 +44,11 @@ function generateBindingId() {
 function createSheet(name, headers) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(name);
-  
+
   if (!sheet) {
     sheet = ss.insertSheet(name);
     sheet.appendRow(headers);
-    
+
     // Стилизуем заголовок
     var headerRange = sheet.getRange(1, 1, 1, headers.length);
     headerRange.setBackground('#667eea');
@@ -54,7 +56,7 @@ function createSheet(name, headers) {
     headerRange.setFontWeight('bold');
     sheet.setFrozenRows(1);
   }
-  
+
   return sheet;
 }
 
@@ -73,11 +75,11 @@ function getSheet(name) {
 
 /**
  * Очистка старых логов (старше указанного количества дней)
- * @param {number} [daysToKeep=30] - Количество дней для сохранения
- * @returns {Object} - Результат очистки
+ * @param {number} [daysToKeep] - Количество дней для сохранения
+ * @returns {object} - Результат очистки
  * @returns {boolean} returns.success - Успешность операции
  * @returns {number} returns.totalDeleted - Общее количество удаленных строк
- * @returns {Array<Object>} returns.sheetResults - Результаты по каждому листу
+ * @returns {Array<object>} returns.sheetResults - Результаты по каждому листу
  * @returns {string} returns.sheetResults[].sheetName - Название листа
  * @returns {number} returns.sheetResults[].deleted - Количество удаленных строк
  * @returns {string} returns.sheetResults[].status - Статус операции
@@ -88,7 +90,7 @@ function cleanOldLogs(daysToKeep = 30) {
   try {
     var cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
-    
+
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var logSheets = ['Logs'];
     var totalDeleted = 0;
@@ -104,7 +106,7 @@ function cleanOldLogs(daysToKeep = 30) {
 
         var data = sheet.getDataRange().getValues();
         var rowsToDelete = [];
-        
+
         // Начинаем с ряда 2 (пропускаем заголовок)
         for (var i = 1; i < data.length; i++) {
           var timestamp = data[i][0];
@@ -122,30 +124,30 @@ function cleanOldLogs(daysToKeep = 30) {
           totalDeleted++;
         }
 
-        sheetResults.push({ 
-          sheetName: sheetName, 
-          deleted: rowsToDelete.length, 
-          status: 'success' 
+        sheetResults.push({
+          sheetName: sheetName,
+          deleted: rowsToDelete.length,
+          status: 'success'
         });
-        
-        logEvent('INFO', 'sheet_logs_cleaned', 'server', 
+
+        logEvent('INFO', 'sheet_logs_cleaned', 'server',
                 `Sheet: ${sheetName}, Deleted: ${rowsToDelete.length} rows older than ${daysToKeep} days`);
 
       } catch (sheetError) {
-        logEvent('ERROR', 'sheet_cleanup_error', 'server', 
+        logEvent('ERROR', 'sheet_cleanup_error', 'server',
                 `Sheet: ${sheetName}, Error: ${sheetError.message}`);
-        sheetResults.push({ 
-          sheetName: sheetName, 
-          deleted: 0, 
-          status: 'error', 
-          error: sheetError.message 
+        sheetResults.push({
+          sheetName: sheetName,
+          deleted: 0,
+          status: 'error',
+          error: sheetError.message
         });
       }
     });
 
-    logEvent('INFO', 'log_cleanup_completed', 'server', 
+    logEvent('INFO', 'log_cleanup_completed', 'server',
             `Cleanup complete. Total deleted: ${totalDeleted} rows from ${logSheets.length} sheets`);
-  
+
     return {
       success: true,
       totalDeleted: totalDeleted,
@@ -179,19 +181,19 @@ function splitTextIntoChunks(text, maxLength = 4000) {
 
   while (currentText.length > maxLength) {
     var chunk = currentText.substring(0, maxLength);
-    
+
     // Пытаемся разорвать на границе слов
     var lastSpace = chunk.lastIndexOf(' ');
     var lastNewline = chunk.lastIndexOf('\n');
     var breakPoint = Math.max(lastSpace, lastNewline);
-    
+
     if (breakPoint > maxLength * 0.7) { // Используем только если разрыв достаточно далеко
       chunk = currentText.substring(0, breakPoint);
       currentText = currentText.substring(breakPoint + 1);
     } else {
       currentText = currentText.substring(maxLength);
     }
-    
+
     chunks.push(chunk.trim());
   }
 
@@ -207,17 +209,17 @@ function splitTextIntoChunks(text, maxLength = 4000) {
  * @param {string} botToken - Telegram Bot Token
  * @param {string} vkUserToken - VK User Access Token
  * @param {string} adminChatId - Admin Chat ID
- * @returns {Object} - Результат валидации
+ * @returns {object} - Результат валидации
  * @returns {boolean} returns.success - Успешность валидации
  * @returns {string} [returns.error] - Сообщение об ошибке
- * @returns {Object} returns.details - Детальная информация по каждому токену
- * @returns {Object} returns.details.telegram - Результат валидации Telegram
+ * @returns {object} returns.details - Детальная информация по каждому токену
+ * @returns {object} returns.details.telegram - Результат валидации Telegram
  * @returns {string} returns.details.telegram.status - Статус (✅/❌)
  * @returns {string} returns.details.telegram.message - Сообщение о результате
- * @returns {Object} returns.details.vkUser - Результат валидации VK User
+ * @returns {object} returns.details.vkUser - Результат валидации VK User
  * @returns {string} returns.details.vkUser.status - Статус (✅/❌)
  * @returns {string} returns.details.vkUser.message - Сообщение о результате
- * @returns {Object} returns.details.adminChat - Результат валидации Admin Chat
+ * @returns {object} returns.details.adminChat - Результат валидации Admin Chat
  * @returns {string} returns.details.adminChat.status - Статус (✅/❌/⚠️)
  * @returns {string} returns.details.adminChat.message - Сообщение о результате
  * @throws {Error} - При критической ошибке валидации
@@ -237,7 +239,7 @@ function validateTokens(botToken, vkUserToken, adminChatId) {
         muteHttpExceptions: true,
         timeout: 10000
       });
-      
+
       var tgData = JSON.parse(tgResponse.getContentText());
       if (tgData.ok) {
         results.telegram = { status: '✅', message: `@${tgData.result.username}` };
@@ -257,7 +259,7 @@ function validateTokens(botToken, vkUserToken, adminChatId) {
         `https://api.vk.com/method/users.get?v=${VK_API_VERSION}&access_token=${vkUserToken}`,
         { muteHttpExceptions: true, timeout: 10000 }
       );
-      
+
       var vkUserData = JSON.parse(vkUserResponse.getContentText());
       if (vkUserData.response && vkUserData.response.length > 0) {
         var user = vkUserData.response[0];
@@ -290,7 +292,7 @@ function validateTokens(botToken, vkUserToken, adminChatId) {
           `https://api.telegram.org/bot${botToken}/getChat?chat_id=${encodeURIComponent(adminChatId)}`,
           { method: 'GET', muteHttpExceptions: true, timeout: 10000 }
         );
-        
+
         var adminTestData = JSON.parse(adminTestResponse.getContentText());
         if (adminTestData.ok) {
           results.adminChat = { status: '✅', message: '✅ Доступен' };
@@ -317,7 +319,7 @@ function validateTokens(botToken, vkUserToken, adminChatId) {
     // Итоговая оценка
     var allValid = Object.values(results).every(r => r.status === '✅');
     var partialValid = Object.values(results).some(r => r.status === '✅');
-    
+
     var message;
     if (allValid) {
       message = '🎉 Все токены валидны!';
@@ -363,7 +365,7 @@ function extractVkGroupId(url) {
 
     const originalInput = url;
     const cleanInput = url.trim().toLowerCase().split('?')[0].split('#')[0];
-    
+
     logEvent('DEBUG', 'vk_group_id_extraction_start', 'server', `Input: ${originalInput}, Clean: ${cleanInput}`);
 
     // Случай 1: Чистый числовой ID (-123456 или 123456)
@@ -385,21 +387,21 @@ function extractVkGroupId(url) {
     const nameMatch = cleanInput.match(/vk\.com\/([a-z0-9_]+)/i);
     if (nameMatch) {
       const screenName = nameMatch[1];
-      
+
       // Фолбэк: если это выглядит как число, попробуем
       if (/^\d+$/.test(screenName)) {
         const result = '-' + screenName;
         logEvent('DEBUG', 'vk_group_id_fallback_numeric', 'server', `${originalInput} → ${result}`);
         return result;
       }
-      
+
       // Резолвим через API
       try {
         const result = resolveVkScreenName(screenName);
         logEvent('DEBUG', 'vk_group_id_resolved', 'server', `${originalInput} → ${screenName} → ${result}`);
         return result;
       } catch (error) {
-        logEvent('ERROR', 'vk_group_id_resolution_failed', 'server', 
+        logEvent('ERROR', 'vk_group_id_resolution_failed', 'server',
                 `Failed to resolve ${screenName} from ${originalInput}: ${error.message}`);
         throw new Error(`Не удалось определить ID группы из ${screenName} (${originalInput}): ${error.message}`);
       }
@@ -426,32 +428,32 @@ function extractTelegramChatId(input) {
   }
 
   const cleanInput = input.trim();
-  
+
   // Числовой chat ID
   if (/^-?\d+$/.test(cleanInput)) {
     return cleanInput;
   }
-  
+
   // Username или URL patterns
   const patterns = [
     /t\.me\/([a-z0-9_]+)/i,
     /t\.me\/([a-z0-9_]+)/i,
     /^@?([a-z0-9_]+)$/i
   ];
-  
+
   for (const pattern of patterns) {
     const match = cleanInput.match(pattern);
     if (match) {
       return '@' + match[1];
     }
   }
-  
+
   throw new Error('Invalid Telegram format');
 }
 
 /**
  * Получение системной статистики
- * @returns {Object} - Статистика системы
+ * @returns {object} - Статистика системы
  * @returns {number} returns.totalLicenses - Общее количество лицензий
  * @returns {number} returns.activeLicenses - Количество активных лицензий
  * @returns {number} returns.expiredLicenses - Количество истекших лицензий
@@ -464,43 +466,43 @@ function extractTelegramChatId(input) {
  */
 function getSystemStats() {
   try {
-    var licensesSheet = getSheet("Licenses");
-    var bindingsSheet = getSheet("Bindings");
-    var logsSheet = getSheet("Logs");
-    
+    var licensesSheet = getSheet('Licenses');
+    var bindingsSheet = getSheet('Bindings');
+    var logsSheet = getSheet('Logs');
+
     var licensesData = licensesSheet.getDataRange().getValues().slice(1);
     var bindingsData = bindingsSheet.getDataRange().getValues().slice(1);
     var logsData = logsSheet.getDataRange().getValues().slice(1);
-    
+
     var now = new Date();
     var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
+
     return {
       totalLicenses: licensesData.length,
-      activeLicenses: licensesData.filter(lic => lic[6] === "active").length,
+      activeLicenses: licensesData.filter(lic => lic[6] === 'active').length,
       expiredLicenses: licensesData.filter(lic => new Date(lic[4]) < now).length,
-      
+
       totalBindings: bindingsData.length,
-      activeBindings: bindingsData.filter(b => b[5] === "active").length,
-      pausedBindings: bindingsData.filter(b => b[5] === "paused").length,
-      
-      postsToday: logsData.filter(log => 
-        log[2] === "post_sent" && new Date(log[0]) >= today
+      activeBindings: bindingsData.filter(b => b[5] === 'active').length,
+      pausedBindings: bindingsData.filter(b => b[5] === 'paused').length,
+
+      postsToday: logsData.filter(log =>
+        log[2] === 'post_sent' && new Date(log[0]) >= today
       ).length,
-      
+
       lastPostTime: logsData
-        .filter(log => log[2] === "post_sent")
-        .sort((a, b) => new Date(b[0]) - new Date(a[0]))[0]?.[0] || "Нет данных",
-      
+        .filter(log => log[2] === 'post_sent')
+        .sort((a, b) => new Date(b[0]) - new Date(a[0]))[0]?.[0] || 'Нет данных',
+
       topUser: findTopUser(bindingsData)
     };
-    
+
   } catch (error) {
-    logEvent("ERROR", "stats_error", "system", error.message);
+    logEvent('ERROR', 'stats_error', 'system', error.message);
     return {
       totalLicenses: 0, activeLicenses: 0, expiredLicenses: 0,
       totalBindings: 0, activeBindings: 0, pausedBindings: 0,
-      postsToday: 0, lastPostTime: "Ошибка", topUser: "Ошибка"
+      postsToday: 0, lastPostTime: 'Ошибка', topUser: 'Ошибка'
     };
   }
 }
@@ -511,7 +513,7 @@ function getSystemStats() {
  */
 function showStatistics() {
   var stats = getSystemStats();
-    
+
   var message = '📊 Статистика сервера v' + SERVER_VERSION + '\n\n';
   message += '🔑 Лицензии:\n';
   message += '• Всего: ' + stats.totalLicenses + '\n';
@@ -525,7 +527,7 @@ function showStatistics() {
   message += '• Постов отправлено сегодня: ' + stats.postsToday + '\n';
   message += '• Последний пост: ' + stats.lastPostTime + '\n\n';
   message += '🏆 Топ пользователь: ' + stats.topUser;
-  
+
   SpreadsheetApp.getUi().alert(message);
 }
 
@@ -535,12 +537,12 @@ function showStatistics() {
  */
 function showLogsSheet() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var logsSheet = ss.getSheetByName("Logs");
-  
+  var logsSheet = ss.getSheetByName('Logs');
+
   if (logsSheet) {
     ss.setActiveSheet(logsSheet);
   } else {
-    SpreadsheetApp.getUi().alert("❌ Лист 'Logs' не найден. Выполните инициализацию сервера.");
+    SpreadsheetApp.getUi().alert('❌ Лист \'Logs\' не найден. Выполните инициализацию сервера.');
   }
 }
 
@@ -551,16 +553,16 @@ function showLogsSheet() {
  */
 function findTopUser(bindingsData) {
   var userCounts = {};
-  
+
   bindingsData.forEach(binding => {
     var email = binding[2];
     userCounts[email] = (userCounts[email] || 0) + 1;
   });
-  
+
   var topEntry = Object.entries(userCounts)
     .sort(([,a], [,b]) => b - a)[0];
-  
-  return topEntry ? `${topEntry[0]} (${topEntry[1]} связок)` : "Нет данных";
+
+  return topEntry ? `${topEntry[0]} (${topEntry[1]} связок)` : 'Нет данных';
 }
 
 // ============================================
@@ -572,7 +574,7 @@ function findTopUser(bindingsData) {
 /**
  * Создание JSON ответа для HTTP
  * @param {*} data - Данные для ответа
- * @param {number} [statusCode=200] - HTTP статус код
+ * @param {number} [statusCode] - HTTP статус код
  * @returns {ContentService.TextOutput} - HTTP ответ
  */
 function jsonResponse(data, statusCode = 200) {
@@ -594,28 +596,28 @@ function jsonResponse(data, statusCode = 200) {
  */
 function resolveVkScreenName(screenName) {
   try {
-    const userToken = PropertiesService.getScriptProperties().getProperty("VK_USER_ACCESS_TOKEN");
-    
+    const userToken = PropertiesService.getScriptProperties().getProperty('VK_USER_ACCESS_TOKEN');
+
     if (!userToken) {
       throw new Error('VK User Access Token not configured');
     }
-    
+
     const apiUrl = `https://api.vk.com/method/utils.resolveScreenName?screen_name=${encodeURIComponent(screenName)}&v=${VK_API_VERSION}&access_token=${userToken}`;
-    
+
     logEvent('DEBUG', 'vk_screen_name_resolution_start', 'server', `Screen name: ${screenName}`);
-    
+
     const response = UrlFetchApp.fetch(apiUrl, {
       muteHttpExceptions: true,
       timeout: TIMEOUTS.FAST
     });
-    
+
     const responseText = response.getContentText();
     const data = JSON.parse(responseText);
-    
+
     if (data.error) {
       const errorCode = data.error.error_code;
       const errorMsg = data.error.error_msg;
-      
+
       switch (errorCode) {
         case 5:
           throw new Error('VK User Access Token invalid');
@@ -631,24 +633,24 @@ function resolveVkScreenName(screenName) {
           throw new Error(`VK API Error ${errorCode}: ${errorMsg}`);
       }
     }
-    
+
     if (!data.response) {
       throw new Error(`No response data for screen name '${screenName}'`);
     }
-    
+
     const objectId = data.response.object_id;
     const type = data.response.type;
-    
+
     // Правильное добавление минуса для групп
     const result = (type === 'group' || type === 'page') ? `-${objectId}` : objectId.toString();
-    
-    logEvent('DEBUG', 'vk_screen_name_resolved', 'server', 
+
+    logEvent('DEBUG', 'vk_screen_name_resolved', 'server',
       `Screen name: ${screenName} → Type: ${type}, ID: ${objectId} → Result: ${result}`);
-    
+
     return result;
-    
+
   } catch (error) {
-    logEvent('ERROR', 'vk_screen_name_resolution_failed', 'server', 
+    logEvent('ERROR', 'vk_screen_name_resolution_failed', 'server',
       `Failed to resolve '${screenName}': ${error.message}`);
     throw error;
   }
