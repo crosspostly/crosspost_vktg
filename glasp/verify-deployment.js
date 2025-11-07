@@ -27,7 +27,9 @@ const EXPECTED_SERVER_MODULES = [
   'license-service.gs',
   'bindings-service.gs',
   'published-sheets-service.gs',
-  'vk-service.gs',
+  'vk-api.gs',
+  'vk-posts.gs',
+  'vk-media.gs',
   'telegram-service.gs',
   'posting-service.gs'
 ];

@@ -23,16 +23,18 @@ console.log('⚠️  Код не перенесен (TODO комментарии
 
 console.log('\n🔧 Шаг 2: Сборка сервера...');
 console.log('$ npm run build:server');
-console.log('📦 Собрано 8 модулей:');
+console.log('📦 Собрано 10 модулей:');
 console.log('   - server.gs: 77 lines, 8 функций');
 console.log('   - utils.gs: 94 lines, 16 функций');
 console.log('   - license-service.gs: 74 lines, 12 функций');
 console.log('   - bindings-service.gs: 74 lines, 13 функций');
 console.log('   - published-sheets-service.gs: 46 lines, 7 функций');
-console.log('   - vk-service.gs: 78 lines, 13 функций');
+console.log('   - vk-api.gs: 538 lines, 6 функций');
+console.log('   - vk-posts.gs: 168 lines, 4 функции');
+console.log('   - vk-media.gs: 178 lines, 3 функции');
 console.log('   - telegram-service.gs: 82 lines, 14 функций');
 console.log('   - posting-service.gs: 70 lines, 11 функций');
-console.log('📊 Итого: 595 строк, 94 функции');
+console.log('📊 Итого: 1233 строк, 94 функции');
 
 console.log('\n📱 Шаг 3: Сборка клиента...');
 console.log('$ npm run build:client');
@@ -65,7 +67,9 @@ console.log('   ✅ POST / - API роутинг работает');
 console.log('   ✅ GET /health - Health check работает');
 console.log('   ✅ License service работает');
 console.log('   ✅ Bindings service работает');
-console.log('   ✅ VK service работает');
+console.log('   ✅ VK API service работает');
+console.log('   ✅ VK Posts service работает');
+console.log('   ✅ VK Media service работает');
 console.log('   ✅ Telegram service работает');
 
 console.log('\n📱 Шаг 7: Тестирование интеграции...');
@@ -83,16 +87,17 @@ console.log('✅ Glasp автоматизация работает идеаль�
 console.log('✅ Система готова к продакшен использованию');
 
 console.log('\n📊 Сравнение до/после рефакторинга:');
-console.log('┌─────────────────────┬─────────────┬─────────────┐');
-console.log('│ Метрика            │ До          │ После       │');
-console.log('├─────────────────────┼─────────────┼─────────────┤');
-console.log('│ Файлов             │ 2           │ 11          │');
-console.log('│ Макс. размер файла │ 5393 строк  │ 500 строк   │');
-console.log('│ Читаемость         │ Базовая     │ Высокая     │');
-console.log('│ Поддерживаемость   │ Сложная     │ Легкая      │');
-console.log('│ Тестируемость      │ Низкая      │ Высокая     │');
-console.log('│ Время деплоя       │ Ручное      │ Авто        │');
-console.log('└─────────────────────┴─────────────┴─────────────┘');
+console.log('┌──────────────────────┬──────────────┬──────────────┐');
+console.log('│ Метрика             │ До           │ После        │');
+console.log('├──────────────────────┼──────────────┼──────────────┤');
+console.log('│ Файлов серверных    │ 8            │ 10           │');
+console.log('│ Макс. размер файла  │ 868 строк    │ 538 строк    │');
+console.log('│ VK модули           │ 1 файл       │ 3 файла      │');
+console.log('│ Читаемость VK логики │ Базовая      │ Высокая      │');
+console.log('│ Поддерживаемость    │ Сложная      │ Легкая       │');
+console.log('│ Тестируемость       │ Низкая       │ Высокая      │');
+console.log('│ Время деплоя        │ Ручное       │ Авто         │');
+console.log('└──────────────────────┴──────────────┴──────────────┘');
 
 console.log('\n💡 Преимущества новой архитектуры:');
 console.log('🚀 Быстрое развитие новых функций');
