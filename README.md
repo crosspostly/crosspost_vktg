@@ -46,6 +46,8 @@
 📋 **[GAS_COMPATIBILITY_GUIDE.md](GAS_COMPATIBILITY_GUIDE.md)** — критически важные правила совместимости  
 📋 **[code_overview.md](code_overview.md)** — полная структура кода и комментарии  
 📋 **[ARCHITECTURE.md](ARCHITECTURE.md)** — актуальная архитектура и API  
+📋 **[GITHUB_ACTIONS_SETUP.md](GITHUB_ACTIONS_SETUP.md)** — 🆕 полное руководство по CI/CD workflows  
+📋 **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** — устранение неполадок и debugging  
 📋 **[UNIFIED_TODO.md](UNIFIED_TODO.md)** — текущий статус задач  
 
 🚫 **Несоблюдение этих правил приведет к runtime ошибкам в продакшене!**
@@ -306,19 +308,47 @@ const DEV_MODE = true; // Включить подробное логирован
 
 ## 🔄 CI/CD и Разработка v7.0
 
+> 📖 **Полная документация CI/CD:** [GITHUB_ACTIONS_SETUP.md](GITHUB_ACTIONS_SETUP.md)  
+> Детальное описание всех workflows, troubleshooting, и local reproduction.
+
 ### 🚀 **GitHub Actions Workflows**
 
-#### **Основной Pipeline** (`.github/workflows/deploy.yml`)
-- **События**: Push в main/PR в main/manual trigger
-- **Шаги**: Checkout → Setup Node.js → Install deps → Build → Lint → Upload artifacts
-- **Валидация**: ESLint проверка и модульная валидация
-- **Артефакты**: Собранные bundles в `dist/` директории
+Система использует **6 специализированных workflows** для разных стадий разработки:
 
-#### **Deployment Pipeline** (`.github/workflows/glasp-deploy.yml`)
+#### **ci.yml** - Основной CI Pipeline (Phase 2 Quality Gates)
+- **События**: Pull requests и push в main
+- **Фазы**: 
+  - 🔍 Phase 2.1: Lint (ESLint code quality)
+  - 🧩 Phase 2.2: Module integrity check (VK module validation)
+  - 🏗️ Phase 2.3: Build verification (matrix: server + client)
+  - 🧪 Phase 2.4: Test suite with coverage
+  - 🔗 Phase 2.5: Integration check
+- **Длительность**: ~4-6 минут
+
+#### **quick-check.yml** - Быстрая проверка для feature branches
+- **События**: Push в feature branches (не main)
+- **Проверки**: Lint → Module check → Quick build
+- **Длительность**: ~2 минуты (быстрая обратная связь)
+
+#### **glasp-deploy.yml** - Автоматическое развертывание
 - **Условия**: Коммиты с `[server]` или `[client]` в сообщении
 - **Развертывание**: Автоматическое развертывание через clasp
 - **Секреты**: `CLASPRC_JSON` для аутентификации Google Apps Script
 - **Разделение**: Отдельные job'ы для server и client deployment
+
+#### **ci-validation.yml** - Валидация CI конфигурации
+- **События**: Изменения в `.github/workflows/**` или `glasp/package.json`
+- **Проверки**: YAML syntax, npm scripts, workflow triggers, permissions
+- **Цель**: Мета-валидация самой CI системы
+
+#### **maintenance.yml** - Scheduled health checks
+- **Расписание**: Ежедневно в 2 AM UTC
+- **Задачи**: Health checks, cleanup, dependency security audit
+- **Manual trigger**: Доступен через workflow_dispatch
+
+#### **deploy.yml** - Legacy build & artifacts
+- **Статус**: Legacy workflow (поддерживается для совместимости)
+- **Функции**: Build и upload artifacts без clasp deployment
 
 ### 📦 **Glasp Build System**
 
@@ -334,16 +364,24 @@ glasp/
 
 #### **Команды сборки**:
 ```bash
+# Основные команды
 npm run build:server    # Собрать server модули
 npm run build:client    # Собрать client модули
 npm run build           # Собрать все модули
-npm run lint            # Проверить качество кода
+npm run lint            # Проверить качество кода (ESLint)
+npm run lint:fix        # Авто-исправление ESLint ошибок
+npm run module-check    # Проверить целостность модулей
+npm run test            # Запустить тесты
+npm run ci              # Полная локальная CI проверка
 ```
 
 #### **Валидация модулей**:
-- **Server**: 10 модулей включая 3 VK модуля
-- **Client**: 2 модуля (client.gs, client_tests.gs)
+- **Server**: 10 модулей включая 3 VK модуля (vk-api.gs, vk-posts.gs, vk-media.gs)
+- **Client**: 2 модуля (client-core.gs, client_tests.gs)
 - **Проверка**: Размер < 500 строк, наличие всех критических функций
+- **Enforcement**: `module-check` блокирует PR при нарушениях
+
+> 💡 **Совет:** Запускайте `npm run ci` локально перед push для быстрой проверки
 
 ### 🔧 **Процесс разработки**
 
@@ -374,6 +412,23 @@ npm run lint            # Проверить качество кода
 - **Deployment Logs**: Детальные логи развертывания
 - **Error Notifications**: Автоматические уведомления при сбоях
 - **Performance Metrics**: Время сборки и размер bundles
+
+### 🐛 **Быстрое устранение неполадок CI**
+
+| Проблема | Решение | Документация |
+|----------|---------|--------------|
+| ❌ ESLint errors | `npm run lint:fix` | [GITHUB_ACTIONS_SETUP.md#lint-rule-violations](GITHUB_ACTIONS_SETUP.md#1-lint-rule-violations) |
+| ❌ Module check failed | Проверить наличие vk-api.gs, vk-posts.gs, vk-media.gs | [GITHUB_ACTIONS_SETUP.md#module-integrity-check-failures](GITHUB_ACTIONS_SETUP.md#2-module-integrity-check-failures) |
+| ❌ Build failed | `npm run build` локально, проверить MODULE_ORDER | [GITHUB_ACTIONS_SETUP.md#build-script-errors](GITHUB_ACTIONS_SETUP.md#3-build-script-errors) |
+| ❌ Tests failed | Проверить jest.setup.js, добавить GAS mocks | [GITHUB_ACTIONS_SETUP.md#jest-environment-issues](GITHUB_ACTIONS_SETUP.md#4-jest-environment-issues) |
+| ❌ Deployment failed | Проверить `CLASPRC_JSON` secret | [GITHUB_ACTIONS_SETUP.md#deployment-failures](GITHUB_ACTIONS_SETUP.md#5-deployment-failures) |
+
+**Локальная репродукция CI:**
+```bash
+npm run ci  # Полная CI проверка (~3-4 мин)
+```
+
+> 📖 **Полное руководство:** [GITHUB_ACTIONS_SETUP.md](GITHUB_ACTIONS_SETUP.md) содержит детальные инструкции по всем аспектам CI/CD
 
 ---
 
