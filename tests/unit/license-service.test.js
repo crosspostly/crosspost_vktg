@@ -20,12 +20,20 @@ describe('license-service.gs', () => {
   beforeAll(() => {
     jest.resetModules();
 
+    // Set up mocks BEFORE loading files
     global.logEvent = jest.fn();
     global.logApiError = jest.fn();
     global.jsonResponse = jest.fn((body, status) => createJsonResponse(body, status));
 
-    require('../../server/utils.gs');
-    require('../../server/license-service.gs');
+    // Load server.gs first to define constants like SERVER_VERSION
+    global.loadGasFile(require.resolve('../../server/server.gs'));
+    global.loadGasFile(require.resolve('../../server/utils.gs'));
+    global.loadGasFile(require.resolve('../../server/license-service.gs'));
+    
+    // Re-mock functions that the service uses
+    global.logEvent = jest.fn();
+    global.logApiError = jest.fn();
+    global.jsonResponse = jest.fn((body, status) => createJsonResponse(body, status));
   });
 
   beforeEach(() => {

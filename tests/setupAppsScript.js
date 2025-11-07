@@ -295,6 +295,11 @@ global.LockService = {
 // SCRIPT APP MOCKS
 // ============================================================================
 
+// Create a persistent service mock that returns the same object every time
+const mockServiceInstance = {
+  getUrl: jest.fn().mockReturnValue('https://script.google.com/macros/s/mock-id/exec'),
+};
+
 global.ScriptApp = {
   getProjectTriggers: jest.fn().mockReturnValue([]),
   newTrigger: jest.fn(() => ({
@@ -308,9 +313,7 @@ global.ScriptApp = {
     create: jest.fn(),
   })),
   deleteTrigger: jest.fn(),
-  getService: jest.fn(() => ({
-    getUrl: jest.fn().mockReturnValue('https://script.google.com/macros/s/mock-id/exec'),
-  })),
+  getService: jest.fn(() => mockServiceInstance),
   getScriptId: jest.fn().mockReturnValue('mock-script-id'),
   getOAuthToken: jest.fn().mockReturnValue('mock-oauth-token'),
 };
@@ -382,6 +385,34 @@ global.mockHelpers = {
   createMockProperties,
   createMockHttpResponse,
   createMockCache,
+};
+
+// ============================================================================
+// GAS FILE LOADER UTILITY
+// ============================================================================
+
+/**
+ * Loads a .gs file and executes it in the global scope
+ * This makes all function definitions globally available (like in actual GAS)
+ */
+global.loadGasFile = function(filePath) {
+  const fs = require('fs');
+  const vm = require('vm');
+  
+  try {
+    // Read the file - Google Apps Script .gs files are just JavaScript
+    const sourceCode = fs.readFileSync(filePath, 'utf-8');
+    
+    // Create a context with all global objects available
+    // This ensures that functions defined in the .gs file become globally available
+    const context = vm.createContext(global);
+    
+    // Execute in the global context so function declarations attach to global
+    vm.runInContext(sourceCode, context, { filename: filePath });
+  } catch (error) {
+    console.error(`Failed to load GAS file ${filePath}:`, error.message);
+    throw error;
+  }
 };
 
 // ============================================================================

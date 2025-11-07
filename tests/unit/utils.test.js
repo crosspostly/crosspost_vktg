@@ -6,10 +6,16 @@ const {
 describe('utils.gs', () => {
   beforeAll(() => {
     jest.resetModules();
+
+    // Set up mocks BEFORE loading the file
     global.logEvent = jest.fn();
     global.resolveVkScreenName = jest.fn();
 
-    require('../../server/utils.gs');
+    // Load the utils.gs file which will overwrite resolveVkScreenName with the real function
+    global.loadGasFile(require.resolve('../../server/utils.gs'));
+    
+    // Now re-mock dependencies that utils.gs might call
+    global.resolveVkScreenName = jest.fn();
   });
 
   beforeEach(() => {

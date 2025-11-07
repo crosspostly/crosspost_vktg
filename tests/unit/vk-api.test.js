@@ -21,6 +21,7 @@ describe('vk-api.gs', () => {
     global.VK_API_VERSION = '5.131';
     global.TIMEOUTS = { FAST: 8000, MEDIUM: 15000, SLOW: 30000 };
 
+    // Set up mocks BEFORE loading the file
     global.logApiError = jest.fn();
     global.logEvent = jest.fn();
     global.jsonResponse = jest.fn((body, status) => createJsonResponse(body, status));
@@ -29,7 +30,16 @@ describe('vk-api.gs', () => {
     global.getUserBindings = jest.fn();
     global.checkPostAlreadySent = jest.fn();
 
-    require('../../server/vk-api.gs');
+    global.loadGasFile(require.resolve('../../server/vk-api.gs'));
+    
+    // Re-mock functions that the module uses
+    global.logApiError = jest.fn();
+    global.logEvent = jest.fn();
+    global.jsonResponse = jest.fn((body, status) => createJsonResponse(body, status));
+    global.handleCheckLicense = jest.fn();
+    global.extractVkGroupId = jest.fn();
+    global.getUserBindings = jest.fn();
+    global.checkPostAlreadySent = jest.fn();
   });
 
   beforeEach(() => {

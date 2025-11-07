@@ -13,7 +13,7 @@ describe('vk-posts.gs', () => {
     global.logEvent = jest.fn();
     global.getPublishedSheetNameFromBindingName = jest.fn();
 
-    require('../../server/vk-posts.gs');
+    global.loadGasFile(require.resolve('../../server/vk-posts.gs'));
   });
 
   beforeEach(() => {
