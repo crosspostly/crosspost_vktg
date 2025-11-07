@@ -1,9 +1,18 @@
-// @ts-nocheck
 /**
  * VK→Telegram Crossposter - BINDINGS SERVICE MODULE
  * CRUD связок и вспомогательные функции
  */
 
+/**
+ * Обработка запроса на получение связок
+ * @param {Object} payload - Данные запроса
+ * @param {string} payload.license_key - Ключ лицензии
+ * @param {string} clientIp - IP адрес клиента
+ * @returns {ContentService.TextOutput} - JSON ответ
+ * @returns {boolean} returns.success - Успешность операции
+ * @returns {Array<BindingConfig>} [returns.bindings] - Массив связок
+ * @returns {string} [returns.error] - Ошибка если была
+ */
 function handleGetBindings(payload, clientIp) {
   try {
     var { license_key } = payload;

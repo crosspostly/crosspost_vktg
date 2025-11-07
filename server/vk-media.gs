@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * VK→Telegram Crossposter - VK MEDIA MODULE
  * Обработка медиа вложений из VK
@@ -13,8 +12,17 @@
 
 /**
  * Извлечение медиа URL'ов из VK вложений
- * @param {Array} attachments - VK вложения
+ * @param {Array<VkAttachment>} attachments - VK вложения
  * @returns {Object} - Объект с массивами медиа URL'ов
+ * @returns {Array<Object>} returns.photos - Массив фото
+ * @returns {string} returns.photos[].type - Тип медиа ('photo')
+ * @returns {string} returns.photos[].url - URL фото
+ * @returns {Array<Object>} returns.videos - Массив видео
+ * @returns {string} returns.videos[].type - Тип медиа ('video')
+ * @returns {string} returns.videos[].url - URL видео
+ * @returns {string} returns.videos[].id - ID видео
+ * @returns {Array<string>} returns.docLinks - Массив ссылок на документы
+ * @returns {Array<string>} returns.audioLinks - Массив ссылок на аудио
  */
 function getVkMediaUrls(attachments) {
   var result = {
@@ -159,7 +167,7 @@ function getVkVideoDirectUrl(videoId) {
 
 /**
  * Получение лучшего качества фото из VK
- * @param {Array} sizes - Массив размеров фото
+ * @param {Array<VkPhotoSize>} sizes - Массив размеров фото
  * @returns {string|null} - URL лучшего качества
  */
 function getBestPhotoUrl(sizes) {

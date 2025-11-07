@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * VK→Telegram Crossposter - VK POSTS MODULE
  * Форматирование и обработка VK постов
@@ -14,7 +13,7 @@
 /**
  * Форматирование VK текста для Telegram
  * @param {string} text - Исходный VK текст
- * @param {Object} options - Опции форматирования
+ * @param {FormatOptions} options - Опции форматирования
  * @returns {string} - Отформатированный текст
  */
 function formatVkTextForTelegram(text, options) {
@@ -55,8 +54,8 @@ function formatVkTextForTelegram(text, options) {
 
 /**
  * Форматирование VK поста для Telegram
- * @param {Object} vkPost - VK пост
- * @param {Object} binding - Связка с настройками
+ * @param {VkPost} vkPost - VK пост
+ * @param {BindingConfig} binding - Связка с настройками
  * @returns {string} - Отформатированный текст
  */
 function formatVkPostForTelegram(vkPost, binding) {
@@ -88,7 +87,7 @@ function formatVkPostForTelegram(vkPost, binding) {
 
 /**
  * Создание краткого описания медиа вложений
- * @param {Array} attachments - VK вложения
+ * @param {Array<VkAttachment>} attachments - VK вложения
  * @returns {string} - Описание медиа
  */
 function createMediaSummary(attachments) {

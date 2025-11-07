@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * VK→Telegram Crossposter - VK API MODULE
  * VK API вызовы и резолвинг ID/screennames
@@ -14,8 +13,14 @@
 /**
  * Обработка запроса на получение постов из VK
  * @param {Object} payload - Данные запроса
+ * @param {string} payload.license_key - Ключ лицензии
+ * @param {string} payload.vk_group_id - ID группы VK
+ * @param {number} [payload.count=50] - Количество постов для получения
  * @param {string} clientIp - IP адрес клиента
- * @returns {ContentService.TextOutput} - JSON ответ
+ * @returns {ContentService.TextOutput} - JSON ответ с постами
+ * @returns {boolean} returns.success - Успешность операции
+ * @returns {Array<VkPost>} [returns.posts] - Массив постов VK
+ * @returns {string} [returns.error] - Сообщение об ошибке
  */
 function handleGetVkPosts(payload, clientIp) {
   try {
@@ -154,6 +159,19 @@ function handleGetVkPosts(payload, clientIp) {
   }
 }
 
+/**
+ * Обработка запроса на публикацию последнего поста из VK
+ * @param {Object} payload - Данные запроса
+ * @param {string} payload.license_key - Ключ лицензии
+ * @param {string} payload.vk_group_id - ID группы VK
+ * @param {string} [payload.binding_id] - ID связки для форматирования
+ * @param {string} clientIp - IP адрес клиента
+ * @returns {ContentService.TextOutput} - JSON ответ о публикации
+ * @returns {boolean} returns.success - Успешность операции
+ * @returns {string} [returns.message] - Сообщение об успехе
+ * @returns {Object} [returns.published_post] - Информация о опубликованном посте
+ * @returns {string} [returns.error] - Сообщение об ошибке
+ */
 function handlePublishLastPost(payload, clientIp) {
   try {
     var { license_key, vk_group_id, binding_id } = payload;
@@ -263,8 +281,9 @@ function handlePublishLastPost(payload, clientIp) {
 /**
  * Получение постов из VK группы
  * @param {string} groupId - VK Group ID
- * @param {number} count - Количество постов (по умолчанию 10)
- * @returns {Array} - Массив постов
+ * @param {number} [count=10] - Количество постов
+ * @returns {Array<VkPost>} - Массив постов
+ * @throws {Error} - При ошибке API или отсутствии токена
  */
 function getVkPosts(groupId, count = 10) {
   try {
@@ -347,6 +366,7 @@ function getVkPosts(groupId, count = 10) {
  * Резольв screen_name в VK Group ID через VK API
  * @param {string} screenName - Screen name для резольва
  * @returns {string} - VK Group ID в формате -123456
+ * @throws {Error} - При ошибке API или невалидном screen name
  */
 function resolveVkScreenName(screenName) {
   if (!screenName || typeof screenName !== 'string') {
@@ -448,7 +468,7 @@ function resolveVkScreenName(screenName) {
 /**
  * Получение названия VK группы по ID
  * @param {string} groupId - VK Group ID
- * @returns {string|null} - Название группы или null
+ * @returns {string|null} - Название группы или null при ошибке
  */
 function getVkGroupName(groupId) {
   try {
@@ -510,7 +530,7 @@ function getVkGroupName(groupId) {
 /**
  * Кэшированное получение названия VK группы
  * @param {string} groupId - VK Group ID
- * @returns {string} - Название группы с кэшированием
+ * @returns {string} - Название группы (из кэша или свежее)
  */
 function getCachedVkGroupName(groupId) {
   try {

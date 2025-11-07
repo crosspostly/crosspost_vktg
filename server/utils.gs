@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * VK→Telegram Crossposter - UTILS MODULE
  * Общие утилиты и helper функции
@@ -74,8 +73,16 @@ function getSheet(name) {
 
 /**
  * Очистка старых логов (старше указанного количества дней)
- * @param {number} daysToKeep - Количество дней для сохранения (по умолчанию 30)
+ * @param {number} [daysToKeep=30] - Количество дней для сохранения
  * @returns {Object} - Результат очистки
+ * @returns {boolean} returns.success - Успешность операции
+ * @returns {number} returns.totalDeleted - Общее количество удаленных строк
+ * @returns {Array<Object>} returns.sheetResults - Результаты по каждому листу
+ * @returns {string} returns.sheetResults[].sheetName - Название листа
+ * @returns {number} returns.sheetResults[].deleted - Количество удаленных строк
+ * @returns {string} returns.sheetResults[].status - Статус операции
+ * @returns {string} [returns.sheetResults[].error] - Ошибка если была
+ * @throws {Error} - При критической ошибке очистки
  */
 function cleanOldLogs(daysToKeep = 30) {
   try {
@@ -201,6 +208,19 @@ function splitTextIntoChunks(text, maxLength = 4000) {
  * @param {string} vkUserToken - VK User Access Token
  * @param {string} adminChatId - Admin Chat ID
  * @returns {Object} - Результат валидации
+ * @returns {boolean} returns.success - Успешность валидации
+ * @returns {string} [returns.error] - Сообщение об ошибке
+ * @returns {Object} returns.details - Детальная информация по каждому токену
+ * @returns {Object} returns.details.telegram - Результат валидации Telegram
+ * @returns {string} returns.details.telegram.status - Статус (✅/❌)
+ * @returns {string} returns.details.telegram.message - Сообщение о результате
+ * @returns {Object} returns.details.vkUser - Результат валидации VK User
+ * @returns {string} returns.details.vkUser.status - Статус (✅/❌)
+ * @returns {string} returns.details.vkUser.message - Сообщение о результате
+ * @returns {Object} returns.details.adminChat - Результат валидации Admin Chat
+ * @returns {string} returns.details.adminChat.status - Статус (✅/❌/⚠️)
+ * @returns {string} returns.details.adminChat.message - Сообщение о результате
+ * @throws {Error} - При критической ошибке валидации
  */
 function validateTokens(botToken, vkUserToken, adminChatId) {
   var results = {
@@ -331,7 +351,8 @@ function validateTokens(botToken, vkUserToken, adminChatId) {
 /**
  * Извлечение VK Group ID из URL или преобразование screen_name
  * @param {string} url - VK URL или ID
- * @returns {string} - Нормализованный VK Group ID
+ * @returns {string} - Нормализованный VK Group ID (с префиксом -)
+ * @throws {Error} - При невалидном формате URL или ошибке резолвинга
  */
 function extractVkGroupId(url) {
   try {
@@ -396,7 +417,8 @@ function extractVkGroupId(url) {
 /**
  * Извлечение Telegram Chat ID из URL или username
  * @param {string} input - Telegram URL, username или chat ID
- * @returns {string} - Нормализованный chat ID
+ * @returns {string} - Нормализованный chat ID (с префиксом @ для username)
+ * @throws {Error} - При невалидном формате
  */
 function extractTelegramChatId(input) {
   if (!input || typeof input !== 'string') {
@@ -427,6 +449,19 @@ function extractTelegramChatId(input) {
   throw new Error('Invalid Telegram format');
 }
 
+/**
+ * Получение системной статистики
+ * @returns {Object} - Статистика системы
+ * @returns {number} returns.totalLicenses - Общее количество лицензий
+ * @returns {number} returns.activeLicenses - Количество активных лицензий
+ * @returns {number} returns.expiredLicenses - Количество истекших лицензий
+ * @returns {number} returns.totalBindings - Общее количество связок
+ * @returns {number} returns.activeBindings - Количество активных связок
+ * @returns {number} returns.pausedBindings - Количество приостановленных связок
+ * @returns {number} returns.postsToday - Количество постов за сегодня
+ * @returns {Date|string} returns.lastPostTime - Время последнего поста
+ * @returns {string} returns.topUser - Топ пользователь
+ */
 function getSystemStats() {
   try {
     var licensesSheet = getSheet("Licenses");
@@ -470,6 +505,10 @@ function getSystemStats() {
   }
 }
 
+/**
+ * Отображение статистики в UI
+ * @returns {void}
+ */
 function showStatistics() {
   var stats = getSystemStats();
     
@@ -490,6 +529,10 @@ function showStatistics() {
   SpreadsheetApp.getUi().alert(message);
 }
 
+/**
+ * Показать лист с логами
+ * @returns {void}
+ */
 function showLogsSheet() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var logsSheet = ss.getSheetByName("Logs");
@@ -501,6 +544,11 @@ function showLogsSheet() {
   }
 }
 
+/**
+ * Поиск топ пользователя по количеству связок
+ * @param {Array<Array>} bindingsData - Данные связок
+ * @returns {string} - Топ пользователь с количеством связок
+ */
 function findTopUser(bindingsData) {
   var userCounts = {};
   
@@ -521,6 +569,12 @@ function findTopUser(bindingsData) {
 
 // escapeHtml function is defined at the top of this file
 
+/**
+ * Создание JSON ответа для HTTP
+ * @param {*} data - Данные для ответа
+ * @param {number} [statusCode=200] - HTTP статус код
+ * @returns {ContentService.TextOutput} - HTTP ответ
+ */
 function jsonResponse(data, statusCode = 200) {
   return ContentService.createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
@@ -535,7 +589,8 @@ function jsonResponse(data, statusCode = 200) {
 /**
  * Резолвит screen name VK в числовой ID через API
  * @param {string} screenName - screen name пользователя или группы
- * @return {string} - числовой ID с префиксом - для групп
+ * @returns {string} - числовой ID с префиксом - для групп
+ * @throws {Error} - При ошибке API или невалидном screen name
  */
 function resolveVkScreenName(screenName) {
   try {

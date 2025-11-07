@@ -1,21 +1,46 @@
-// @ts-nocheck
 /**
  * VK→Telegram Crossposter - PUBLISHED SHEETS SERVICE MODULE
  * Работа с листами публикаций: создание, запись, проверка дублей
  */
 
+/**
+ * Получение имени листа публикаций из имени связки
+ * @param {string} bindingName - Имя связки
+ * @returns {string} - Имя листа
+ * @throws {Error} - При невалидном имени связки
+ */
 function getPublishedSheetNameFromBindingName(bindingName) {
   var sanitized = sanitizeBindingSheetSuffix(bindingName);
   if (!validateBindingName(sanitized)) throw new Error('Unable to resolve binding sheet name (invalid characters after sanitization)');
   return getPublishedSheetNameFromSuffix(sanitized);
 }
 
+/**
+ * Получение имени листа из суффикса
+ * @param {string} suffix - Суффикс
+ * @returns {string} - Имя листа
+ */
 function getPublishedSheetNameFromSuffix(suffix) { return 'Published ' + suffix; }
 
+/**
+ * Очистка имени листа от недопустимых символов
+ * @param {string} name - Исходное имя
+ * @returns {string} - Очищенное имя (максимум 80 символов)
+ */
 function sanitizeBindingSheetSuffix(name) { return (name || '').toString().replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().substring(0, 80); }
 
+/**
+ * Валидация имени связки
+ * @param {string} name - Имя для проверки
+ * @returns {boolean} - true если имя валидное
+ */
 function validateBindingName(name) { return !!(name && name.length > 0); }
 
+/**
+ * Получение или создание листа для связки
+ * @param {string} bindingName - Имя связки
+ * @returns {Sheet} - Лист для публикаций
+ */
 function getOrCreateBindingSheet(bindingName) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var name = getPublishedSheetNameFromBindingName(bindingName);
@@ -28,6 +53,12 @@ function getOrCreateBindingSheet(bindingName) {
   return sheet;
 }
 
+/**
+ * Запись строки публикации в лист связки
+ * @param {string} bindingName - Имя связки
+ * @param {PublicationRecord} data - Данные публикации
+ * @returns {boolean} - Успешность записи
+ */
 function writePublicationRowToBindingSheet(bindingName, data) {
   try {
     var sheet = getOrCreateBindingSheet(bindingName);

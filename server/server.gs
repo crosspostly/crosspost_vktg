@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * VK→Telegram Crossposter - SERVER CORE MODULE
  * Entry point, константы, роутинг API запросов
@@ -52,6 +51,7 @@ var TIMEOUTS = {
 
 /**
  * Инициализация при открытии файла - создание меню
+ * @returns {void}
  */
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
@@ -67,6 +67,7 @@ function onOpen() {
 
 /**
  * Инициализация сервера - создание необходимых листов
+ * @returns {void}
  */
 function initializeServer() {
   try {
@@ -102,6 +103,11 @@ function initializeServer() {
 /**
  * Главная функция API endpoint’а - маршрутизация запросов
  * @param {Object} e - Объект события от Google Apps Script
+ */
+/**
+ * Главная функция API endpoint'а - маршрутизация запросов
+ * @param {Object} e - Объект события от Google Apps Script
+ * @returns {ContentService.TextOutput} - HTTP ответ
  */
 function doPost(e) {
   try {
