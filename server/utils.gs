@@ -1,273 +1,421 @@
+// @ts-nocheck
 /**
  * VK→Telegram Crossposter - UTILS MODULE
- * Утилиты и общие функции для всех модулей
- * 
- * Размер: ~300 строк
- * Зависимости: нет (базовый модуль)
+ * Общие утилиты и helper функции
  * 
  * Автор: f_den
  * Дата: 2025-11-06
  */
 
 // ============================================
-// LOGGING
+// ОБЩИЕ УТИЛИТЫ
 // ============================================
 
-function logEvent(level, event, user, details, ip) {
-  try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var logsSheet = ss.getSheetByName("Logs");
-    
-    if (!logsSheet) {
-      // Создаем лист логов если не существует
-      logsSheet = ss.insertSheet("Logs");
-      logsSheet.getRange("A1:F1").setValues([["Timestamp", "Level", "Event", "User", "Details", "IP"]])
-        .setFontWeight("bold")
-        .setBackground("#667eea")
-        .setFontColor("white");
-    }
-    
-    var timestamp = new Date().toISOString();
-    var rowData = [timestamp, level, event, user || "", details || "", ip || ""];
-    
-    // Вставляем новую строку в начало (после заголовков)
-    logsSheet.insertRowBefore(2);
-    logsSheet.getRange(2, 1, 1, 6).setValues([rowData]);
-    
-    // Ограничиваем количество записей (оставляем последние 1000)
-    var lastRow = logsSheet.getLastRow();
-    if (lastRow > 1000) {
-      logsSheet.deleteRows(lastRow - 1000 + 1, lastRow - 1000);
-    }
-    
-  } catch (error) {
-    // Если логирование не работает, выводим в консоль
-    console.error(`Log error: ${error.message}`);
-    console.log(`[${new Date().toISOString()}] ${level}: ${event} - ${details}`);
-  }
+/**
+ * Экранирование HTML символов
+ * @param {string} text - Текст для экранирования
+ * @returns {string} - Экранированный текст
+ */
+function escapeHtml(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
-function logApiError(service, endpoint, request, response) {
-  var errorDetails = {
-    service: service,
-    endpoint: endpoint,
-    request: request,
-    response: response,
-    timestamp: new Date().toISOString()
-  };
+/**
+ * Генерация уникального ID для связки
+ * @returns {string} - Уникальный идентификатор
+ */
+function generateBindingId() {
+  return 'binding_' + new Date().getTime() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+/**
+ * Создание нового листа с заголовками
+ * @param {string} name - Название листа
+ * @param {Array<string>} headers - Массив заголовков
+ * @returns {Sheet} - Созданный лист
+ */
+function createSheet(name, headers) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(name);
   
-  logEvent("ERROR", "api_error", "system", JSON.stringify(errorDetails));
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.appendRow(headers);
+    
+    // Стилизуем заголовок
+    var headerRange = sheet.getRange(1, 1, 1, headers.length);
+    headerRange.setBackground('#667eea');
+    headerRange.setFontColor('white');
+    headerRange.setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+  
+  return sheet;
 }
 
-function cleanOldLogs() {
+/**
+ * Получение листа по имени
+ * @param {string} name - Название листа
+ * @returns {Sheet} - Лист или null если не найден
+ */
+function getSheet(name) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  if (!sheet) {
+    throw new Error(`Sheet '${name}' not found. Run server initialization first.`);
+  }
+  return sheet;
+}
+
+/**
+ * Очистка старых логов (старше указанного количества дней)
+ * @param {number} daysToKeep - Количество дней для сохранения (по умолчанию 30)
+ * @returns {Object} - Результат очистки
+ */
+function cleanOldLogs(daysToKeep = 30) {
   try {
+    var cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
+    
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var allSheets = ss.getSheets();
-    var logSheets = [];
-    
-    // Ищем все листы с логами
-    for (var i = 0; i < allSheets.length; i++) {
-      var sheetName = allSheets[i].getName();
-      if (sheetName === "Logs" || sheetName === "Client Logs" || sheetName.toLowerCase().includes("log")) {
-        logSheets.push(allSheets[i]);
-      }
-    }
-    
-    if (logSheets.length === 0) {
-      logEvent("WARN", "no_log_sheets_found", "system", "No log sheets found for cleanup");
-      return { totalDeleted: 0, sheetsProcessed: 0 };
-    }
-    
-    var thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    var logSheets = ['Logs'];
     var totalDeleted = 0;
-    
-    logEvent("INFO", "log_cleanup_started", "system", `Starting cleanup of ${logSheets.length} log sheets`);
-    
-    // Обрабатываем каждый лог-лист
-    for (var j = 0; j < logSheets.length; j++) {
-      var sheet = logSheets[j];
-      var sheetName = sheet.getName();
-      var sheetDeletedCount = 0;
-      
+    var sheetResults = [];
+
+    logSheets.forEach(function(sheetName) {
       try {
-        var dataRange = sheet.getDataRange();
-        var data = dataRange.getValues();
-        
-        if (data.length <= 1) { // Только заголовок или пустой лист
-          continue;
+        var sheet = ss.getSheetByName(sheetName);
+        if (!sheet) {
+          sheetResults.push({ sheetName: sheetName, deleted: 0, status: 'not_found' });
+          return;
         }
+
+        var data = sheet.getDataRange().getValues();
+        var rowsToDelete = [];
         
-        // Удаляем старые записи (начиная с конца, чтобы не сбивать индексы)
-        for (var i = data.length - 1; i >= 1; i--) {
-          try {
-            var logDate = new Date(data[i][0]);
-            
-            if (isNaN(logDate.getTime())) {
-              continue;
+        // Начинаем с ряда 2 (пропускаем заголовок)
+        for (var i = 1; i < data.length; i++) {
+          var timestamp = data[i][0];
+          if (timestamp) {
+            var rowDate = new Date(timestamp);
+            if (rowDate < cutoffDate) {
+              rowsToDelete.push(i + 1); // Google Sheets использует 1-based индексы
             }
-            
-            if (logDate < thirtyDaysAgo) {
-              sheet.deleteRow(i + 1);
-              sheetDeletedCount++;
-            }
-          } catch (rowError) {
-            logEvent("WARN", "log_cleanup_row_error", "system", `Error processing row ${i + 1} in sheet "${sheetName}": ${rowError.message}`);
           }
         }
+
+        // Удаляем ряды в обратном порядке
+        for (var j = rowsToDelete.length - 1; j >= 0; j--) {
+          sheet.deleteRow(rowsToDelete[j]);
+          totalDeleted++;
+        }
+
+        sheetResults.push({ 
+          sheetName: sheetName, 
+          deleted: rowsToDelete.length, 
+          status: 'success' 
+        });
         
-        totalDeleted += sheetDeletedCount;
-        
-        logEvent("INFO", "log_cleanup_sheet_completed", "system", `Sheet "${sheetName}": deleted ${sheetDeletedCount} entries`);
-        
+        logEvent('INFO', 'sheet_logs_cleaned', 'server', 
+                `Sheet: ${sheetName}, Deleted: ${rowsToDelete.length} rows older than ${daysToKeep} days`);
+
       } catch (sheetError) {
-        logEvent("ERROR", "log_cleanup_sheet_error", "system", `Error processing sheet "${sheetName}": ${sheetError.message}`);
+        logEvent('ERROR', 'sheet_cleanup_error', 'server', 
+                `Sheet: ${sheetName}, Error: ${sheetError.message}`);
+        sheetResults.push({ 
+          sheetName: sheetName, 
+          deleted: 0, 
+          status: 'error', 
+          error: sheetError.message 
+        });
       }
-    }
-    
-    logEvent("INFO", "log_cleanup_completed", "system", `Cleanup complete: ${totalDeleted} entries deleted from ${logSheets.length} sheets`);
-    
+    });
+
+    logEvent('INFO', 'log_cleanup_completed', 'server', 
+            `Cleanup complete. Total deleted: ${totalDeleted} rows from ${logSheets.length} sheets`);
+  
     return {
       success: true,
       totalDeleted: totalDeleted,
-      sheetsProcessed: logSheets.length
+      sheetResults: sheetResults
     };
-    
+
   } catch (error) {
-    logEvent("ERROR", "log_cleanup_failed", "system", error.message);
-    return { success: false, error: error.message, totalDeleted: 0, sheetsProcessed: 0 };
+    logEvent('ERROR', 'log_cleanup_failed', 'server', error.message);
+    return {
+      success: false,
+      error: error.message,
+      totalDeleted: 0,
+      sheetResults: []
+    };
   }
 }
 
-// ============================================
-// SHEETS UTILITIES
-// ============================================
+/**
+ * Разбивка длинного текста на части для Telegram
+ * @param {string} text - Текст для разбивки
+ * @param {number} maxLength - Максимальная длина части (по умолчанию 4000)
+ * @returns {Array<string>} - Массив частей текста
+ */
+function splitTextIntoChunks(text, maxLength = 4000) {
+  if (!text || text.length <= maxLength) {
+    return [text || ''];
+  }
 
-function createSheet(name, headers) {
-  try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(name);
+  var chunks = [];
+  var currentText = text;
+
+  while (currentText.length > maxLength) {
+    var chunk = currentText.substring(0, maxLength);
     
-    if (!sheet) {
-      sheet = ss.insertSheet(name);
-      
-      // Добавляем заголовки
-      if (headers && headers.length > 0) {
-        var headerRange = sheet.getRange(1, 1, 1, headers.length);
-        headerRange.setValues([headers]);
-        headerRange.setFontWeight("bold");
-        headerRange.setBackground("#667eea");
-        headerRange.setFontColor("white");
-      }
-      
-      logEvent("INFO", "sheet_created", "system", `Sheet "${name}" created with ${headers.length} columns`);
+    // Пытаемся разорвать на границе слов
+    var lastSpace = chunk.lastIndexOf(' ');
+    var lastNewline = chunk.lastIndexOf('\n');
+    var breakPoint = Math.max(lastSpace, lastNewline);
+    
+    if (breakPoint > maxLength * 0.7) { // Используем только если разрыв достаточно далеко
+      chunk = currentText.substring(0, breakPoint);
+      currentText = currentText.substring(breakPoint + 1);
+    } else {
+      currentText = currentText.substring(maxLength);
     }
     
-    return sheet;
-    
-  } catch (error) {
-    logEvent("ERROR", "sheet_creation_failed", "system", `Sheet: ${name}, Error: ${error.message}`);
-    throw error;
+    chunks.push(chunk.trim());
   }
+
+  if (currentText.trim().length > 0) {
+    chunks.push(currentText.trim());
+  }
+
+  return chunks.filter(chunk => chunk.length > 0);
 }
 
-function getSheet(name) {
-  try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(name);
-    
-    if (!sheet) {
-      throw new Error(`Sheet "${name}" not found`);
-    }
-    
-    return sheet;
-    
-  } catch (error) {
-    logEvent("ERROR", "sheet_access_failed", "system", `Sheet: ${name}, Error: ${error.message}`);
-    throw error;
-  }
-}
+/**
+ * Валидация токенов Telegram Bot и VK User Access
+ * @param {string} botToken - Telegram Bot Token
+ * @param {string} vkUserToken - VK User Access Token
+ * @param {string} adminChatId - Admin Chat ID
+ * @returns {Object} - Результат валидации
+ */
+function validateTokens(botToken, vkUserToken, adminChatId) {
+  var results = {
+    telegram: { status: '❌', message: '' },
+    vkUser: { status: '❌', message: '' },
+    adminChat: { status: '❌', message: '' }
+  };
 
-function ensureSheetExists(name, headers) {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(name);
-    
-    if (!sheet) {
-      sheet = ss.insertSheet(name);
+    // 1. Telegram Bot Token
+    logEvent('DEBUG', 'validating_telegram_token', 'admin', 'Testing Telegram Bot API');
+    try {
+      var tgResponse = UrlFetchApp.fetch(`https://api.telegram.org/bot${botToken}/getMe`, {
+        muteHttpExceptions: true,
+        timeout: 10000
+      });
       
-      // Добавляем заголовки если предоставлены
-      if (headers && headers.length > 0) {
-        var headerRange = sheet.getRange(1, 1, 1, headers.length);
-        headerRange.setValues([headers]);
-        headerRange.setFontWeight("bold");
-        headerRange.setBackground("#667eea");
-        headerRange.setFontColor("white");
-        
-        logEvent("INFO", "sheet_ensured", "system", `Sheet "${name}" created with headers`);
+      var tgData = JSON.parse(tgResponse.getContentText());
+      if (tgData.ok) {
+        results.telegram = { status: '✅', message: `@${tgData.result.username}` };
+        logEvent('INFO', 'telegram_token_valid', 'admin', `Bot: @${tgData.result.username}`);
       } else {
-        logEvent("INFO", "sheet_ensured", "system", `Sheet "${name}" created without headers`);
+        results.telegram = { status: '❌', message: tgData.description };
+        logEvent('WARN', 'telegram_token_invalid', 'admin', tgData.description);
+      }
+    } catch (tgError) {
+      results.telegram = { status: '❌', message: tgError.message };
+    }
+
+    // 2. VK User Token
+    logEvent('DEBUG', 'validating_vk_user_token', 'admin', 'Testing VK User Token');
+    try {
+      var vkUserResponse = UrlFetchApp.fetch(
+        `https://api.vk.com/method/users.get?v=${VK_API_VERSION}&access_token=${vkUserToken}`,
+        { muteHttpExceptions: true, timeout: 10000 }
+      );
+      
+      var vkUserData = JSON.parse(vkUserResponse.getContentText());
+      if (vkUserData.response && vkUserData.response.length > 0) {
+        var user = vkUserData.response[0];
+        if (user && user.first_name && user.last_name) {
+          results.vkUser = { status: '✅', message: `${user.first_name} ${user.last_name}` };
+          logEvent('INFO', 'vk_user_token_valid', 'admin', `User: ${user.first_name} ${user.last_name}`);
+        } else {
+          results.vkUser = { status: '❌', message: 'VK API вернуло неполные данные' };
+          logEvent('WARN', 'vk_user_data_incomplete', 'admin', 'User data is incomplete or missing');
+        }
+      } else if (vkUserData.error) {
+        var errorMessage = vkUserData.error.error_msg;
+        if (vkUserData.error.error_code === 4) {
+          errorMessage = 'Неправильная подпись запроса. User Access Token должен иметь права: wall, offline';
+        } else if (vkUserData.error.error_code === 5) {
+          errorMessage = 'User Access Token недействителен или истёк. Нужны права: wall, offline';
+        }
+        results.vkUser = { status: '❌', message: `VK API ошибка: ${errorMessage} (код: ${vkUserData.error.error_code})` };
+        logEvent('WARN', 'vk_user_token_invalid', 'admin', `Error code: ${vkUserData.error.error_code}, ${errorMessage}`);
+      }
+    } catch (vkUserError) {
+      results.vkUser = { status: '❌', message: vkUserError.message };
+    }
+
+    // 3. Admin Chat ID
+    if (results.telegram.status === '✅') {
+      logEvent('DEBUG', 'validating_admin_chat', 'admin', `Testing Admin Chat ID: ${adminChatId}`);
+      try {
+        var adminTestResponse = UrlFetchApp.fetch(
+          `https://api.telegram.org/bot${botToken}/getChat?chat_id=${encodeURIComponent(adminChatId)}`,
+          { method: 'GET', muteHttpExceptions: true, timeout: 10000 }
+        );
+        
+        var adminTestData = JSON.parse(adminTestResponse.getContentText());
+        if (adminTestData.ok) {
+          results.adminChat = { status: '✅', message: '✅ Доступен' };
+          logEvent('INFO', 'admin_chat_valid', 'admin', `Chat ID: ${adminChatId}`);
+        } else {
+          var errorMessage = adminTestData.description;
+          if (errorMessage.includes('chat not found')) {
+            errorMessage = 'Чат не найден. Проверьте Chat ID';
+          } else if (errorMessage.includes('bot was blocked')) {
+            errorMessage = 'Бот заблокирован в чате';
+          } else if (errorMessage.includes('not enough rights')) {
+            errorMessage = 'Недостаточно прав в чате';
+          }
+          results.adminChat = { status: '❌', message: errorMessage };
+          logEvent('WARN', 'admin_chat_invalid', 'admin', `Chat ID: ${adminChatId}, Error: ${errorMessage}`);
+        }
+      } catch (adminError) {
+        results.adminChat = { status: '❌', message: adminError.message };
       }
     } else {
-      logEvent("DEBUG", "sheet_exists", "system", `Sheet "${name}" already exists`);
+      results.adminChat = { status: '⚠️', message: 'Bot Token недействителен, невозможно проверить чат' };
     }
+
+    // Итоговая оценка
+    var allValid = Object.values(results).every(r => r.status === '✅');
+    var partialValid = Object.values(results).some(r => r.status === '✅');
     
-    return sheet;
-    
+    var message;
+    if (allValid) {
+      message = '🎉 Все токены валидны!';
+    } else if (partialValid) {
+      message = '⚠️ Некоторые токены имеют проблемы. Проверьте детали выше.';
+    } else {
+      message = '❌ Все токены невалидны!';
+    }
+
+    logEvent('INFO', 'token_validation_complete', 'admin', message);
+    return {
+      success: allValid || partialValid,
+      error: allValid ? null : message,
+      details: results
+    };
+
   } catch (error) {
-    logEvent("ERROR", "ensure_sheet_failed", "system", `Sheet: ${name}, Error: ${error.message}`);
+    logEvent('ERROR', 'token_validation_error', 'admin', error.message);
+    return {
+      success: false,
+      error: error.message,
+      details: results
+    };
+  }
+}
+
+// ============================================
+// ИДЕНТИФИКАЦИЯ VK И TELEGRAM
+// ============================================
+
+/**
+ * Извлечение VK Group ID из URL или преобразование screen_name
+ * @param {string} url - VK URL или ID
+ * @returns {string} - Нормализованный VK Group ID
+ */
+function extractVkGroupId(url) {
+  try {
+    if (!url || typeof url !== 'string') {
+      logEvent('WARN', 'vk_url_invalid_type', 'server', `URL type: ${typeof url}`);
+      throw new Error('Invalid URL type');
+    }
+
+    const originalInput = url;
+    const cleanInput = url.trim().toLowerCase().split('?')[0].split('#')[0];
+    
+    logEvent('DEBUG', 'vk_group_id_extraction_start', 'server', `Input: ${originalInput}, Clean: ${cleanInput}`);
+
+    // Случай 1: Чистый числовой ID (-123456 или 123456)
+    if (/^-?\d+$/.test(cleanInput)) {
+      const normalizedId = cleanInput.startsWith('-') ? cleanInput : '-' + cleanInput;
+      logEvent('DEBUG', 'vk_group_id_numeric', 'server', `${originalInput} → ${normalizedId}`);
+      return normalizedId;
+    }
+
+    // Случай 2: vk.com/public123, vk.com/club123
+    const publicClubMatch = cleanInput.match(/vk\.com\/(public|club)(\d+)/i);
+    if (publicClubMatch) {
+      const result = '-' + publicClubMatch[2];
+      logEvent('DEBUG', 'vk_group_id_public_club', 'server', `${originalInput} → ${result}`);
+      return result;
+    }
+
+    // Случай 3: vk.com/username - нужно резолвить через API
+    const nameMatch = cleanInput.match(/vk\.com\/([a-z0-9_]+)/i);
+    if (nameMatch) {
+      const screenName = nameMatch[1];
+      
+      // Фолбэк: если это выглядит как число, попробуем
+      if (/^\d+$/.test(screenName)) {
+        const result = '-' + screenName;
+        logEvent('DEBUG', 'vk_group_id_fallback_numeric', 'server', `${originalInput} → ${result}`);
+        return result;
+      }
+      
+      // Резолвим через API
+      try {
+        const result = resolveVkScreenName(screenName);
+        logEvent('DEBUG', 'vk_group_id_resolved', 'server', `${originalInput} → ${screenName} → ${result}`);
+        return result;
+      } catch (error) {
+        logEvent('ERROR', 'vk_group_id_resolution_failed', 'server', 
+                `Failed to resolve ${screenName} from ${originalInput}: ${error.message}`);
+        throw new Error(`Не удалось определить ID группы из ${screenName} (${originalInput}): ${error.message}`);
+      }
+    }
+
+    // Если ничего не подошло
+    throw new Error(`VK URL format not recognized: ${originalInput}`);
+
+  } catch (error) {
+    logEvent('ERROR', 'vk_url_extraction_failed', 'server', `URL: ${url}, Error: ${error.message}`);
     throw error;
   }
 }
 
-// ============================================
-// DATA UTILITIES
-// ============================================
+/**
+ * Извлечение Telegram Chat ID из URL или username
+ * @param {string} input - Telegram URL, username или chat ID
+ * @returns {string} - Нормализованный chat ID
+ */
+function extractTelegramChatId(input) {
+  if (!input || typeof input !== 'string') {
+    throw new Error('Empty Telegram input');
+  }
 
-function validateEmail(email) {
-  if (!email || typeof email !== 'string') {
-    return false;
+  const cleanInput = input.trim();
+  
+  // Числовой chat ID
+  if (/^-?\d+$/.test(cleanInput)) {
+    return cleanInput;
   }
   
-  // Базовая валидация email
-  var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email.trim());
-}
-
-function validateUrl(url) {
-  if (!url || typeof url !== 'string') {
-    return false;
-  }
-  
-  try {
-    // Проверяем валидность URL
-    var urlObj = new URL(url.trim());
-    return ['http:', 'https:'].includes(urlObj.protocol);
-  } catch (error) {
-    return false;
-  }
-}
-
-function sanitizeSheetName(name) {
-  if (!name || typeof name !== 'string') {
-    return 'Unnamed';
-  }
-  
-  // Удаляем недопустимые символы и ограничиваем длину
-  return name
-    .trim()
-    .replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '')
-    .replace(/\s+/g, '_')
-    .substring(0, 30); // Google Sheets limit
-}
-
-function generateUniqueId() {
-  return 'id_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-}
-
-// ============================================
-// STATISTICS
-// ============================================
-
+  // Username или URL patterns
+  const patterns = [
+    /t\.me\/([a-z0-9_]+)/i,
+    /t\.me\/([a-z0-9_]+)/i,
+    /^@?([a-z0-9_]+)$/i
+=======
 function getSystemStats() {
   try {
     var licensesSheet = getSheet("Licenses");
@@ -519,329 +667,11 @@ function extractTelegramChatId(input) {
   
   for (const pattern of patterns) {
     const match = cleanInput.match(pattern);
-    if (match) return '@' + match[1];
+    if (match) {
+      const username = match[1];
+      return '@' + username;
+    }
   }
   
-  throw new Error('Invalid Telegram format: ' + input);
-}
-
-/**
- * Извлекает безопасное имя листа из URL VK группы
- * @param {string} url - URL группы VK
- * @return {string} - безопасное имя для листа Google Sheets
- */
-function extractSheetNameFromVkUrl(url) {
-  if (!url) return null;
-  
-  const cleanUrl = url.trim().toLowerCase().split('?')[0].split('#')[0];
-  
-  // public123456, club789012
-  const idMatch = cleanUrl.match(/(?:public|club)(\d+)/);
-  if (idMatch) {
-    return `${idMatch[0]}`.substring(0, 27); // Ограничение 30 символов для имени листа
-  }
-  
-  // durov, varsmana, apiclub
-  const nameMatch = cleanUrl.match(/vk\.com\/([a-z0-9_]+)/);
-  if (nameMatch) {
-    return nameMatch[1]
-      .replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '')
-      .replace(/\s+/g, '_')
-      .substring(0, 27);
-  }
-  
-  return null;
-}
-
-// ============================================
-// BINDING SHEET UTILITIES
-// ============================================
-
-/**
- * Validates binding name according to requirements: letters (Latin/Cyrillic) and digits only
- * @param {string} bindingName - binding name to validate
- * @return {boolean} - true if valid
- */
-function validateBindingName(bindingName) {
-  if (!bindingName || typeof bindingName !== 'string') {
-    return false;
-  }
-  
-  // Allow Latin letters, Cyrillic letters, and digits only
-  const validPattern = /^[a-zA-Zа-яА-ЯёЁ0-9]+$/;
-  return validPattern.test(bindingName.trim());
-}
-
-/**
- * Creates or gets a binding sheet for publication logging
- * @param {string} bindingName - validated binding name (used as sheet name)
- * @return {Sheet} - sheet object
- */
-function getOrCreateBindingSheet(bindingName) {
-  try {
-    var sanitizedName = sanitizeBindingSheetSuffix(bindingName);
-    if (!validateBindingName(sanitizedName)) {
-      throw new Error(`Invalid binding name: "${bindingName}". Only letters and digits allowed.`);
-    }
-    
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(sanitizedName);
-    
-    if (!sheet) {
-      var legacySheet = ss.getSheetByName('Published_' + sanitizedName);
-      if (legacySheet) {
-        // Rename legacy sheet
-        legacySheet.setName(sanitizedName);
-        sheet = legacySheet;
-        logEvent('INFO', 'legacy_sheet_renamed', 'server', 
-          `Renamed "Published_${sanitizedName}" to "${sanitizedName}"`);
-      } else {
-        // Create new sheet
-        sheet = ss.insertSheet(sanitizedName);
-        
-        // Add headers
-        var headers = [
-          "Timestamp", "Status", "VK Group ID", "VK Post ID", "VK Post URL", "VK Post Date",
-          "Media Summary", "Caption Chars", "Caption Parts", "TG Chat", "TG Message IDs", 
-          "TG Message URLs", "Notes"
-        ];
-        
-        var headerRange = sheet.getRange(1, 1, 1, headers.length);
-        headerRange.setValues([headers]);
-        headerRange.setFontWeight("bold");
-        headerRange.setBackground("#4285f4");
-        headerRange.setFontColor("white");
-        
-        logEvent('INFO', 'binding_sheet_created', 'server', 
-          `Created binding sheet "${sanitizedName}" with ${headers.length} columns`);
-      }
-    }
-    
-    return sheet;
-    
-  } catch (error) {
-    logEvent('ERROR', 'binding_sheet_creation_failed', 'server', 
-      `Binding: ${bindingName}, Error: ${error.message}`);
-    throw error;
-  }
-}
-
-/**
- * Sanitizes binding sheet suffix
- * @param {string} bindingName - binding name to sanitize
- * @return {string} - sanitized name
- */
-function sanitizeBindingSheetSuffix(bindingName) {
-  if (!bindingName) return 'Unnamed';
-  
-  return bindingName
-    .trim()
-    .replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '')
-    .replace(/\s+/g, '_')
-    .substring(0, 30);
-}
-
-/**
- * Gets sheet name from binding name
- * @param {string} bindingName - binding name
- * @return {string} - sheet name
- */
-function getPublishedSheetNameFromBindingName(bindingName) {
-  return sanitizeBindingSheetSuffix(bindingName);
-}
-
-/**
- * Writes a publication row to binding sheet with top-insert behavior
- * @param {string} bindingName - validated binding name
- * @param {Object} publicationData - publication data
- */
-function writePublicationRowToBindingSheet(bindingName, publicationData) {
-  try {
-    var sanitizedName = sanitizeBindingSheetSuffix(bindingName);
-    if (!validateBindingName(sanitizedName)) {
-      logEvent('WARN', 'invalid_binding_name_skip', 'server', 
-        `Skipping publication row for invalid binding name: "${bindingName}"`);
-      return;
-    }
-    
-    var sheet = getOrCreateBindingSheet(sanitizedName);
-    
-    // Prepare row data according to column order
-    var rowData = [
-      publicationData.timestamp || new Date().toISOString(),
-      publicationData.status || 'unknown',
-      publicationData.vkGroupId || '',
-      publicationData.vkPostId || '',
-      publicationData.vkPostUrl || '',
-      publicationData.vkPostDate || '',
-      publicationData.mediaSummary || '',
-      publicationData.captionChars || 0,
-      publicationData.captionParts || 0,
-      publicationData.tgChat || '',
-      publicationData.tgMessageIds || '',
-      publicationData.tgMessageUrls || '',
-      publicationData.notes || ''
-    ];
-    
-    // Insert at row 2 (top-insert behavior)
-    sheet.insertRowAfter(1);
-    sheet.getRange(2, 1, 1, rowData.length).setValues([rowData]);
-    
-    logEvent('INFO', 'publication_row_written', 'server', 
-      `Binding: "${sanitizedName}", Status: ${publicationData.status}, VK Post: ${publicationData.vkPostId}`);
-    
-  } catch (error) {
-    logEvent('ERROR', 'publication_row_write_failed', 'server', 
-      `Binding: "${bindingName}", Error: ${error.message}`);
-    // Don't throw - publication logging failure shouldn't break main flow
-  }
-}
-
-/**
- * Checks if post was already sent (success/partial status)
- * @param {string} bindingName - binding name
- * @param {string} postId - post ID
- * @return {boolean} - true if post was already sent
- */
-function checkPostAlreadySent(bindingName, postId) {
-  try {
-    if (!postId) {
-      return false;
-    }
-    
-    var sheetName = getPublishedSheetNameFromBindingName(bindingName);
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(sheetName);
-    
-    if (!sheet) {
-      return false;
-    }
-    
-    var lastRow = sheet.getLastRow();
-    if (lastRow <= 1) {
-      return false;
-    }
-    
-    var rows = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
-    for (var i = 0; i < rows.length; i++) {
-      var status = (rows[i][1] || '').toString().toLowerCase();
-      var loggedPostId = rows[i][3];
-      if ((status === 'success' || status === 'partial') && loggedPostId && loggedPostId.toString() === postId.toString()) {
-        return true;
-      }
-    }
-    
-    return false;
-    
-  } catch (error) {
-    logEvent('ERROR', 'check_post_sent_failed', 'server', error.message);
-    return false;
-  }
-}
-
-/**
- * Creates media summary string from attachments
- * @param {Array} attachments - VK post attachments
- * @return {string} - media summary
- */
-function createMediaSummary(attachments) {
-  try {
-    if (!attachments || attachments.length === 0) {
-      return 'no media';
-    }
-    
-    var counts = {
-      photo: 0,
-      video: 0,
-      audio: 0,
-      doc: 0,
-      link: 0,
-      other: 0
-    };
-    
-    for (var i = 0; i < attachments.length; i++) {
-      var type = attachments[i].type;
-      if (counts.hasOwnProperty(type)) {
-        counts[type]++;
-      } else {
-        counts.other++;
-      }
-    }
-    
-    var parts = [];
-    if (counts.photo > 0) parts.push(`${counts.photo} photo${counts.photo > 1 ? 's' : ''}`);
-    if (counts.video > 0) parts.push(`${counts.video} video${counts.video > 1 ? 's' : ''}`);
-    if (counts.audio > 0) parts.push(`${counts.audio} audio${counts.audio > 1 ? 's' : ''}`);
-    if (counts.doc > 0) parts.push(`${counts.doc} doc${counts.doc > 1 ? 's' : ''}`);
-    if (counts.link > 0) parts.push(`${counts.link} link${counts.link > 1 ? 's' : ''}`);
-    if (counts.other > 0) parts.push(`${counts.other} other`);
-    
-    return parts.length > 0 ? parts.join(', ') : 'no media';
-    
-  } catch (error) {
-    logEvent('ERROR', 'media_summary_failed', 'server', error.message);
-    return 'error counting media';
-  }
-}
-
-/**
- * Generates Telegram message URLs from message IDs and chat info
- * @param {string} chatId - Telegram chat ID
- * @param {Array} messageIds - array of message IDs
- * @return {string} - comma-separated URLs
- */
-function generateTelegramMessageUrls(chatId, messageIds) {
-  try {
-    if (!messageIds || messageIds.length === 0) {
-      return '';
-    }
-    
-    var urls = [];
-    
-    // Try to get chat info to determine if we have username
-    var chatInfo = null;
-    try {
-      var botToken = PropertiesService.getScriptProperties().getProperty("BOT_TOKEN");
-      if (botToken) {
-        var response = UrlFetchApp.fetch(`https://api.telegram.org/bot${botToken}/getChat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          payload: JSON.stringify({ chat_id: chatId }),
-          muteHttpExceptions: true,
-          timeout: TIMEOUTS.FAST
-        });
-        
-        var result = JSON.parse(response.getContentText());
-        if (result.ok) {
-          chatInfo = result.result;
-        }
-      }
-    } catch (chatError) {
-      logEvent('DEBUG', 'tg_chat_info_failed', 'server', `Chat: ${chatId}, Error: ${chatError.message}`);
-    }
-    
-    // Generate URLs
-    for (var i = 0; i < messageIds.length; i++) {
-      var messageId = messageIds[i];
-      
-      if (chatInfo && chatInfo.username) {
-        // Prefer username format: https://t.me/username/messageId
-        urls.push(`https://t.me/${chatInfo.username}/${messageId}`);
-      } else {
-        // Fallback to internal format: https://t.me/c/chatId/messageId
-        // Remove @ if present and handle negative chat IDs
-        var cleanChatId = chatId.toString().replace('@', '');
-        if (cleanChatId.startsWith('-100')) {
-          cleanChatId = cleanChatId.substring(4); // Remove -100 prefix for /c/ format
-        }
-        urls.push(`https://t.me/c/${cleanChatId}/${messageId}`);
-      }
-    }
-    
-    return urls.join(', ');
-    
-  } catch (error) {
-    logEvent('ERROR', 'tg_url_generation_failed', 'server', error.message);
-    return '';
-  }
+  throw new Error(`Telegram chat ID format not recognized: ${input}`);
 }

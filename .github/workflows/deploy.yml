@@ -1,0 +1,62 @@
+name: CI/CD VKTelegram Crossposter
+
+on:
+  push:
+    branches:
+      - main
+      - refactor-split-client-server-modules-limit-500-lines-glasp-apps-script
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+
+    - name: Install dependencies
+      working-directory: ./glasp
+      run: npm ci
+
+    - name: Build Server
+      run: node glasp/deploy-server.js
+
+    - name: Build Client
+      run: node glasp/deploy-client.js
+
+    # Uncomment for auto-deploy if clasp/account is ready
+    #- name: Deploy server
+    #  run: node glasp/deploy-server.js --deploy
+    #- name: Deploy client
+    #  run: node glasp/deploy-client.js --deploy
+
+    - name: Upload dist as artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: dist-apps-script
+        path: dist/
+    
+    - name: Lint scripts
+      run: |
+        npm install -g eslint
+        eslint server/*.gs client/*.gs || true
+
+    - name: Summary glasp modules
+      run: |
+        echo "Server modules:" && ls -al server/
+        echo "Client modules:" && ls -al client/
+        echo "Dist build:" && ls -al dist/
+
+    - name: Print version/author info
+      run: |
+        node --version
+        npm --version
+        echo "Built & packed by crosspostly-bot"

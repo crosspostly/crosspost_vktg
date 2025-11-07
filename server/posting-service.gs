@@ -1,70 +1,90 @@
+// @ts-nocheck
 /**
  * VK→Telegram Crossposter - POSTING SERVICE MODULE
- * Высокоуровневая логика отправки постов, оркестрация
- * 
- * Размер: ~400 строк
- * Зависимости: bindings-service.gs, vk-service.gs, telegram-service.gs, published-sheets-service.gs, utils.gs
- * 
- * Автор: f_den
- * Дата: 2025-11-06
+ * Обработчики публикации: send_post, send_post_direct, test_publication
  */
 
-// ============================================
-// POSTING ORCHESTRATION HANDLERS
-// ============================================
-
 function handleSendPost(payload, clientIp) {
-  // TODO: Перенести из server.gs
+  try {
+    var { license_key, post, binding_id, format_settings, tg_chat_id, vk_group_id } = payload;
+    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    var licenseData = JSON.parse(licenseCheck.getContent());
+    if (!licenseData.success) return licenseCheck;
+
+    if (!binding_id) return jsonResponse({ success: false, error: 'binding_id required' }, 400);
+
+    var binding = findBindingById(binding_id, license_key);
+    if (!binding) return jsonResponse({ success: false, error: 'Binding not found' }, 404);
+
+    // Применяем format_settings если передан
+    if (format_settings) { binding.formatSettings = typeof format_settings === 'string' ? format_settings : JSON.stringify(format_settings); }
+    if (vk_group_id) { binding.vkGroupId = vk_group_id; }
+
+    var result = sendVkPostToTelegram(binding.tgChatId, post, binding);
+    if (result.success) {
+      logEvent('INFO', 'post_sent', license_key, `Binding: ${binding.bindingName}, VK ${vk_group_id}/${post?.id}`);
+      return jsonResponse({ success: true, message_id: result.message_id, result });
+    } else {
+      logEvent('ERROR', 'post_send_failed', license_key, result.error || 'Unknown');
+      return jsonResponse({ success: false, error: result.error || 'Failed to send post' }, 500);
+    }
+  } catch (e) {
+    logEvent('ERROR', 'handle_send_post_error', payload.license_key, e.message);
+    return jsonResponse({ success: false, error: e.message }, 500);
+  }
 }
 
-function handlePublishLastPost(payload, clientIp) {
-  // TODO: Перенести из server.gs
+function handleSendPostDirect(payload, clientIp) {
+  try {
+    var { license_key, post, tg_chat_id, format_settings, vk_group_id } = payload;
+    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    var licenseData = JSON.parse(licenseCheck.getContent());
+    if (!licenseData.success) return licenseCheck;
+
+    if (!tg_chat_id) return jsonResponse({ success: false, error: 'tg_chat_id required' }, 400);
+
+    var binding = { bindingName: 'DIRECT', tgChatId: tg_chat_id, vkGroupId: vk_group_id || null, formatSettings: format_settings || '{}' };
+    var result = sendVkPostToTelegram(tg_chat_id, post, binding);
+    if (result.success) {
+      logEvent('INFO', 'post_direct_sent', license_key, `TG ${tg_chat_id}, VK ${vk_group_id}/${post?.id}`);
+      return jsonResponse({ success: true, message_id: result.message_id, result });
+    } else {
+      logEvent('ERROR', 'post_direct_send_failed', license_key, result.error || 'Unknown');
+      return jsonResponse({ success: false, error: result.error || 'Failed to send direct post' }, 500);
+    }
+  } catch (e) {
+    logEvent('ERROR', 'handle_send_post_direct_error', payload.license_key, e.message);
+    return jsonResponse({ success: false, error: e.message }, 500);
+  }
 }
 
-// ============================================
-// POSTING LOGIC
-// ============================================
+function handleTestPublication(payload, clientIp) {
+  try {
+    var { license_key, vk_group_id, tg_chat_id } = payload;
+    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    var licenseData = JSON.parse(licenseCheck.getContent());
+    if (!licenseData.success) return licenseCheck;
 
-function processPostForSending(vkPost, binding) {
-  // TODO: Перенести из server.gs
-}
+    if (!vk_group_id || !tg_chat_id) return jsonResponse({ success: false, error: 'vk_group_id and tg_chat_id required' }, 400);
 
-function validatePostBeforeSending(vkPost, binding) {
-  // TODO: Перенести из server.gs
-}
+    // Берём последний пост
+    var postsResult = handleGetVkPosts({ license_key, vk_group_id, count: 1 }, clientIp);
+    var postsData = JSON.parse(postsResult.getContent());
+    if (!postsData.success || postsData.posts.length === 0) return jsonResponse({ success: false, error: 'No posts to publish' }, 404);
 
-function executePostSending(vkPost, binding) {
-  // TODO: Перенести из server.gs
-}
+    var post = postsData.posts[0];
+    var binding = { bindingName: 'TEST', tgChatId: tg_chat_id, vkGroupId: vk_group_id, formatSettings: '{}' };
+    var result = sendVkPostToTelegram(tg_chat_id, post, binding);
 
-function handlePostSendingResult(result, vkPost, binding) {
-  // TODO: Перенести из server.gs
-}
-
-// ============================================
-// GLOBAL SETTINGS
-// ============================================
-
-function handleGetGlobalSetting(payload, clientIp) {
-  // TODO: Перенести из server.gs
-}
-
-function handleSetGlobalSetting(payload, clientIp) {
-  // TODO: Перенести из server.gs
-}
-
-function checkGlobalSendingEnabled() {
-  // TODO: Перенести из server.gs
-}
-
-// ============================================
-// POSTING ANALYTICS
-// ============================================
-
-function updatePostingStatistics(result, binding) {
-  // TODO: Перенести из server.gs
-}
-
-function getPostingMetrics(licenseKey) {
-  // TODO: Перенести из server.gs
+    if (result.success) {
+      logEvent('INFO', 'test_publication_success', license_key, `VK ${vk_group_id}/${post.id} → TG ${tg_chat_id}`);
+      return jsonResponse({ success: true, message_id: result.message_id, result });
+    } else {
+      logEvent('ERROR', 'test_publication_failed', license_key, result.error || 'Unknown');
+      return jsonResponse({ success: false, error: result.error || 'Failed to publish test post' }, 500);
+    }
+  } catch (e) {
+    logEvent('ERROR', 'handle_test_publication_error', payload.license_key, e.message);
+    return jsonResponse({ success: false, error: e.message }, 500);
+  }
 }

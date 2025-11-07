@@ -1,38 +1,38 @@
-# Temporary files
-*.tmp
-*.temp
-*.log
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Build output
+dist/
+build/
+*.bundle.gs
+
+# Google Apps Script
+.clasp.json
+.claspignore
+
+# IDE
+.vscode/
+.idea/
 *.swp
 *.swo
 *~
 
-# OS generated files
+# OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
 
-# IDE files
-.vscode/
-.idea/
-*.sublime-*
+# Logs
+logs/
+*.log
+npm-debug.log*
 
-# Google Apps Script specific
-.clasp.json
-*.gs.bak
+# Environment
+.env
+.env.local
+.env.*.local
 
-# Test files
-test_*.gs
-*_test_results.md
-
-# Documentation drafts
-draft_*.md
-*_draft.*
-
-# Build artifacts
-dist/
-build/
-out/
+# Temporary files
+*.tmp
+*.temp
