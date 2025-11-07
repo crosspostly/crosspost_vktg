@@ -15,22 +15,43 @@ jobs:
 
     steps:
     - name: Checkout repo
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Setup Node.js
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: '18'
 
     - name: Install dependencies
       working-directory: ./glasp
-      run: npm ci
+      run: |
+        echo "🔧 Installing dependencies in glasp directory..."
+        npm ci
+        echo "✅ Dependencies installed successfully"
 
     - name: Build Server
-      run: node glasp/deploy-server.js
+      run: |
+        echo "🏗️ Building server bundle..."
+        node glasp/deploy-server.js
+        echo "✅ Server build completed"
+        if [ -f "dist/server-bundle.gs" ]; then
+          echo "📄 Server bundle created: $(wc -l < dist/server-bundle.gs) lines"
+        else
+          echo "❌ Server bundle not found"
+          exit 1
+        fi
 
     - name: Build Client
-      run: node glasp/deploy-client.js
+      run: |
+        echo "🏗️ Building client bundle..."
+        node glasp/deploy-client.js
+        echo "✅ Client build completed"
+        if [ -f "dist/client-bundle.gs" ]; then
+          echo "📄 Client bundle created: $(wc -l < dist/client-bundle.gs) lines"
+        else
+          echo "❌ Client bundle not found"
+          exit 1
+        fi
 
     # Uncomment for auto-deploy if clasp/account is ready
     #- name: Deploy server
@@ -39,24 +60,65 @@ jobs:
     #  run: node glasp/deploy-client.js --deploy
 
     - name: Upload dist as artifact
-      uses: actions/upload-artifact@v3
+      run: |
+        echo "📦 Preparing to upload dist artifacts..."
+        echo "📁 Contents of dist directory:"
+        ls -la dist/
+        echo "📊 Total size: $(du -sh dist/ | cut -f1)"
+      uses: actions/upload-artifact@v4
       with:
         name: dist-apps-script
         path: dist/
+        retention-days: 30
     
     - name: Lint scripts
       run: |
+        echo "🔍 Running ESLint on server and client scripts..."
         npm install -g eslint
-        eslint server/*.gs client/*.gs || true
+        echo "📁 Server files to lint:"
+        ls -la server/*.gs 2>/dev/null || echo "No server .gs files found"
+        echo "📁 Client files to lint:"
+        ls -la client/*.gs 2>/dev/null || echo "No client .gs files found"
+        echo "🔎 Running ESLint..."
+        eslint server/*.gs client/*.gs || echo "⚠️ ESLint found issues (continuing anyway)"
 
     - name: Summary glasp modules
       run: |
-        echo "Server modules:" && ls -al server/
-        echo "Client modules:" && ls -al client/
-        echo "Dist build:" && ls -al dist/
+        echo "📋 === BUILD SUMMARY ==="
+        echo ""
+        echo "🖥️ Node.js version: $(node --version)"
+        echo "📦 NPM version: $(npm --version)"
+        echo ""
+        echo "📁 Server modules:"
+        ls -al server/ || echo "No server directory found"
+        echo ""
+        echo "📁 Client modules:"
+        ls -al client/ || echo "No client directory found"
+        echo ""
+        echo "📦 Distribution build:"
+        ls -al dist/ || echo "No dist directory found"
+        echo ""
+        echo "📊 Build artifacts info:"
+        if [ -f "dist/server-bundle.gs" ]; then
+          echo "  ✅ Server bundle: $(wc -l < dist/server-bundle.gs) lines"
+        else
+          echo "  ❌ Server bundle: NOT FOUND"
+        fi
+        if [ -f "dist/client-bundle.gs" ]; then
+          echo "  ✅ Client bundle: $(wc -l < dist/client-bundle.gs) lines"
+        else
+          echo "  ❌ Client bundle: NOT FOUND"
+        fi
+        echo ""
+        echo "🎉 Build & packed by crosspostly-bot"
 
-    - name: Print version/author info
+    - name: Final workflow status
+      if: always()
       run: |
-        node --version
-        npm --version
-        echo "Built & packed by crosspostly-bot"
+        echo "🏁 === WORKFLOW COMPLETION STATUS ==="
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "✅ All steps completed successfully!"
+        else
+          echo "❌ Workflow encountered issues"
+        fi
+        echo "📅 Completed at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
