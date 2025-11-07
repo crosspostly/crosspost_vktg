@@ -5,7 +5,7 @@ module.exports = {
   // File extensions to process
   moduleFileExtensions: ['js', 'gs'],
   
-  // Transform .gs files using babel preset
+  // Transform files using babel
   transform: {
     '^.+\\.gs$': 'babel-jest',
     '^.+\\.js$': 'babel-jest'
