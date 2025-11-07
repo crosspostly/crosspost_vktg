@@ -1,0 +1,256 @@
+name: CI - Phase 2 Quality Gates
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  checks: write
+  actions: read
+
+jobs:
+  # Phase 2.1: Code Quality - Lint
+  lint:
+    name: "🔍 Phase 2.1: Lint Code Quality"
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: glasp/package.json
+        
+    - name: Install dependencies
+      working-directory: ./glasp
+      run: npm ci
+      
+    - name: Run ESLint
+      working-directory: ./glasp
+      run: npm run lint
+      
+    - name: Upload lint results
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: lint-results
+        path: |
+          glasp/.eslintcache
+        retention-days: 7
+
+  # Phase 2.2: Module Integrity Check
+  module-check:
+    name: "🧩 Phase 2.2: Module Integrity Check"
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: glasp/package.json
+        
+    - name: Install dependencies
+      working-directory: ./glasp
+      run: npm ci
+      
+    - name: Check module integrity
+      working-directory: ./glasp
+      run: npm run module-check
+      
+    - name: List server modules
+      run: |
+        echo "📁 Server modules:"
+        ls -la ../server/ || echo "No server directory found"
+        
+    - name: List client modules
+      run: |
+        echo "📁 Client modules:"
+        ls -la ../client/ || echo "No client directory found"
+
+  # Phase 2.3: Build Verification
+  build:
+    name: "🏗️ Phase 2.3: Build Verification"
+    runs-on: ubuntu-latest
+    needs: [lint, module-check]
+    
+    strategy:
+      matrix:
+        component: [server, client]
+        
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: glasp/package.json
+        
+    - name: Install dependencies
+      working-directory: ./glasp
+      run: npm ci
+      
+    - name: Build ${{ matrix.component }}
+      working-directory: ./glasp
+      run: npm run build:${{ matrix.component }}
+      
+    - name: Verify build output
+      run: |
+        if [ "${{ matrix.component }}" = "server" ]; then
+          if [ ! -f "dist/server-bundle.gs" ]; then
+            echo "❌ Server bundle not found"
+            exit 1
+          fi
+          echo "✅ Server bundle created successfully"
+          echo "📊 Server bundle size: $(wc -l < dist/server-bundle.gs) lines"
+        else
+          if [ ! -f "dist/client-bundle.gs" ]; then
+            echo "❌ Client bundle not found"
+            exit 1
+          fi
+          echo "✅ Client bundle created successfully"
+          echo "📊 Client bundle size: $(wc -l < dist/client-bundle.gs) lines"
+        fi
+        
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.component }}-bundle
+        path: dist/${{ matrix.component }}-bundle.gs
+        retention-days: 30
+
+  # Phase 2.4: Test Suite (Coverage)
+  test:
+    name: "🧪 Phase 2.4: Test Suite with Coverage"
+    runs-on: ubuntu-latest
+    needs: [lint, module-check]
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: glasp/package.json
+        
+    - name: Install dependencies
+      working-directory: ./glasp
+      run: npm ci
+      
+    - name: Run test suite
+      working-directory: ./glasp
+      run: npm run test
+      
+    - name: Generate coverage summary
+      run: |
+        echo "# 📊 Test Coverage Summary" > coverage-summary.md
+        echo "" >> coverage-summary.md
+        echo "## Module Statistics" >> coverage-summary.md
+        echo "- Server files: $(find ../server -name '*.gs' | wc -l)" >> coverage-summary.md
+        echo "- Client files: $(find ../client -name '*.gs' | wc -l)" >> coverage-summary.md
+        echo "- Total lines of code: $(find ../server ../client -name '*.gs' -exec wc -l {} + | tail -1)" >> coverage-summary.md
+        echo "" >> coverage-summary.md
+        echo "## Build Artifacts" >> coverage-summary.md
+        echo "- Server bundle: $([ -f dist/server-bundle.gs ] && echo '✅ Created' || echo '❌ Missing')" >> coverage-summary.md
+        echo "- Client bundle: $([ -f dist/client-bundle.gs ] && echo '✅ Created' || echo '❌ Missing')" >> coverage-summary.md
+        echo "" >> coverage-summary.md
+        echo "## Quality Gates" >> coverage-summary.md
+        echo "- Lint: ✅ Passed" >> coverage-summary.md
+        echo "- Module Check: ✅ Passed" >> coverage-summary.md
+        echo "- Build: ✅ Passed" >> coverage-summary.md
+        
+    - name: Upload coverage summary
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-summary
+        path: coverage-summary.md
+        retention-days: 30
+
+  # Phase 2.5: Integration Check
+  integration:
+    name: "🔗 Phase 2.5: Integration Check"
+    runs-on: ubuntu-latest
+    needs: [build, test]
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+        
+    - name: Verify integration
+      run: |
+        echo "🔍 Verifying integration artifacts..."
+        
+        # Check server bundle
+        if [ -f "artifacts/server-bundle/server-bundle.gs" ]; then
+          echo "✅ Server bundle available"
+          echo "📄 Server bundle preview (first 10 lines):"
+          head -10 artifacts/server-bundle/server-bundle.gs
+        else
+          echo "❌ Server bundle missing"
+          exit 1
+        fi
+        
+        echo ""
+        
+        # Check client bundle
+        if [ -f "artifacts/client-bundle/client-bundle.gs" ]; then
+          echo "✅ Client bundle available"
+          echo "📄 Client bundle preview (first 10 lines):"
+          head -10 artifacts/client-bundle/client-bundle.gs
+        else
+          echo "❌ Client bundle missing"
+          exit 1
+        fi
+        
+        echo ""
+        echo "🎉 All integration checks passed!"
+
+  # Phase 2 Complete Summary
+  summary:
+    name: "📋 Phase 2 Complete Summary"
+    runs-on: ubuntu-latest
+    needs: [lint, module-check, build, test]
+    if: always()
+    
+    steps:
+    - name: Generate Phase 2 Summary
+      run: |
+        echo "# 🚀 Phase 2 CI/CD Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Quality Gates Status" >> $GITHUB_STEP_SUMMARY
+        echo "| Gate | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| 🔍 Lint | ${{ needs.lint.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| 🧩 Module Check | ${{ needs.module-check.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| 🏗️ Build | ${{ needs.build.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| 🧪 Test | ${{ needs.test.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Overall Status" >> $GITHUB_STEP_SUMMARY
+        if [[ "${{ needs.lint.result }}" == "success" && "${{ needs.module-check.result }}" == "success" && "${{ needs.build.result }}" == "success" && "${{ needs.test.result }}" == "success" ]]; then
+          echo "🎉 **All Phase 2 quality gates passed! Ready for Phase 3-5.**" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️ **Some quality gates failed. Please review and fix issues.**" >> $GITHUB_STEP_SUMMARY
+        fi

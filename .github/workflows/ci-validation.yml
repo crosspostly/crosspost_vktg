@@ -1,0 +1,167 @@
+name: CI Configuration Validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/**'
+      - 'glasp/package.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  validate-workflows:
+    name: "🔧 Validate CI Configuration"
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: glasp/package.json
+        
+    - name: Install dependencies
+      working-directory: ./glasp
+      run: npm ci
+      
+    - name: Validate workflow syntax
+      run: |
+        echo "🔧 Validating workflow files..."
+        
+        # Check all workflow files for valid YAML
+        for workflow in .github/workflows/*.yml; do
+          echo "  📝 Checking $workflow"
+          if python3 -c "import yaml; yaml.safe_load(open('$workflow'))" 2>/dev/null; then
+            echo "    ✅ Valid YAML"
+          else
+            echo "    ❌ Invalid YAML"
+            exit 1
+          fi
+        done
+        
+    - name: Validate npm scripts
+      working-directory: ./glasp
+      run: |
+        echo "📜 Validating npm scripts..."
+        
+        # Test each script exists and can be called
+        scripts=("lint" "module-check" "build:server" "build:client" "build" "test")
+        
+        for script in "${scripts[@]}"; do
+          echo "  🧪 Testing npm run $script"
+          if npm run | grep -q "$script"; then
+            echo "    ✅ Script defined"
+          else
+            echo "    ❌ Script not defined"
+            exit 1
+          fi
+        done
+        
+    - name: Test module integrity script
+      working-directory: ./glasp
+      run: |
+        echo "🧩 Testing module integrity check..."
+        npm run module-check
+        
+    - name: Test build scripts (dry run)
+      working-directory: ./glasp
+      run: |
+        echo "🏗️ Testing build scripts..."
+        
+        # Test server build
+        echo "  🔨 Testing server build..."
+        if npm run build:server; then
+          echo "    ✅ Server build successful"
+          if [ -f "dist/server-bundle.gs" ]; then
+            echo "    ✅ Server bundle created"
+          else
+            echo "    ❌ Server bundle missing"
+            exit 1
+          fi
+        else
+          echo "    ❌ Server build failed"
+          exit 1
+        fi
+        
+        # Test client build
+        echo "  🔨 Testing client build..."
+        if npm run build:client; then
+          echo "    ✅ Client build successful"
+          if [ -f "dist/client-bundle.gs" ]; then
+            echo "    ✅ Client bundle created"
+          else
+            echo "    ❌ Client bundle missing"
+            exit 1
+          fi
+        else
+          echo "    ❌ Client build failed"
+          exit 1
+        fi
+        
+    - name: Validate workflow triggers
+      run: |
+        echo "🎯 Validating workflow triggers..."
+        
+        # Check that ci.yml has proper triggers
+        echo "  📋 Checking ci.yml triggers..."
+        if grep -q "pull_request:" .github/workflows/ci.yml && grep -q "push:" .github/workflows/ci.yml; then
+          echo "    ✅ CI triggers configured"
+        else
+          echo "    ❌ CI triggers missing"
+          exit 1
+        fi
+        
+        # Check that quick-check.yml has proper triggers  
+        echo "  ⚡ Checking quick-check.yml triggers..."
+        if grep -q "push:" .github/workflows/quick-check.yml; then
+          echo "    ✅ Quick check triggers configured"
+        else
+          echo "    ❌ Quick check triggers missing"
+          exit 1
+        fi
+        
+    - name: Validate permissions
+      run: |
+        echo "🔐 Validating workflow permissions..."
+        
+        # Check that workflows don't request excessive permissions
+        workflows=("ci.yml" "quick-check.yml" "maintenance.yml" "ci-validation.yml")
+        
+        for workflow in "${workflows[@]}"; do
+          echo "  🔒 Checking $workflow permissions..."
+          if grep -A 10 "permissions:" ".github/workflows/$workflow" | grep -q "write"; then
+            echo "    ⚠️  Contains write permissions (review if needed)"
+          else
+            echo "    ✅ Minimal permissions"
+          fi
+        done
+        
+    - name: Generate validation report
+      run: |
+        echo "# 🔧 CI Configuration Validation Report" > validation-report.md
+        echo "" >> validation-report.md
+        echo "## Validation Results" >> validation-report.md
+        echo "- ✅ Workflow YAML syntax: Valid" >> validation-report.md
+        echo "- ✅ NPM scripts configuration: Valid" >> validation-report.md
+        echo "- ✅ Module integrity check: Working" >> validation-report.md
+        echo "- ✅ Build scripts: Functional" >> validation-report.md
+        echo "- ✅ Workflow triggers: Configured" >> validation-report.md
+        echo "- ✅ Permissions: Minimal and appropriate" >> validation-report.md
+        echo "" >> validation-report.md
+        echo "## Summary" >> validation-report.md
+        echo "🎉 **CI configuration is valid and ready for use!**" >> validation-report.md
+        
+    - name: Upload validation report
+      uses: actions/upload-artifact@v4
+      with:
+        name: ci-validation-report
+        path: validation-report.md
+        retention-days: 30

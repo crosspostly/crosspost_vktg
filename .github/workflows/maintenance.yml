@@ -1,0 +1,180 @@
+name: Maintenance & Health Checks
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      run_cleanup:
+        description: 'Run cleanup tasks'
+        required: false
+        default: 'false'
+        type: boolean
+      run_health_check:
+        description: 'Run health checks'
+        required: false
+        default: 'true'
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  health-check:
+    name: "🏥 Project Health Check"
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: glasp/package.json
+        
+    - name: Install dependencies
+      working-directory: ./glasp
+      run: npm ci
+      
+    - name: Check project health
+      run: |
+        echo "🔍 Running project health checks..."
+        
+        # Check essential files exist
+        echo "📁 Checking essential files:"
+        essential_files=(
+          "server/server.gs"
+          "client/client-core.gs"
+          "glasp/package.json"
+          "glasp/deploy-server.js"
+          "glasp/deploy-client.js"
+        )
+        
+        for file in "${essential_files[@]}"; do
+          if [ -f "$file" ]; then
+            echo "  ✅ $file"
+          else
+            echo "  ❌ $file - MISSING!"
+          fi
+        done
+        
+        # Check module counts
+        echo ""
+        echo "📊 Module statistics:"
+        server_count=$(find ../server -name '*.gs' 2>/dev/null | wc -l)
+        client_count=$(find ../client -name '*.gs' 2>/dev/null | wc -l)
+        echo "  Server modules: $server_count"
+        echo "  Client modules: $client_count"
+        
+        # Check for potential issues
+        echo ""
+        echo "⚠️  Potential issues:"
+        
+        # Check for files over 500 lines (code quality indicator)
+        large_files=$(find ../server ../client -name '*.gs' -exec wc -l {} + 2>/dev/null | awk '$1 > 500 {print $2}')
+        if [ -n "$large_files" ]; then
+          echo "  ⚠️  Large files (>500 lines):"
+          echo "$large_files" | sed 's/^/    - /'
+        else
+          echo "  ✅ No files over 500 lines"
+        fi
+        
+        # Check bundle sizes
+        if npm run build >/dev/null 2>&1; then
+          echo ""
+          echo "📦 Bundle sizes:"
+          if [ -f "dist/server-bundle.gs" ]; then
+            server_lines=$(wc -l < dist/server-bundle.gs)
+            echo "  Server bundle: $server_lines lines"
+          fi
+          if [ -f "dist/client-bundle.gs" ]; then
+            client_lines=$(wc -l < dist/client-bundle.gs)
+            echo "  Client bundle: $client_lines lines"
+          fi
+        fi
+        
+        echo ""
+        echo "🏥 Health check completed"
+
+  cleanup:
+    name: "🧹 Repository Cleanup"
+    runs-on: ubuntu-latest
+    if: github.event.inputs.run_cleanup == 'true' || github.event_name == 'schedule'
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Check for temporary files
+      run: |
+        echo "🧹 Checking for cleanup opportunities..."
+        
+        # Check for common temporary files
+        temp_patterns=(
+          "*.tmp"
+          "*.log"
+          "*.bak"
+          "*~"
+          ".DS_Store"
+          "Thumbs.db"
+        )
+        
+        found_temps=false
+        for pattern in "${temp_patterns[@]}"; do
+          if find . -name "$pattern" -type f | head -5 | grep -q .; then
+            echo "  ⚠️  Found temporary files matching: $pattern"
+            find . -name "$pattern" -type f | head -5 | sed 's/^/    - /'
+            found_temps=true
+          fi
+        done
+        
+        if [ "$found_temps" = false ]; then
+          echo "  ✅ No temporary files found"
+        fi
+        
+        # Check .gitignore effectiveness
+        echo ""
+        echo "📝 .gitignore check:"
+        if [ -f ".gitignore" ]; then
+          echo "  ✅ .gitignore exists"
+          ignore_count=$(wc -l < .gitignore)
+          echo "  📊 $ignore_count ignore patterns"
+        else
+          echo "  ❌ .gitignore missing"
+        fi
+
+  dependency-check:
+    name: "📦 Dependency Security Check"
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: glasp/package.json
+        
+    - name: Install dependencies
+      working-directory: ./glasp
+      run: npm ci
+      
+    - name: Check for outdated dependencies
+      working-directory: ./glasp
+      run: |
+        echo "📦 Checking dependencies..."
+        npm outdated || echo "  ℹ️  Some dependencies may be outdated"
+        
+    - name: Security audit
+      working-directory: ./glasp
+      run: |
+        echo "🔒 Running security audit..."
+        npm audit --audit-level moderate || echo "  ⚠️  Security issues found - review recommended"

@@ -31,14 +31,15 @@ function getVkMediaUrls(attachments) {
   for (const attachment of attachments) {
     try {
       switch (attachment.type) {
-        case 'photo':
+        case 'photo': {
           const photoUrl = getBestPhotoUrl(attachment.photo.sizes);
           if (photoUrl) {
             result.photos.push({ type: 'photo', url: photoUrl });
           }
           break;
+        }
           
-        case 'video':
+        case 'video': {
           const videoId = `${attachment.video.owner_id}_${attachment.video.id}`;
           const directUrl = getVkVideoDirectUrl(videoId);
           if (directUrl) {
@@ -48,6 +49,7 @@ function getVkMediaUrls(attachments) {
             result.docLinks.push(`🎥 Видео: https://vk.com/video${videoId}`);
           }
           break;
+        }
           
         case 'audio':
           if (attachment.audio.artist && attachment.audio.title) {
