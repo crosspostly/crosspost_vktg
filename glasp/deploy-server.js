@@ -25,7 +25,9 @@ const modules = [
   'license-service.gs',    // 3. Лицензии
   'bindings-service.gs',   // 4. Связки
   'published-sheets-service.gs', // 5. Работа с листами
-  'vk-service.gs',         // 6. VK API
+  'vk-api.gs',             // 6a. VK API вызовы
+  'vk-posts.gs',           // 6b. Форматирование постов
+  'vk-media.gs',           // 6c. Обработка медиа
   'telegram-service.gs',   // 7. Telegram API
   'posting-service.gs'     // 8. Публикация (зависит от всех)
 ];
