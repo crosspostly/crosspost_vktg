@@ -276,7 +276,7 @@ function validateTokens(botToken, vkUserToken, adminChatId) {
           results.adminChat = { status: '✅', message: '✅ Доступен' };
           logEvent('INFO', 'admin_chat_valid', 'admin', `Chat ID: ${adminChatId}`);
         } else {
-          var errorMessage = adminTestData.description;
+          errorMessage = adminTestData.description;
           if (errorMessage.includes('chat not found')) {
             errorMessage = 'Чат не найден. Проверьте Chat ID';
           } else if (errorMessage.includes('bot was blocked')) {
@@ -415,7 +415,18 @@ function extractTelegramChatId(input) {
     /t\.me\/([a-z0-9_]+)/i,
     /t\.me\/([a-z0-9_]+)/i,
     /^@?([a-z0-9_]+)$/i
-=======
+  ];
+  
+  for (const pattern of patterns) {
+    const match = cleanInput.match(pattern);
+    if (match) {
+      return '@' + match[1];
+    }
+  }
+  
+  throw new Error('Invalid Telegram format');
+}
+
 function getSystemStats() {
   try {
     var licensesSheet = getSheet("Licenses");
@@ -444,7 +455,7 @@ function getSystemStats() {
       
       lastPostTime: logsData
         .filter(log => log[2] === "post_sent")
-        .sort((a, b) => new Date(b[0]) - new Date(a[0))[0]?.[0] || "Нет данных",
+        .sort((a, b) => new Date(b[0]) - new Date(a[0]))[0]?.[0] || "Нет данных",
       
       topUser: findTopUser(bindingsData)
     };
@@ -508,15 +519,7 @@ function findTopUser(bindingsData) {
 // HTML UTILITIES
 // ============================================
 
-function escapeHtml(text) {
-  if (!text) return '';
-  return String(text)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
+// escapeHtml function is defined at the top of this file
 
 function jsonResponse(data, statusCode = 200) {
   return ContentService.createTextOutput(JSON.stringify(data))
@@ -527,56 +530,7 @@ function jsonResponse(data, statusCode = 200) {
 // URL AND ID EXTRACTION UTILITIES
 // ============================================
 
-/**
- * Извлекает ID группы VK из URL с поддержкой всех форматов из ARCHITECTURE.md
- * @param {string} url - URL группы VK
- * @return {string} - ID группы с префиксом - для групп
- */
-function extractVkGroupId(url) {
-  try {
-    if (!url || typeof url !== 'string') {
-      logEvent('WARN', 'vk_url_invalid_type', 'server', `URL type: ${typeof url}`);
-      throw new Error('Invalid URL type');
-    }
-    
-    const originalInput = url;
-    const cleanInput = url.trim().toLowerCase().split('?')[0].split('#')[0];
-    
-    logEvent('DEBUG', 'vk_group_id_extraction_start', 'server', `Input: "${originalInput}" → Clean: "${cleanInput}"`);
-    
-    // Если уже ID (число или -число)
-    if (/^-?\d+$/.test(cleanInput)) {
-      const normalizedId = cleanInput.startsWith('-') ? cleanInput : '-' + cleanInput;
-      logEvent('DEBUG', 'vk_group_id_numeric', 'server', `${originalInput} → ${normalizedId}`);
-      return normalizedId;
-    }
-    
-    // Форматы: vk.com/public123, vk.com/club123
-    const publicClubMatch = cleanInput.match(/vk\.com\/(public|club)(\d+)/i);
-    if (publicClubMatch) {
-      const result = '-' + publicClubMatch[2];
-      logEvent('DEBUG', 'vk_group_id_public_club', 'server', `${originalInput} → ${result}`);
-      return result;
-    }
-    
-    // Форматы: vk.com/username
-    const nameMatch = cleanInput.match(/vk\.com\/([a-z0-9_]+)/i);
-    if (nameMatch) {
-      const screenName = nameMatch[1];
-      const resolvedId = resolveVkScreenName(screenName);
-      if (resolvedId) {
-        logEvent('DEBUG', 'vk_group_id_resolved', 'server', `${originalInput} → ${resolvedId}`);
-        return resolvedId;
-      }
-    }
-    
-    throw new Error('Invalid VK URL format: ' + originalInput);
-    
-  } catch (error) {
-    logEvent('ERROR', 'vk_url_extraction_failed', 'server', `URL: ${url}, Error: ${error.message}`);
-    throw error;
-  }
-}
+// extractVkGroupId function is defined earlier in this file
 
 /**
  * Резолвит screen name VK в числовой ID через API
@@ -645,33 +599,4 @@ function resolveVkScreenName(screenName) {
   }
 }
 
-/**
- * Извлекает chat_id Telegram с поддержкой всех форматов
- * @param {string} input - input в любом формате
- * @return {string} - chat_id или @username
- */
-function extractTelegramChatId(input) {
-  if (!input) throw new Error('Empty Telegram input');
-  
-  const cleanInput = input.trim();
-  
-  // Уже chat_id (число)
-  if (/^-?\d+$/.test(cleanInput)) return cleanInput;
-  
-  // Извлекаем username из разных форматов
-  const patterns = [
-    /t\.me\/([a-z0-9_]+)/i,     // t.me/username
-    /@([a-z0-9_]+)/i,           // @username  
-    /^([a-z0-9_]+)$/i           // username
-  ];
-  
-  for (const pattern of patterns) {
-    const match = cleanInput.match(pattern);
-    if (match) {
-      const username = match[1];
-      return '@' + username;
-    }
-  }
-  
-  throw new Error(`Telegram chat ID format not recognized: ${input}`);
-}
+// extractTelegramChatId function is defined earlier in this file

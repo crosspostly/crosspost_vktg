@@ -111,7 +111,9 @@ function generateTelegramMessageUrls(chatId, messageIds) {
       var response = UrlFetchApp.fetch(`https://api.telegram.org/bot${botToken}/getChat`, { method: 'POST', headers: {'Content-Type':'application/json'}, payload: JSON.stringify({ chat_id: chatId }), muteHttpExceptions: true, timeout: TIMEOUTS.FAST });
       var result = JSON.parse(response.getContentText());
       if (result.ok && result.result.username) username = result.result.username;
-    } catch (e) {}
+    } catch (e) {
+      // Ignore errors when fetching chat info
+    }
     var cleanChatId = chatId.toString().replace('-', '');
     if (cleanChatId.startsWith('100')) cleanChatId = cleanChatId.substring(4);
     var urls = messageIds.map(function(id){ return username ? `https://t.me/${username}/${id}` : `https://t.me/c/${cleanChatId}/${id}`; });

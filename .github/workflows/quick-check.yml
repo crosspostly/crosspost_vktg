@@ -1,0 +1,94 @@
+name: Quick Check - Fast Feedback
+
+on:
+  push:
+    branches-ignore: [main]  # Run on all branches except main (main has full CI)
+  pull_request:
+    branches: [main]  # Also run on PRs for early feedback
+
+permissions:
+  contents: read
+
+jobs:
+  quick-lint:
+    name: "⚡ Quick Lint Check"
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: glasp/package.json
+        
+    - name: Install dependencies
+      working-directory: ./glasp
+      run: npm ci
+      
+    - name: Quick lint check
+      working-directory: ./glasp
+      run: npm run lint
+      
+  quick-module-check:
+    name: "⚡ Quick Module Check"
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: glasp/package.json
+        
+    - name: Install dependencies
+      working-directory: ./glasp
+      run: npm ci
+      
+    - name: Quick module integrity check
+      working-directory: ./glasp
+      run: npm run module-check
+
+  quick-build:
+    name: "⚡ Quick Build Check"
+    runs-on: ubuntu-latest
+    needs: [quick-lint, quick-module-check]
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: glasp/package.json
+        
+    - name: Install dependencies
+      working-directory: ./glasp
+      run: npm ci
+      
+    - name: Quick build check
+      working-directory: ./glasp
+      run: npm run build
+      
+    - name: Verify build outputs
+      run: |
+        echo "📦 Build verification:"
+        echo "- Server bundle: $([ -f dist/server-bundle.gs ] && echo '✅' || echo '❌')"
+        echo "- Client bundle: $([ -f dist/client-bundle.gs ] && echo '✅' || echo '❌')"
+        
+        if [ ! -f "dist/server-bundle.gs" ] || [ ! -f "dist/client-bundle.gs" ]; then
+          echo "❌ Build failed - missing bundles"
+          exit 1
+        fi
+        
+        echo "✅ Quick build check passed"
