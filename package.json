@@ -1,0 +1,32 @@
+{
+  "name": "vk-telegram-crossposter",
+  "version": "6.1.0",
+  "description": "Google Apps Script VK→Telegram Crossposter with automated build and test tooling",
+  "scripts": {
+    "build:server": "npm run --prefix glasp build:server",
+    "build:client": "npm run --prefix glasp build:client",
+    "build": "npm run build:server && npm run build:client",
+    "lint": "npm run --prefix glasp lint",
+    "lint:fix": "npm run --prefix glasp lint:fix",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "module-check": "node tools/module-check.js",
+    "prepare": "npm run build",
+    "ci": "npm run lint && npm run test && npm run module-check && npm run build"
+  },
+  "keywords": ["google-apps-script", "vk", "telegram", "crossposter"],
+  "author": "f_den",
+  "license": "MIT",
+  "devDependencies": {
+    "@babel/core": "^7.23.0",
+    "@babel/preset-env": "^7.23.0",
+    "@google/clasp": "^2.4.2",
+    "babel-jest": "^29.7.0",
+    "eslint": "^8.57.0",
+    "jest": "^29.7.0"
+  },
+  "workspaces": [
+    "glasp"
+  ]
+}

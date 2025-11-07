@@ -1,0 +1,49 @@
+# Build artifacts
+dist/
+*.bundle.gs
+server-bundle.gs
+client-bundle.gs
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Clasp cache and configuration
+.clasp.json
+.clasp/
+
+# Coverage reports
+coverage/
+*.lcov
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+.tmp/
+temp/
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Documentation files (not JavaScript)
+*.md
+CHANGELOG.md
+README.md
+TODO.md
+
+# Test output
+test-results/
+.jest/
