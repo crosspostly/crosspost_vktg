@@ -1,0 +1,86 @@
+{
+  "validBinding": {
+    "bindingName": "TestBinding01",
+    "vkGroupId": "-123456789",
+    "telegramChatId": "-1001234567890",
+    "description": "Test binding for unit tests",
+    "status": "active"
+  },
+  
+  "bindingWithUsername": {
+    "bindingName": "TelegramUsername",
+    "vkGroupId": "-987654321",
+    "telegramChatId": "@test_channel",
+    "description": "Binding using Telegram username",
+    "status": "active"
+  },
+  
+  "bindingWithCustomSettings": {
+    "bindingName": "CustomBinding",
+    "vkGroupId": "-111222333",
+    "telegramChatId": "-1009876543210",
+    "description": "Binding with custom settings",
+    "status": "active",
+    "settings": {
+      "checkInterval": 15,
+      "includeReposts": false,
+      "includePinned": true
+    }
+  },
+  
+  "inactiveBinding": {
+    "bindingName": "InactiveTest",
+    "vkGroupId": "-444555666",
+    "telegramChatId": "-1005555555555",
+    "description": "Inactive test binding",
+    "status": "inactive"
+  },
+  
+  "bindingWithLongName": {
+    "bindingName": "VeryLongBindingNameForTesting123",
+    "vkGroupId": "-777888999",
+    "telegramChatId": "-1007777777777",
+    "description": "Testing long binding names",
+    "status": "active"
+  },
+  
+  "bindingWithSpecialChars": {
+    "bindingName": "BindingАБВ123",
+    "vkGroupId": "-100200300",
+    "telegramChatId": "-1001112223334",
+    "description": "Binding with Cyrillic characters",
+    "status": "active"
+  },
+  
+  "bindingSheetData": [
+    ["Binding Name", "VK Group ID", "Telegram Chat ID", "Description", "Status", "Last Check", "Posts Sent"],
+    ["TestBinding01", "-123456789", "-1001234567890", "Test binding", "active", "2024-01-15 10:30:00", "42"],
+    ["TelegramUsername", "-987654321", "@test_channel", "Username binding", "active", "2024-01-15 10:25:00", "28"],
+    ["CustomBinding", "-111222333", "-1009876543210", "Custom settings", "active", "2024-01-15 10:20:00", "15"],
+    ["InactiveTest", "-444555666", "-1005555555555", "Inactive", "inactive", "2024-01-10 15:00:00", "5"]
+  ],
+  
+  "licenseSheetData": [
+    ["License Key", "User Email", "Bindings Limit", "Created Date", "Expiry Date", "Status"],
+    ["LICENSE-AABB-1122", "user1@example.com", "5", "2024-01-01", "2025-01-01", "active"],
+    ["LICENSE-CCDD-3344", "user2@example.com", "10", "2024-01-01", "2025-01-01", "active"],
+    ["LICENSE-EEFF-5566", "user3@example.com", "3", "2024-01-01", "2024-06-01", "expired"],
+    ["LICENSE-GGHH-7788", "admin@example.com", "unlimited", "2024-01-01", "2099-12-31", "active"]
+  ],
+  
+  "publishedPostsData": [
+    ["Timestamp", "Status", "VK Group ID", "VK Post ID", "VK Post URL", "VK Post Date", "Media Summary", "Caption Chars", "Caption Parts", "TG Chat", "TG Message IDs", "TG Message URLs", "Notes"],
+    ["2024-01-15 10:30:00", "success", "-123456789", "12345", "https://vk.com/wall-123456789_12345", "2024-01-15 09:00:00", "1 photo", "150", "1", "-1001234567890", "123", "https://t.me/c/1234567890/123", ""],
+    ["2024-01-15 09:15:00", "success", "-123456789", "12344", "https://vk.com/wall-123456789_12344", "2024-01-15 08:00:00", "text only", "85", "1", "-1001234567890", "122", "https://t.me/c/1234567890/122", ""],
+    ["2024-01-15 08:00:00", "partial", "-123456789", "12343", "https://vk.com/wall-123456789_12343", "2024-01-15 07:00:00", "3 photos", "200", "1", "-1001234567890", "121", "https://t.me/c/1234567890/121", "Photo #3 failed to upload"],
+    ["2024-01-14 15:30:00", "error", "-123456789", "12342", "https://vk.com/wall-123456789_12342", "2024-01-14 14:00:00", "1 video", "120", "1", "-1001234567890", "", "", "Telegram API timeout"]
+  ],
+  
+  "clientLogsData": [
+    ["Timestamp", "Level", "Function", "Message", "Details"],
+    ["2024-01-15 10:30:15", "INFO", "checkNewPosts", "Checking binding: TestBinding01", ""],
+    ["2024-01-15 10:30:20", "INFO", "sendToServer", "Found 1 new post", "Post ID: 12345"],
+    ["2024-01-15 10:30:25", "SUCCESS", "sendToServer", "Post sent successfully", ""],
+    ["2024-01-15 09:15:10", "ERROR", "checkNewPosts", "API error", "Rate limit exceeded"]
+  ]
+}
