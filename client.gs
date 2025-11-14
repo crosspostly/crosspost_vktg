@@ -1118,52 +1118,60 @@ function cleanOldLogs() {
       sheetResults: sheetResults
     };
     
-    /**
-     * Клиентская функция очистки старых логов - делегирует серверу
-     * Все логи теперь хранятся только на сервере
-     */
-    function cleanOldLogs() {
-      try {
-        // Отправляем запрос на сервер для очистки логов
-        const license = getLicense();
-        if (!license) {
-          SpreadsheetApp.getUi().alert("❌ Лицензия не найдена");
-          return;
-        }
+    return summary;
+    
+  } catch (error) {
+    logEvent("ERROR", "client_log_cleanup_error", "client", error.message);
+    return { totalDeleted: 0, sheetResults: [], error: error.message };
+  }
+}
 
-        const payload = {
-          event: "clean_logs",
-          license_key: license.key
-        };
-
-        const response = UrlFetchApp.fetch(SERVER_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          payload: JSON.stringify(payload),
-          muteHttpExceptions: true,
-          timeout: REQUEST_TIMEOUT
-        });
-
-        const result = JSON.parse(response.getContentText());
-
-        if (result.success) {
-          const message = `✅ Очистка логов завершена!\n\n` +
-            `Удалено записей: ${result.totalDeleted}\n` +
-            `Обработано листов: ${result.sheetResults?.length || 0}`;
-          SpreadsheetApp.getUi().alert(message);
-        } else {
-          SpreadsheetApp.getUi().alert("❌ Ошибка очистки логов: " + result.error);
-        }
-
-      } catch (error) {
-        logCriticalUiError("clean_logs_error", error.message);
-        SpreadsheetApp.getUi().alert("❌ Ошибка: " + error.message);
-      }
+/**
+ * Клиентская функция очистки старых логов - делегирует серверу
+ * Все логи теперь хранятся только на сервере
+ */
+function cleanOldLogs() {
+  try {
+    // Отправляем запрос на сервер для очистки логов
+    const license = getLicense();
+    if (!license) {
+      SpreadsheetApp.getUi().alert("❌ Лицензия не найдена");
+      return;
     }
 
-    // ============================================
-    // 5. УТИЛИТЫ СОХРАНЕНИЯ СОСТОЯНИЯ
-    // ============================================
+    const payload = {
+      event: "clean_logs",
+      license_key: license.key
+    };
+
+    const response = UrlFetchApp.fetch(SERVER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
+      timeout: REQUEST_TIMEOUT
+    });
+
+    const result = JSON.parse(response.getContentText());
+
+    if (result.success) {
+      const message = `✅ Очистка логов завершена!\n\n` +
+        `Удалено записей: ${result.totalDeleted}\n` +
+        `Обработано листов: ${result.sheetResults?.length || 0}`;
+      SpreadsheetApp.getUi().alert(message);
+    } else {
+      SpreadsheetApp.getUi().alert("❌ Ошибка очистки логов: " + result.error);
+    }
+
+  } catch (error) {
+    logCriticalUiError("clean_logs_error", error.message);
+    SpreadsheetApp.getUi().alert("❌ Ошибка: " + error.message);
+  }
+}
+
+// ============================================
+// 5. УТИЛИТЫ СОХРАНЕНИЯ СОСТОЯНИЯ
+// ============================================
 
 function getLicense() {
   try {
@@ -2637,182 +2645,6 @@ function migratePublishedSheetsNames() {
   } catch (error) {
     logEvent("ERROR", "published_migration_error", "client", error.message);
     SpreadsheetApp.getUi().alert(`❌ Ошибка миграции: ${error.message}`);
-  }
-}
-
-// ============================================
-// ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ ОЧИСТКИ КЕША
-// ============================================
-
-/**
- * Очищает кеш от записей групп, которые больше не используются в связках
- * @return {Object} Результат очистки с количеством очищенных записей
- */
-function cleanupOrphanedCache() {
-  try {
-    logEvent("INFO", "orphaned_cache_cleanup_start", "client", "Starting cleanup of orphaned cache entries");
-    
-    // Получаем все активные связки
-    const bindingsResult = getBindings();
-    if (!bindingsResult.success) {
-      return { success: false, error: bindingsResult.error, cleaned: 0, total: 0 };
-    }
-    
-    // Извлекаем все VK Group ID из активных связок
-    const activeGroupIds = new Set();
-    if (bindingsResult.bindings) {
-      bindingsResult.bindings.forEach(binding => {
-        try {
-          const groupId = extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
-          if (groupId) {
-            activeGroupIds.add(groupId);
-          }
-        } catch (error) {
-          logEvent("WARN", "invalid_vk_url_in_binding", "client", 
-                   `Binding ID: ${binding.id}, URL: ${binding.vkGroupUrl}, Error: ${error.message}`);
-        }
-      });
-    }
-    
-    logEvent("DEBUG", "active_groups_identified", "client", 
-             `Found ${activeGroupIds.size} active VK groups: [${Array.from(activeGroupIds).join(", ")}]`);
-    
-    // Получаем все листы с паттерном "Published_*"
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const allSheets = ss.getSheets();
-    
-    let totalCacheSheets = 0;
-    let cleanedSheets = 0;
-    
-    allSheets.forEach(sheet => {
-      const sheetName = sheet.getName();
-      
-      // Проверяем только листы кеша (Published_*)
-      if (sheetName.startsWith("Published_")) {
-        totalCacheSheets++;
-        
-        // Извлекаем Group ID из названия листа
-        const groupIdMatch = sheetName.match(/^Published_(.+)$/);
-        if (groupIdMatch) {
-          const cachedGroupId = groupIdMatch[1];
-          
-          // Если группа больше не используется - удаляем лист
-          if (!activeGroupIds.has(cachedGroupId)) {
-            logEvent("INFO", "removing_orphaned_cache_sheet", "client", 
-                     `Deleting unused cache sheet: ${sheetName} (Group ID: ${cachedGroupId})`);
-            
-            try {
-              ss.deleteSheet(sheet);
-              cleanedSheets++;
-            } catch (deleteError) {
-              logEvent("ERROR", "cache_sheet_deletion_failed", "client", 
-                       `Sheet: ${sheetName}, Error: ${deleteError.message}`);
-            }
-          } else {
-            logEvent("DEBUG", "cache_sheet_active", "client", 
-                     `Keeping active cache sheet: ${sheetName}`);
-          }
-        }
-      }
-    });
-    
-    logEvent("INFO", "orphaned_cache_cleanup_complete", "client", 
-             `Cleanup complete. Checked ${totalCacheSheets} cache sheets, cleaned ${cleanedSheets} orphaned sheets`);
-    
-    return {
-      success: true,
-      cleaned: cleanedSheets,
-      total: totalCacheSheets,
-      activeGroups: activeGroupIds.size
-    };
-    
-  } catch (error) {
-    logEvent("ERROR", "orphaned_cache_cleanup_error", "client", error.message);
-    return { success: false, error: error.message, cleaned: 0, total: 0 };
-  }
-}
-
-/**
- * Обеспечивает создание листов Published для всех связок
- * @return {Object} Результат с количеством созданных листов
- */
-function ensureAllPublishedSheetsExist() {
-  try {
-    logEvent("INFO", "ensure_published_sheets_start", "client", "Starting creation of missing Published sheets");
-    
-    // Получаем все связки
-    const bindingsResult = getBindings();
-    if (!bindingsResult.success) {
-      return { success: false, error: bindingsResult.error, total: 0, created: 0 };
-    }
-    
-    if (!bindingsResult.bindings || bindingsResult.bindings.length === 0) {
-      logEvent("INFO", "no_bindings_for_sheets", "client", "No bindings found, no sheets to create");
-      return { success: true, total: 0, created: 0 };
-    }
-    
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let totalBindings = bindingsResult.bindings.length;
-    let createdSheets = 0;
-    
-    bindingsResult.bindings.forEach(binding => {
-      try {
-        // Извлекаем VK Group ID
-        let groupId = extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
-        if (!groupId) {
-          // Для screen_name используем оригинальный URL как имя листа
-          groupId = binding.vkGroupUrl || binding.vk_group_url;
-          logEvent("INFO", "using_original_url_for_sheet", "client", 
-                   `Binding ID: ${binding.id}, using original URL: ${groupId}`);
-        }
-        
-        // Создаем лист если не существует
-        const sheetName = `Published_${groupId}`;
-        let publishedSheet = ss.getSheetByName(sheetName);
-        
-        if (!publishedSheet) {
-          // Создаем новый лист
-          publishedSheet = ss.insertSheet(sheetName);
-          
-          // Устанавливаем заголовки
-          publishedSheet.appendRow([
-            "Post ID", "Published Date", "Text Preview", "Media Count", "Status"
-          ]);
-          
-          // Форматируем заголовки
-          const headerRange = publishedSheet.getRange(1, 1, 1, 5);
-          headerRange.setBackground("#667eea");
-          headerRange.setFontColor("white");
-          headerRange.setFontWeight("bold");
-          publishedSheet.setFrozenRows(1);
-          
-          createdSheets++;
-          
-          logEvent("INFO", "published_sheet_created", "client", 
-                   `Created sheet: ${sheetName} for Binding: ${binding.id}`);
-        } else {
-          logEvent("DEBUG", "published_sheet_exists", "client", 
-                   `Sheet already exists: ${sheetName} for Binding: ${binding.id}`);
-        }
-        
-      } catch (bindingError) {
-        logEvent("ERROR", "binding_sheet_creation_error", "client", 
-                 `Binding ID: ${binding.id}, Error: ${bindingError.message}`);
-      }
-    });
-    
-    logEvent("INFO", "ensure_published_sheets_complete", "client", 
-             `Sheet creation complete. Checked ${totalBindings} bindings, created ${createdSheets} new sheets`);
-    
-    return {
-      success: true,
-      total: totalBindings,
-      created: createdSheets
-    };
-    
-  } catch (error) {
-    logEvent("ERROR", "ensure_published_sheets_error", "client", error.message);
-    return { success: false, error: error.message, total: 0, created: 0 };
   }
 }
 
