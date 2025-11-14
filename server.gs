@@ -1160,54 +1160,6 @@ function migrateLegacyBindingSheets(rawName, sanitizedName) {
   }
 }
 
-function buildBindingObjectFromRow(row) {
-  if (!row) {
-    return null;
-  }
-  var bindingId = row[0];
-  var vkGroupUrl = row[3];
-  var tgChatId = row[4];
-  var fallbackContext = {
-    bindingId: bindingId,
-    vkGroupUrl: vkGroupUrl,
-    processedTgChatId: tgChatId
-  };
-  try {
-    fallbackContext.processedVkGroupId = extractVkGroupId(vkGroupUrl);
-  } catch (vkError) {
-    fallbackContext.processedVkGroupId = "";
-  }
-  var storedBindingNameCell = row[9];
-  var rawBindingName = resolveBindingName(storedBindingNameCell, fallbackContext);
-  var sanitizedBindingName = sanitizeBindingSheetSuffix(rawBindingName);
-  migrateLegacyBindingSheets(storedBindingNameCell, sanitizedBindingName);
-  var bindingDescription = sanitizeBindingText(row[10]);
-  var vkGroupId = row[11] || fallbackContext.processedVkGroupId; // Используем сохраненный VK Group ID или извлекаем
-  var sheetName = getPublishedSheetNameFromBindingName(sanitizedBindingName);
-  return {
-    id: bindingId,
-    licenseKey: row[1],
-    userEmail: row[2],
-    vkGroupUrl: vkGroupUrl,
-    tgChatId: tgChatId,
-    status: row[5],
-    createdAt: row[6],
-    lastCheck: row[7],
-    formatSettings: row[8] || "",
-    bindingName: sanitizedBindingName,
-    binding_name: sanitizedBindingName,
-    bindingDescription: bindingDescription,
-    binding_description: bindingDescription,
-    bindingSheetSuffix: sanitizedBindingName,
-    binding_sheet_suffix: sanitizedBindingName,
-    bindingSheetName: sheetName,
-    vkGroupId: vkGroupId, // ← ДОБАВЛЯЕМ VK GROUP ID!
-    binding_sheet_name: sheetName,
-    bindingOriginalName: rawBindingName,
-    binding_original_name: rawBindingName
-  };
-}
-
 function handleAddBinding(payload, clientIp) {
   try {
     var { license_key, vk_group_url, tg_chat_id, formatSettings, binding_name, binding_description } = payload;
@@ -1658,100 +1610,6 @@ function handleCleanLogs(payload, clientIp) {
 }
 
 // Дополнительные обработчики для отправки постов и публикации
-
-function handleSendPost(payload, clientIp) {
-  try {
-    var { license_key, binding_id, vk_post } = payload;
-    
-    // Проверяем лицензию
-    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
-    var licenseData = JSON.parse(licenseCheck.getContent());
-    
-    if (!licenseData.success) {
-      return licenseCheck;
-    }
-    
-    // Проверяем глобальную настройку "disable_all_stores"
-    var props = PropertiesService.getScriptProperties();
-    var disableAllStores = props.getProperty("global_disable_all_stores");
-    
-    if (disableAllStores === "true") {
-      logEvent("INFO", "post_blocked_by_global_setting", license_key, 
-               `Post sending blocked by global disable_all_stores setting`);
-      return jsonResponse({
-        success: false,
-        error: "All stores are globally disabled",
-        blocked_by_global_setting: true
-      }, 403);
-    }
-
-    // Находим связку
-    var binding = findBindingById(binding_id, license_key);
-    if (!binding) {
-      return jsonResponse({
-        success: false,
-        error: "Binding not found"
-      }, 404);
-    }
-    
-    if (binding.status !== "active") {
-      return jsonResponse({
-        success: false,
-        error: "Binding is not active"
-      }, 403);
-    }
-    
-    // Если vk_post не передан, получаем последний пост
-    if (!vk_post) {
-      logEvent("INFO", "fetching_last_post", license_key, 
-               `Binding ID: ${binding_id}, No post provided, fetching last post`);
-      
-      var getPostsResult = handleGetVkPosts({ 
-        license_key: license_key, 
-        vk_group_id: binding.vkGroupId, 
-        count: 1 
-      }, clientIp);
-      
-      var postsData = JSON.parse(getPostsResult.getContent());
-      if (!postsData.success || !postsData.posts || postsData.posts.length === 0) {
-        logEvent("ERROR", "no_posts_found", license_key, 
-                 `Binding ID: ${binding_id}, No posts found to publish`);
-        return jsonResponse({ 
-          success: false, 
-          error: "No posts found to publish" 
-        }, 404);
-      }
-      
-      vk_post = postsData.posts[0];
-      logEvent("INFO", "last_post_fetched", license_key, 
-               `Binding ID: ${binding_id}, Post ID: ${vk_post.id}`);
-    }
-    
-    // Проверка на дубликат перед отправкой
-    if (vk_post && vk_post.id && checkPostAlreadySent(binding.bindingName, vk_post.id)) {
-      logEvent("INFO", "post_already_sent_skipped", license_key, 
-               `Binding ID: ${binding_id}, Post ID: ${vk_post.id}, IP: ${clientIp}`);
-      return jsonResponse({ success: true, skipped: true, message: "Post already sent" });
-    }
-    
-    // Отправляем пост в Telegram с учетом настроек связки
-    var sendResult = sendVkPostToTelegram(binding.tgChatId, vk_post, binding);
-    
-    if (sendResult.success) {
-      logEvent("INFO", "post_sent_successfully", license_key, 
-               `Binding ID: ${binding_id}, Post ID: ${vk_post.id}, Message ID: ${sendResult.message_id}, IP: ${clientIp}`);
-    } else {
-      logEvent("ERROR", "post_send_failed", license_key, 
-               `Binding ID: ${binding_id}, Post ID: ${vk_post.id}, Error: ${sendResult.error}, IP: ${clientIp}`);
-    }
-    
-    return jsonResponse(sendResult);
-    
-  } catch (error) {
-    logEvent("ERROR", "send_post_error", payload.license_key, error.message);
-    return jsonResponse({ success: false, error: error.message }, 500);
-  }
-}
 
 function handleGetVkPosts(payload, clientIp) {
   try {
@@ -2777,27 +2635,6 @@ function findLicense(licenseKey) {
   }
 }
 
-function findBindingById(bindingId, licenseKey) {
-  try {
-    var sheet = getSheet("Bindings");
-    var data = sheet.getDataRange().getValues();
-    
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][0] === bindingId && data[i][1] === licenseKey) {
-        var bindingObject = buildBindingObjectFromRow(data[i]);
-        if (bindingObject) {
-          return bindingObject;
-        }
-      }
-    }
-    
-    return null;
-  } catch (error) {
-    logEvent("ERROR", "find_binding_error", "system", error.message);
-    return null;
-  }
-}
-
 function findBindingRowById(bindingId, licenseKey) {
   try {
     var sheet = getSheet("Bindings");
@@ -2812,89 +2649,6 @@ function findBindingRowById(bindingId, licenseKey) {
     return null;
   } catch (error) {
     return null;
-  }
-}
-
-function getUserBindings(licenseKey) {
-  try {
-    var sheet = getSheet("Bindings");
-    var data = sheet.getDataRange().getValues();
-    var bindings = [];
-    
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][1] === licenseKey) {
-        var bindingObject = buildBindingObjectFromRow(data[i]);
-        if (bindingObject) {
-          bindings.push(bindingObject);
-        }
-      }
-    }
-    
-    return bindings;
-  } catch (error) {
-    logEvent("ERROR", "get_user_bindings_error", licenseKey, error.message);
-    return [];
-  }
-}
-
-function getUserBindingsWithNames(licenseKey) {
-  try {
-    var sheet = getSheet("Bindings");
-    var data = sheet.getDataRange().getValues();
-    var bindings = [];
-    
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][1] === licenseKey) {
-        var vkGroupUrl = data[i][3];
-        var tgChatId = data[i][4];
-        
-        var vkGroupName = vkGroupUrl;
-        var tgChatName = tgChatId;
-        
-        // Получаем названия
-        try {
-          if (vkGroupUrl) {
-            var vkGroupId = extractVkGroupId(vkGroupUrl);
-            vkGroupName = getCachedVkGroupName(vkGroupId);
-          }
-        } catch (vkError) {
-          logEvent("WARN", "binding_vk_name_error", licenseKey, 
-                   `URL: ${vkGroupUrl}, Error: ${vkError.message}`);
-        }
-        
-        try {
-          if (tgChatId) {
-            tgChatName = getCachedTelegramChatName(tgChatId);
-          }
-        } catch (tgError) {
-          logEvent("WARN", "binding_tg_name_error", licenseKey, 
-                   `Chat ID: ${tgChatId}, Error: ${tgError.message}`);
-        }
-        
-        var bindingObject = buildBindingObjectFromRow(data[i]);
-        if (!bindingObject) {
-          continue;
-        }
-
-        var bindingWithNames = Object.assign({}, bindingObject, {
-          vkGroupName: vkGroupName,
-          tgChatName: tgChatName,
-          vk_group_name: vkGroupName,
-          tg_chat_name: tgChatName
-        });
-
-        bindings.push(bindingWithNames);
-      }
-    }
-    
-    logEvent("INFO", "bindings_with_names_loaded", licenseKey, 
-             `Total bindings: ${bindings.length}`);
-    
-    return bindings;
-    
-  } catch (error) {
-    logEvent("ERROR", "get_bindings_with_names_error", licenseKey, error.message);
-    return [];
   }
 }
 
@@ -2923,13 +2677,6 @@ function logEvent(level, event, user, details) {
   }
 }
 
-/**
- * Детальное логирование ошибок API с полными запросами и ответами
- * @param {string} service - Название сервиса (TELEGRAM, VK_API, VK_USER)
- * @param {string} endpoint - Конечная точка API
- * @param {Object} request - Данные запроса
- * @param {Object} response - Данные ответа
- */
 function logApiError(service, endpoint, request, response) {
   try {
     var errorDetails = {
@@ -4834,48 +4581,6 @@ function saveLastPostIdToSheet(bindingName, vkGroupId, postId, postData) {
 }
 
 /**
- * Проверяет, был ли пост уже отправлен (статусы success/partial) для указанной связки
- * @param {string} bindingName - название связки
- * @param {string} postId - ID поста
- * @return {boolean} - true если пост уже был отправлен
- */
-function checkPostAlreadySent(bindingName, postId) {
-  try {
-    if (!postId) {
-      return false;
-    }
-    
-    var sheetName = getPublishedSheetNameFromBindingName(bindingName);
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(sheetName);
-    
-    if (!sheet) {
-      return false;
-    }
-    
-    var lastRow = sheet.getLastRow();
-    if (lastRow <= 1) {
-      return false;
-    }
-    
-    var rows = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
-    for (var i = 0; i < rows.length; i++) {
-      var status = (rows[i][1] || '').toString().toLowerCase();
-      var loggedPostId = rows[i][3];
-      if ((status === 'success' || status === 'partial') && loggedPostId && loggedPostId.toString() === postId.toString()) {
-        return true;
-      }
-    }
-    
-    return false;
-    
-  } catch (error) {
-    logEvent('ERROR', 'check_post_sent_failed', 'server', error.message);
-    return false;
-  }
-}
-
-/**
  * Тестирует критические исправления
  * @return {Object} - результат тестирования
  */
@@ -5219,51 +4924,6 @@ function generateTelegramMessageUrls(chatId, messageIds) {
   } catch (error) {
     logEvent('ERROR', 'tg_url_generation_failed', 'server', error.message);
     return '';
-  }
-}
-
-/**
- * Creates media summary string from attachments
- * @param {Array} attachments - VK post attachments
- * @return {string} - media summary
- */
-function createMediaSummary(attachments) {
-  try {
-    if (!attachments || attachments.length === 0) {
-      return 'no media';
-    }
-    
-    var counts = {
-      photo: 0,
-      video: 0,
-      audio: 0,
-      doc: 0,
-      link: 0,
-      other: 0
-    };
-    
-    for (var i = 0; i < attachments.length; i++) {
-      var type = attachments[i].type;
-      if (counts.hasOwnProperty(type)) {
-        counts[type]++;
-      } else {
-        counts.other++;
-      }
-    }
-    
-    var parts = [];
-    if (counts.photo > 0) parts.push(`${counts.photo} photo${counts.photo > 1 ? 's' : ''}`);
-    if (counts.video > 0) parts.push(`${counts.video} video${counts.video > 1 ? 's' : ''}`);
-    if (counts.audio > 0) parts.push(`${counts.audio} audio${counts.audio > 1 ? 's' : ''}`);
-    if (counts.doc > 0) parts.push(`${counts.doc} doc${counts.doc > 1 ? 's' : ''}`);
-    if (counts.link > 0) parts.push(`${counts.link} link${counts.link > 1 ? 's' : ''}`);
-    if (counts.other > 0) parts.push(`${counts.other} other`);
-    
-    return parts.length > 0 ? parts.join(', ') : 'no media';
-    
-  } catch (error) {
-    logEvent('ERROR', 'media_summary_failed', 'server', error.message);
-    return 'error counting media';
   }
 }
 
