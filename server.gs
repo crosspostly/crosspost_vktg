@@ -2566,33 +2566,45 @@ function getVkPosts(groupId, count = 10) {
 // ============================================
 // 6. УТИЛИТЫ И ХЕЛПЕРЫ
 // ============================================
-
 function formatVkTextForTelegram(text, options) {
   if (!text) return '';
+  
   options = options || {};
   var boldFirstLine = options.boldFirstLine !== false;
   var boldUppercase = options.boldUppercase !== false;
 
-  // Первая строка — жирная
+  // 1. ЭКРАНИРОВАНИЕ HTML (из fix/server) — КРИТИЧНО для безопасности
+  text = text.replace(/&/g, '&amp;')
+             .replace(/</g, '&lt;')
+             .replace(/>/g, '&gt;')
+             .replace(/"/g, '&quot;')
+             .replace(/'/g, '&#039;');
+
+  // 2. ЖИРНАЯ ПЕРВАЯ СТРОКА (из main) — проще и надежнее
   if (boldFirstLine) {
     text = text.replace(/(^.+?)([\r\n]|$)/, '<b>$1</b>$2');
   }
-  // ВСЕ КАПС слова — жирные
+
+  // 3. ЖИРНЫЕ КАПС СЛОВА (из main) — компактнее
   if (boldUppercase) {
     text = text.replace(/\b[A-ZА-Я]{2,}\b/g, '<b>$&</b>');
   }
-  // Ссылки VK — HTML
+
+  // 4. VK ССЫЛКИ (из main) — два regex точнее одного универсального
   text = text.replace(/\[id(\d+)\|(.+?)\]/g, '<a href="https://vk.com/id$1">$2</a>');
   text = text.replace(/\[(club|public)(\d+)\|(.+?)\]/g, function(match, type, id, title) {
     return '<a href="https://vk.com/' + type + id + '">' + title + '</a>';
   });
-  text = text.replace(/\n{3,}/g, '\n\n').trim();
+
+  // 5. ОЧИСТКА ЛИШНИХ ПЕРЕНОСОВ И ПРОБЕЛОВ (из main + fix/server)
+  text = text.replace(/\n{3,}/g, '\n\n')      // Убираем 3+ переносов
+             .replace(/[ \t]+/g, ' ')          // Убираем множественные пробелы/табы
+             .trim();
+
   return text;
 }
 
-/**
- * Форматирует полный VK пост для отправки в Telegram с учетом настроек связки
- */
+
 function formatVkPostForTelegram(vkPost, binding) {
   if (!vkPost) return "";
   
