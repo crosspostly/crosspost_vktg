@@ -1,0 +1,150 @@
+[33mcommit 6ea79862aaae7e40faecc41866b92c95bf5d9e09[m[33m ([m[1;31morigin/fix-newline-cleaning-vk-to-tg-link-conversion-fix-menu-buttons-add-logs-client-gs[m[33m)[m
+Author: engine-labs-app[bot] <140088366+engine-labs-app[bot]@users.noreply.github.com>
+Date:   Fri Nov 14 14:15:48 2025 +0000
+
+    fix(vk-tg-manager): fix post formatting, link conversion, and client logging
+    
+    - Restore proper newline handling to avoid extra line breaks in posts
+    - Transform VK links (id, club/public) into Telegram-compatible Markdown links; also convert plain vk.com URLs
+    - Add extensive client-side logging to Logs sheet (onOpen, main panel, binding actions, license checks, post checks)
+    - Harden UI actions: wrap functions like togglePanel and checkAndSaveLicense with try/catch and logs
+    - Ensure Logs sheet creation and formatting is preserved
+    
+    BREAKING CHANGE: none
+
+[1mdiff --git a/client.gs b/client.gs[m
+[1mindex 934de00..913e6eb 100644[m
+[1m--- a/client.gs[m
+[1m+++ b/client.gs[m
+[36m@@ -36,23 +36,32 @@[m [mvar USER_PROP_LICENSE_META = 'LICENSE_META'; // JSON: { type, maxGroups, expires[m
+ // ============================================[m
+ [m
+ function onOpen() {[m
+[31m-  const ui = SpreadsheetApp.getUi();[m
+[31m-  [m
+[31m-  ui.createMenu("VK→Telegram")[m
+[31m-    .addItem("🎛️ Открыть управление", "openMainPanel")[m
+[31m-    .addItem("🔄 Проверить посты (вручную)", "checkNewPostsManually")[m
+[31m-    .addItem("⏱️ Настроить автопроверку (каждые 30 мин)", "setupTrigger")[m
+[31m-    .addItem("📊 Статистика", "showUserStatistics")[m
+[31m-    .addSeparator()[m
+[31m-    .addItem("📋 Показать логи", "showLogsSheet")[m
+[31m-    .addItem("🧹 Очистить старые логи (>30 дней)", "cleanOldLogs")[m
+[31m-    .addToUi();[m
+[31m-  [m
+[31m-  // Только критическое логирование UI ошибок - все бизнес-логи идут через сервер[m
+[32m+[m[32m  try {[m
+[32m+[m[32m    logEvent("INFO", "spreadsheet_opened", "client", "VK→TG Manager spreadsheet opened by user");[m
+[32m+[m[41m    [m
+[32m+[m[32m    const ui = SpreadsheetApp.getUi();[m
+[32m+[m[41m    [m
+[32m+[m[32m    ui.createMenu("VK→Telegram")[m
+[32m+[m[32m      .addItem("🎛️ Открыть управление", "openMainPanel")[m
+[32m+[m[32m      .addItem("🔄 Проверить посты (вручную)", "checkNewPostsManually")[m
+[32m+[m[32m      .addItem("⏱️ Настроить автопроверку (каждые 30 мин)", "setupTrigger")[m
+[32m+[m[32m      .addItem("📊 Статистика", "showUserStatistics")[m
+[32m+[m[32m      .addSeparator()[m
+[32m+[m[32m      .addItem("📋 Показать логи", "showLogsSheet")[m
+[32m+[m[32m      .addItem("🧹 Очистить старые логи (>30 дней)", "cleanOldLogs")[m
+[32m+[m[32m      .addToUi();[m
+[32m+[m[41m    [m
+[32m+[m[32m    // Только критическое логирование UI ошибок - все бизнес-логи идут через сервер[m
+[32m+[m[32m  } catch (error) {[m
+[32m+[m[32m    console.error("[onOpen] Failed:", error.message);[m
+[32m+[m[32m    logEvent("ERROR", "on_open_failed", "client", error.message);[m
+[32m+[m[32m  }[m
+ }[m
+ [m
+ function openMainPanel() {[m
+   try {[m
+[32m+[m[32m    logEvent("INFO", "main_panel_opened", "client", "User opened VK→TG management panel");[m
+[32m+[m[41m    [m
+     const htmlContent = getMainPanelHtml();[m
+     if (!htmlContent) throw new Error("Failed to generate HTML");[m
+     [m
+[36m@@ -479,7 +488,10 @@[m [mfunction getInitialData() {[m
+ [m
+ function saveLicenseWithCheck(licenseKey) {[m
+   try {[m
+[32m+[m[32m    logEvent("INFO", "license_check_start", "client", `License key: ${licenseKey.substring(0, 20)}...`);[m
+[32m+[m[41m    [m
+     if (!SERVER_URL || SERVER_URL.includes("YOURSERVERURL")) {[m
+[32m+[m[32m      logEvent("ERROR", "license_config_error", "client", "Server URL not configured");[m
+       return {[m
+         success: false,[m
+         error: "❌ Ошибка конфигурации: URL сервера не указан"[m
+[36m@@ -505,6 +517,9 @@[m [mfunction saveLicenseWithCheck(licenseKey) {[m
+     if (result.success) {[m
+       PropertiesService.getUserProperties().setProperty("LICENSE_KEY", licenseKey);[m
+       [m
+[32m+[m[32m      logEvent("INFO", "license_activated_successfully", "client",[m[41m [m
+[32m+[m[32m               `Type: ${result.license.type}, Max Groups: ${result.license.maxGroups}`);[m
+[32m+[m[41m      [m
+       return {[m
+         success: true,[m
+         license: {[m
+[36m@@ -515,10 +530,12 @@[m [mfunction saveLicenseWithCheck(licenseKey) {[m
+         }[m
+       };[m
+     } else {[m
+[32m+[m[32m      logEvent("WARN", "license_check_failed", "client", result.error);[m
+       return { success: false, error: result.error };[m
+     }[m
+     [m
+   } catch (error) {[m
+[32m+[m[32m    logEvent("ERROR", "license_check_exception", "client", error.message);[m
+     return { success: false, error: `❌ Ошибка проверки лицензии: ${error.message}` };[m
+   }[m
+ }[m
+[36m@@ -570,6 +587,9 @@[m [mfunction addBinding(bindingName, bindingDescription, vkGroupUrl, tgChatId, forma[m
+     const sanitizedName = typeof bindingName === "string" ? bindingName.trim() : "";[m
+     const sanitizedDescription = typeof bindingDescription === "string" ? bindingDescription.trim() : "";[m
+     [m
+[32m+[m[32m    logEvent("INFO", "add_binding_start", "client",[m[41m [m
+[32m+[m[32m             `Name: ${sanitizedName}, VK URL: ${vkGroupUrl}, TG Chat: ${tgChatId}`);[m
+[32m+[m[41m    [m
+     const payload = {[m
+       event: "add_binding",[m
+       license_key: license.key,[m
+[36m@@ -595,13 +615,17 @@[m [mfunction addBinding(bindingName, bindingDescription, vkGroupUrl, tgChatId, forma[m
+     const result = JSON.parse(response.getContentText());[m
+     [m
+     if (result.success) {[m
+[31m-      // Published sheets and cache lifecycle are managed by server v6[m
+[31m-      return result;[m
+[32m+[m[32m      logEvent("INFO", "binding_added_successfully", "client",[m[41m [m
+[32m+[m[32m               `Name: ${sanitizedName}, Binding ID: ${result.bindingId || 'unknown'}`);[m
+     } else {[m
+[31m-      return result;[m
+[32m+[m[32m      logEvent("WARN", "add_binding_failed", "client",[m[41m [m
+[32m+[m[32m               `Name: ${sanitizedName}, Error: ${result.error || 'Unknown error'}`);[m
+     }[m
+     [m
+[32m+[m[32m    return result;[m
+[32m+[m[41m    [m
+   } catch (error) {[m
+[32m+[m[32m    logEvent("ERROR", "add_binding_exception", "client", error.message);[m
+     return { success: false, error: error.message };[m
+   }[m
+ }[m
+[36m@@ -2251,19 +2275,28 @@[m [mfunction getMainPanelHtml() {[m
+     // ============================================[m
+     [m
+     function checkAndSaveLicense() {[m
+[31m-      const licenseKey = document.getElementById("license-key-input").value.trim();[m
+[32m+[m[32m      try {[m
+[32m+[m[32m        logMessageToConsole('checkAndSaveLicense called');[m
+ [m
+[31m-      if (!licenseKey) {[m
+[31m-        showMessage("license", "error", "❌ Укажите ключ лицензии");[m
+[31m-        logMessageToConsole("User did not enter license key");[m
+[31m-        return;[m
+[31m-      }[m
+[32m+[m[32m        const licenseKey = document.getElementById("license-key-input");[m
+[32m+[m[32m        if (!licenseKey) {[m
+[32m+[m[32m          logMessageToConsole('ERROR: license-key-input element not found');[m
+[32m+[m[32m          showMessage("license", "error", "❌ Ошибка: элемент ввода лицензии не найден");[m
+[32m+[m[32m          return;[m
+[32m+[m[32m        }[m
+ [m
+[31m-      logMessageToConsole("Sending license key to server: " + licenseKey.substring(0, 20) + ".
