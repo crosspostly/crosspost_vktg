@@ -2538,8 +2538,8 @@ function formatVkTextForTelegram(text, options) {
   if (!text) return "";
   
   options = options || {};
-  var boldFirstLine = options.boldFirstLine !== false; // по умолчанию true
-  var boldUppercase = options.boldUppercase !== false; // по умолчанию true
+  var boldFirstLine = options.boldFirstLine !== false;
+  var boldUppercase = options.boldUppercase !== false;
   
   // Экранируем HTML специальные символы
   text = text.replace(/&/g, '&amp;')
@@ -2555,190 +2555,17 @@ function formatVkTextForTelegram(text, options) {
   
   // Делаем жирными слова в ВЕРХНЕМ РЕГИСТРЕ (если включено)
   if (boldUppercase) {
-    text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '<b>function formatVkTextForTelegram(text, options) {
-  if (!text) return "";
-  
-  options = options || {};
-  var boldFirstLine = options.boldFirstLine !== false; // по умолчанию true
-  var boldUppercase = options.boldUppercase !== false; // по умолчанию true
-  
-  // Экранируем HTML специальные символы
-  text = text.replace(/&/g, '&amp;')
-             .replace(/</g, '&lt;')
-             .replace(/>/g, '&gt;')
-             .replace(/"/g, '&quot;')
-             .replace(/'/g, '&#039;');
-  
-  // Делаем жирным первое предложение (если включено)
-  if (boldFirstLine) {
-    text = text.replace(/^([^.!?]*[.!?])/, '<b>$1</b>');
-  }
-  
-  // Делаем жирными слова в ВЕРХНЕМ РЕГИСТРЕ (если включено)
-  if (boldUppercase) {
-    text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '<b>// Делаем жирными слова в ВЕРХНЕМ РЕГИСТРЕ (если включено)
-  if (boldUppercase) {
-    text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '<b>// Делаем жирными слова в ВЕРХНЕМ РЕГИСТРЕ (если включено)
-  if (boldUppercase) {
-    text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '<b>function formatVkTextForTelegram(text, options) {
-  if (!text) return "";
-  
-  options = options || {};
-  var boldFirstLine = options.boldFirstLine !== false; // по умолчанию true
-  var boldUppercase = options.boldUppercase !== false; // по умолчанию true
-  
-  // Экранируем HTML специальные символы
-  text = text.replace(/&/g, '&amp;')
-             .replace(/</g, '&lt;')
-             .replace(/>/g, '&gt;')
-             .replace(/"/g, '&quot;')
-             .replace(/'/g, '&#039;');
-  
-  // Делаем жирным первое предложение (если включено)
-  if (boldFirstLine) {
-    text = text.replace(/^([^.!?]*[.!?])/, '<b>$1</b>');
-  }
-  
-  // Делаем жирными слова в ВЕРХНЕМ РЕГИСТРЕ (если включено)
-  if (boldUppercase) {
-    text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '<b>function formatVkTextForTelegram(text, options) {
-  if (!text) return "";
-  
-  options = options || {};
-  var boldFirstLine = options.boldFirstLine !== false; // по умолчанию true
-  var boldUppercase = options.boldUppercase !== false; // по умолчанию true
-  
-  // Делаем жирным первое предложение (если включено)
-  if (boldFirstLine) {
-    text = text.replace(/^([^.!?]*[.!?])/, '*$1*');
-  }
-  
-  // Делаем жирными слова в ВЕРХНЕМ РЕГИСТРЕ (если включено)
-  if (boldUppercase) {
-    text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '*$&*');
-  }
-  
-  // Преобразуем ссылки VK в правильный формат для Telegram
-  text = text.replace(/\[(id\d+|club\d+|public\d+|\w+)\|([^\]]+)\]/g, function(match, id, title) {
-    // Если это числовой ID пользователя или группы
-    if (id.startsWith('id')) {
-      return `[${title}](https://vk.com/${id})`;
-    } else if (id.startsWith('club') || id.startsWith('public')) {
-      return `[${title}](https://vk.com/${id})`;
-    } else {
-      // Обычное имя пользователя или группы
-      return `[${title}](https://vk.com/${id})`;
-    }
-  });
-  
-  // Удаляем лишние пробелы
-  text = text.replace(/\s+/g, ' ').trim();
-  
-  return text;
-}</b>');
+    text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '<b>$&</b>');
   }
   
   // Преобразуем VK-ссылки в HTML формат
   text = text.replace(/\[(id\d+|club\d+|public\d+|\w+)\|([^\]]+)\]/g, function(match, id, title) {
-    // Если это числовой ID пользователя или группы
     if (id.startsWith('id')) {
-      return `<a href="https://vk.com/${id}">${title}</a>`;
+      return '<a href="https://vk.com/' + id + '">' + title + '</a>';
     } else if (id.startsWith('club') || id.startsWith('public')) {
-      return `<a href="https://vk.com/${id}">${title}</a>`;
+      return '<a href="https://vk.com/' + id + '">' + title + '</a>';
     } else {
-      // Обычное имя пользователя или группы
-      return `<a href="https://vk.com/${id}">${title}</a>`;
-    }
-  });
-  
-  // Сохраняем переносы строк
-  text = text.replace(/\n/g, '\n');
-  
-  // Удаляем лишние пробелы (но сохраняем переносы строк)
-  text = text.replace(/[ \t]+/g, ' ').trim();
-  
-  return text;
-}</b>');
-  }
-  
-  // Преобразуем VK-ссылки в HTML формат
-  text = text.replace(/\[(id\d+|club\d+|public\d+|\w+)\|([^\]]+)\]/g, function(match, id, title) {
-    // Если это числовой ID пользователя или группы
-    if (id.startsWith('id')) {
-      return `<a href="https://vk.com/${id}">${title}</a>`;
-    } else if (id.startsWith('club') || id.startsWith('public')) {
-      return `<a href="https://vk.com/${id}">${title}</a>`;
-    } else {
-      // Обычное имя пользователя или группы
-      return `<a href="https://vk.com/${id}">${title}</a>`;
-    }
-  });
-  
-  // Сохраняем переносы строк
-  text = text.replace(/\n/g, '\n');
-  
-  // Удаляем лишние пробелы (но сохраняем переносы строк)
-  text = text.replace(/[ \t]+/g, ' ').trim();
-  
-  return text;
-}</b>');
-  }
-  
-  // Преобразуем VK-ссылки в HTML формат
-  text = text.replace(/\[(id\d+|club\d+|public\d+|\w+)\|([^\]]+)\]/g, function(match, id, title) {
-    // Если это числовой ID пользователя или группы
-    if (id.startsWith('id')) {
-      return `<a href="https://vk.com/${id}">${title}</a>`;
-    } else if (id.startsWith('club') || id.startsWith('public')) {
-      return `<a href="https://vk.com/${id}">${title}</a>`;
-    } else {
-      // Обычное имя пользователя или группы
-      return `<a href="https://vk.com/${id}">${title}</a>`;
-    }
-  });
-  
-  // Сохраняем переносы строк
-  text = text.replace(/\n/g, '\n');
-  
-  // Удаляем лишние пробелы (но сохраняем переносы строк)
-  text = text.replace(/[ \t]+/g, ' ').trim();
-  
-  return text;</b>');
-  }
-  
-  // Преобразуем VK-ссылки в HTML формат
-  text = text.replace(/\[(id\d+|club\d+|public\d+|\w+)\|([^\]]+)\]/g, function(match, id, title) {
-    // Если это числовой ID пользователя или группы
-    if (id.startsWith('id')) {
-      return `<a href="https://vk.com/${id}">${title}</a>`;
-    } else if (id.startsWith('club') || id.startsWith('public')) {
-      return `<a href="https://vk.com/${id}">${title}</a>`;
-    } else {
-      // Обычное имя пользователя или группы
-      return `<a href="https://vk.com/${id}">${title}</a>`;
-    }
-  });
-  
-  // Сохраняем переносы строк
-  text = text.replace(/\n/g, '\n');
-  
-  // Удаляем лишние пробелы (но сохраняем переносы строк)
-  text = text.replace(/[ \t]+/g, ' ').trim();
-  
-  return text;
-}</b>');
-  }
-  
-  // Преобразуем VK-ссылки в HTML формат
-  text = text.replace(/\[(id\d+|club\d+|public\d+|\w+)\|([^\]]+)\]/g, function(match, id, title) {
-    // Если это числовой ID пользователя или группы
-    if (id.startsWith('id')) {
-      return `<a href="https://vk.com/${id}">${title}</a>`;
-    } else if (id.startsWith('club') || id.startsWith('public')) {
-      return `<a href="https://vk.com/${id}">${title}</a>`;
-    } else {
-      // Обычное имя пользователя или группы
-      return `<a href="https://vk.com/${id}">${title}</a>`;
+      return '<a href="https://vk.com/' + id + '">' + title + '</a>';
     }
   });
   
@@ -2751,9 +2578,6 @@ function formatVkTextForTelegram(text, options) {
   return text;
 }
 
-/**
- * Форматирует полный VK пост для отправки в Telegram с учетом настроек связки
- */
 function formatVkPostForTelegram(vkPost, binding) {
   if (!vkPost) return "";
   
