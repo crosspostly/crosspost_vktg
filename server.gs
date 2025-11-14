@@ -414,20 +414,20 @@ function validateTokens(botToken, vkUserToken, adminChatId) {
           logEvent("INFO", "admin_chat_valid", "admin", `Chat ID: ${adminChatId}`);
         } else {
           // Более детальная обработка ошибок Telegram
-          var errorMessage = adminTestData.description || 'Неизвестная ошибка';
-          if (errorMessage.includes('chat not found')) {
-            errorMessage = 'Чат не найден. Проверьте Chat ID или добавьте бота в канал/группу';
-          } else if (errorMessage.includes('bot was blocked')) {
-            errorMessage = 'Бот заблокирован пользователем';
-          } else if (errorMessage.includes('not enough rights')) {
-            errorMessage = 'Недостаточно прав для отправки сообщений';
+          var adminErrorMessage = adminTestData.description || 'Неизвестная ошибка';
+          if (adminErrorMessage.includes('chat not found')) {
+            adminErrorMessage = 'Чат не найден. Проверьте Chat ID или добавьте бота в канал/группу';
+          } else if (adminErrorMessage.includes('bot was blocked')) {
+            adminErrorMessage = 'Бот заблокирован пользователем';
+          } else if (adminErrorMessage.includes('not enough rights')) {
+            adminErrorMessage = 'Недостаточно прав для отправки сообщений';
           }
           
           results.adminChat = { 
             status: '❌', 
-            message: `Ошибка: ${errorMessage}` 
+            message: `Ошибка: ${adminErrorMessage}` 
           };
-          logEvent("WARN", "admin_chat_invalid", "admin", `Chat ID: ${adminChatId}, Error: ${errorMessage}`);
+          logEvent("WARN", "admin_chat_invalid", "admin", `Chat ID: ${adminChatId}, Error: ${adminErrorMessage}`);
         }
       } catch (adminError) {
         results.adminChat = { 
@@ -961,7 +961,7 @@ function normalizeTgBindingLabel(value) {
   if (/^-?\d+$/.test(text)) {
     return text;
   }
-  var urlMatch = text.match(/t\.me\/([^\/?#]+)/i);
+  var urlMatch = text.match(/t\.me\/([^/?#]+)/i);
   if (urlMatch && urlMatch[1]) {
     return '@' + urlMatch[1];
   }
@@ -977,7 +977,7 @@ function getVkLabelFromContext(context) {
   }
   var url = sanitizeBindingText(context.vkGroupUrl);
   if (url) {
-    var screenMatch = url.match(/vk\.com\/([^\/?#]+)/i);
+    var screenMatch = url.match(/vk\.com\/([^/?#]+)/i);
     if (screenMatch && screenMatch[1]) {
       return screenMatch[1];
     }
@@ -2078,7 +2078,7 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
 
       // Write to binding sheet (regardless of binding name validation)
       if (binding && binding.bindingName) {
-        writePublicationRowToBindingSheet(binding.bindingName, errorPublicationData);
+        writePublicationRowToBindingSheet(binding.bindingName, catchPublicationData);
       }
 
       return { 
@@ -2093,7 +2093,7 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
     
     // Log to binding sheet for any other errors
     if (binding && binding.bindingName && vkPost) {
-     var errorPublicationData = {
+     var catchPublicationData = {
        status: 'error',
        vkGroupId: binding.vkGroupId || '',
        vkPostId: vkPost.id || '',
@@ -2400,8 +2400,8 @@ function splitTextIntoChunks(text, maxLength) {
   
   // Если ничего не получилось - принудительно разбиваем по символам
   if (chunks.length === 0 && text.length > 0) {
-    var forcedChunks = text.match(new RegExp(`.{1,${maxLength}}`, 'g'));
-    chunks.push(...forcedChunks);
+    var fallbackChunks = text.match(new RegExp(`.{1,${maxLength}}`, 'g'));
+    chunks.push(...fallbackChunks);
   }
   
   return chunks;
@@ -3927,7 +3927,7 @@ function cleanOldLogs() {
     // Обрабатываем каждый лог-лист
     for (var j = 0; j < logSheets.length; j++) {
       var sheet = logSheets[j];
-      var sheetName = sheet.getName();
+      var logSheetName = sheet.getName();
       var sheetDeletedCount = 0;
       
       try {
@@ -4307,14 +4307,15 @@ function getVkMediaUrls(attachments) {
   for (const attachment of attachments) {
     try {
       switch (attachment.type) {
-        case "photo":
+        case "photo": {
           const photoUrl = getBestPhotoUrl(attachment.photo.sizes);
           if (photoUrl) {
             result.photos.push({ type: "photo", url: photoUrl });
           }
           break;
+        }
           
-        case "video":
+        case "video": {
           const videoId = `${attachment.video.owner_id}_${attachment.video.id}`;
           const directUrl = getVkVideoDirectUrl(videoId);
           
@@ -4325,6 +4326,7 @@ function getVkMediaUrls(attachments) {
             result.docLinks.push(`🎥 [Видео](https://vk.com/video${videoId})`);
           }
           break;
+        }
           
         case "audio":
           if (attachment.audio.artist && attachment.audio.title) {
@@ -4562,10 +4564,10 @@ function testSendMixedMediaOptimized() {
     
     // Тест 2: 12 фото (должно быть 2 MediaGroup)
     var testPhotos2 = [];
-    for (var i = 1; i <= 12; i++) {
+    for (var j = 1; j <= 12; j++) {
       testPhotos2.push({
         type: 'photo',
-        url: `https://picsum.photos/800/600?random=${i + 100}`
+        url: `https://picsum.photos/800/600?random=${j + 100}`
       });
     }
     
