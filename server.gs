@@ -2536,32 +2536,27 @@ function getVkPosts(groupId, count = 10) {
 
 function formatVkTextForTelegram(text, options) {
   if (!text) return '';
-  
   options = options || {};
-  var boldFirstLine = options.boldFirstLine !== false; // true по умолчанию
-  var boldUppercase = options.boldUppercase !== false; // true по умолчанию
+  var boldFirstLine = options.boldFirstLine !== false;
+  var boldUppercase = options.boldUppercase !== false;
 
-  // Выделяем первую строку жирным
+  // Первая строка — жирная
   if (boldFirstLine) {
-    text = text.replace(/(^.+?)([\r\n]|$)/, '**$1**$2');
+    text = text.replace(/(^.+?)([\r\n]|$)/, '<b>$1</b>$2');
   }
-  
-  // Выделяем слова из заглавных букв (2+ символа)
+  // ВСЕ КАПС слова — жирные
   if (boldUppercase) {
-    text = text.replace(/\b[A-ZА-Я]{2,}\b/g, '**$&**');
+    text = text.replace(/\b[A-ZА-Я]{2,}\b/g, '<b>$&</b>');
   }
-  
-  // Преобразуем VK ссылки в Telegram формат
-  text = text.replace(/\[id(\d+)\|(.+?)\]/g, '[$2](https://vk.com/id$1)');
+  // Ссылки VK — HTML
+  text = text.replace(/\[id(\d+)\|(.+?)\]/g, '<a href="https://vk.com/id$1">$2</a>');
   text = text.replace(/\[(club|public)(\d+)\|(.+?)\]/g, function(match, type, id, title) {
-    return `[${title}](https://vk.com/${type}${id})`;
+    return '<a href="https://vk.com/' + type + id + '">' + title + '</a>';
   });
-  
-  // Убираем лишние пробелы
   text = text.replace(/\n{3,}/g, '\n\n').trim();
-  
   return text;
 }
+
 /**
  * Форматирует полный VK пост для отправки в Telegram с учетом настроек связки
  */
