@@ -46,8 +46,13 @@ function formatVkTextForTelegram(text, options) {
     }
   });
   
-  // Убираем лишние пробелы
-  text = text.replace(/\n{3,}/g, '\n\n').trim();
+  // Дополнительно преобразуем обычные vk.com ссылки в гиперссылки
+  text = text.replace(/(?:https?:\/\/)?(?:www\.)?vk\.com\/([a-zA-Z0-9_.-]+)/g, function(match, username) {
+    return `[${username}](https://vk.com/${username})`;
+  });
+  
+  // Сохраняем переносы строк, убираем только лишние пробелы
+  text = text.replace(/[ \t]+$/gm, '').trim();
   
   return text;
 }
