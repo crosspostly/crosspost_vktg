@@ -43,12 +43,11 @@ function onOpen() {
     .addItem("🔄 Проверить посты (вручную)", "checkNewPostsManually")
     .addItem("⏱️ Настроить автопроверку (каждые 30 мин)", "setupTrigger")
     .addItem("📊 Статистика", "showUserStatistics")
-    .addItem("🔍 Логи", "showLogsSheet")
     .addSeparator()
     .addItem("🧹 Очистить старые логи (>30 дней)", "cleanOldLogs")
     .addToUi();
   
-  logEvent("INFO", "menu_opened", "client", `App started, version ${CLIENT_VERSION}`);
+  // Только критическое логирование UI ошибок - все бизнес-логи идут через сервер
 }
 
 function openMainPanel() {
@@ -62,7 +61,8 @@ function openMainPanel() {
     SpreadsheetApp.getUi().showModelessDialog(html, `VK→Telegram Manager v${CLIENT_VERSION}`);
     
   } catch (error) {
-    logEvent("ERROR", "main_panel_error", "client", error.message);
+    // Только критические UI ошибки логируем на клиенте
+    logCriticalUiError("main_panel_error", error.message);
     SpreadsheetApp.getUi().alert("❌ Ошибка: " + error.message);
   }
 }
@@ -73,25 +73,17 @@ function openMainPanel() {
 
 function getInitialData() {
   try {
-    logEvent("INFO", "initial_data_request", "client", "Loading license and bindings");
-    
     const license = getLicense();
     
     if (!license) {
-      logEvent("WARN", "no_license_found", "client", "User has no license key");
       return { success: true, license: null, bindings: [] };
     }
-    
-    logEvent("DEBUG", "license_found", "client", `License key: ${license.key.substring(0, 20)}...`);
     
     const bindingsResult = getBindings();
     
     if (!bindingsResult.success) {
-      logEvent("WARN", "get_bindings_failed", "client", bindingsResult.error);
       return { success: false, error: bindingsResult.error };
     }
-    
-    logEvent("INFO", "initial_data_loaded", "client", `License loaded, Bindings: ${bindingsResult.bindings?.length || 0}`);
     
     return {
       success: true,
@@ -100,7 +92,6 @@ function getInitialData() {
     };
     
   } catch (error) {
-    logEvent("ERROR", "initial_data_error", "client", error.message);
     return { success: false, error: error.message };
   }
 }
@@ -108,22 +99,16 @@ function getInitialData() {
 function saveLicenseWithCheck(licenseKey) {
   try {
     if (!SERVER_URL || SERVER_URL.includes("YOURSERVERURL")) {
-      logEvent("ERROR", "server_url_missing", "client", "SERVER_URL not configured");
       return {
         success: false,
         error: "❌ Ошибка конфигурации: URL сервера не указан"
       };
     }
     
-    logEvent("INFO", "license_check_start", "client", `Checking license: ${licenseKey.substring(0, 20)}...`);
-    
     const payload = {
       event: "check_license",
       license_key: licenseKey
     };
-    
-    logEvent("DEBUG", "server_request_payload", "client", 
-             `Event: ${payload.event}, License key length: ${licenseKey.length}`);
     
     const response = UrlFetchApp.fetch(SERVER_URL, {
       method: 'POST',
@@ -134,17 +119,10 @@ function saveLicenseWithCheck(licenseKey) {
     });
     
     const responseText = response.getContentText();
-    
-    logEvent("DEBUG", "server_response", "client",
-             `Status: ${response.getResponseCode()}, Body length: ${responseText.length}, First 200 chars: ${responseText.substring(0, 200)}`);
-    
     const result = JSON.parse(responseText);
     
     if (result.success) {
       PropertiesService.getUserProperties().setProperty("LICENSE_KEY", licenseKey);
-      
-      logEvent("INFO", "license_saved", "client",
-               `License type: ${result.license.type}, Max groups: ${result.license.maxGroups}`);
       
       return {
         success: true,
@@ -156,13 +134,10 @@ function saveLicenseWithCheck(licenseKey) {
         }
       };
     } else {
-      logEvent("WARN", "license_check_failed", "client", result.error);
       return { success: false, error: result.error };
     }
     
   } catch (error) {
-    logEvent("ERROR", "license_check_error", "client", 
-             `Error: ${error.message}, Stack: ${error.stack ? error.stack.substring(0, 200) : 'N/A'}`);
     return { success: false, error: `❌ Ошибка проверки лицензии: ${error.message}` };
   }
 }
@@ -184,7 +159,6 @@ function callServer(payload, options) {
   };
 
   try {
-    logEvent('DEBUG', 'server_call_start', 'client', `Event: ${payload.event || 'unknown'}`);
     var response = UrlFetchApp.fetch(SERVER_URL, requestOptions);
     var responseCode = response.getResponseCode();
     var responseText = response.getContentText();
@@ -194,7 +168,6 @@ function callServer(payload, options) {
       try {
         result = JSON.parse(responseText);
       } catch (parseError) {
-        logEvent('ERROR', 'server_response_parse_error', 'client', `Event: ${payload.event || 'unknown'}, Error: ${parseError.message}`);
         throw new Error('Failed to parse server response JSON');
       }
     }
@@ -202,15 +175,8 @@ function callServer(payload, options) {
     result = result || {};
     result.httpStatus = responseCode;
 
-    if (!result.success) {
-      logEvent('WARN', 'server_call_completed_with_error', 'client', `Event: ${payload.event || 'unknown'}, Status: ${responseCode}, Error: ${result.error || 'Unknown error'}`);
-    } else {
-      logEvent('DEBUG', 'server_call_success', 'client', `Event: ${payload.event || 'unknown'}, Status: ${responseCode}`);
-    }
-
     return result;
   } catch (error) {
-    logEvent('ERROR', 'server_call_failed', 'client', `Event: ${payload.event || 'unknown'}, Error: ${error.message}`);
     throw error;
   }
 }
@@ -222,9 +188,6 @@ function addBinding(bindingName, bindingDescription, vkGroupUrl, tgChatId, forma
     
     const sanitizedName = typeof bindingName === "string" ? bindingName.trim() : "";
     const sanitizedDescription = typeof bindingDescription === "string" ? bindingDescription.trim() : "";
-    
-    logEvent("INFO", "add_binding_start", "client", 
-             `Name: ${sanitizedName}, VK URL: ${vkGroupUrl}, TG Chat: ${tgChatId}`);
     
     const payload = {
       event: "add_binding",
@@ -240,8 +203,6 @@ function addBinding(bindingName, bindingDescription, vkGroupUrl, tgChatId, forma
       }
     };
     
-    logEvent("DEBUG", "add_binding_payload", "client", JSON.stringify(payload).substring(0, 200));
-    
     const response = UrlFetchApp.fetch(SERVER_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -253,18 +214,13 @@ function addBinding(bindingName, bindingDescription, vkGroupUrl, tgChatId, forma
     const result = JSON.parse(response.getContentText());
     
     if (result.success) {
-      logEvent("INFO", "binding_added", "client",
-               `Binding ID: ${result.binding_id}, Name: ${sanitizedName}, VK Group: ${result.converted?.vk_group_id || 'N/A'}`);
-      
       // Published sheets and cache lifecycle are managed by server v6
       return result;
     } else {
-      logEvent("WARN", "add_binding_failed", "client", result.error);
       return result;
     }
     
   } catch (error) {
-    logEvent("ERROR", "add_binding_error", "client", error.message);
     return { success: false, error: error.message };
   }
 }
@@ -943,10 +899,8 @@ function extractVkGroupId(url) {
     if (/^-?\d+$/.test(cleanInput)) {
       const normalizedId = cleanInput.startsWith('-') ? cleanInput : '-' + cleanInput;
       if (validateVkGroupId(normalizedId)) {
-        logEvent("DEBUG", "vk_group_id_numeric", "client", `${originalInput} → ${normalizedId}`);
         return normalizedId;
       } else {
-        logEvent("WARN", "vk_group_id_numeric_invalid", "client", `${originalInput} → ${normalizedId} failed validation`);
         return null;
       }
     }
@@ -961,10 +915,8 @@ function extractVkGroupId(url) {
       numericId = publicClubMatch[2];
       const result = '-' + numericId;
       if (validateVkGroupId(result)) {
-        logEvent("DEBUG", "vk_group_id_public_club", "client", `${originalInput} → ${result}`);
         return result;
       } else {
-        logEvent("WARN", "vk_group_id_public_club_invalid", "client", `${originalInput} → ${result} failed validation`);
         return null;
       }
     }
@@ -984,7 +936,6 @@ function extractVkGroupId(url) {
     }
 
     if (!screenName) {
-      logEvent("WARN", "vk_group_id_unsupported_format", "client", `Unsupported format: "${originalInput}"`);
       return null;
     }
 
@@ -992,22 +943,17 @@ function extractVkGroupId(url) {
     if (/^\d+$/.test(screenName)) {
       const result = '-' + screenName;
       if (validateVkGroupId(result)) {
-        logEvent("DEBUG", "vk_group_id_fallback_numeric", "client", `${originalInput} → ${result}`);
         return result;
       } else {
-        logEvent("WARN", "vk_group_id_fallback_numeric_invalid", "client", `${originalInput} → ${result} failed validation`);
         return null;
       }
     }
 
     // Если это screen_name - на клиенте не можем резолвить через API, возвращаем null
     // Серверная часть сделает резолвинг через resolveVkScreenName
-    logEvent("INFO", "vk_group_id_screen_name_server_resolve", "client", 
-      `Screen name "${screenName}" requires server resolution from "${originalInput}"`);
     return null;
     
   } catch (error) {
-    logEvent("ERROR", "extract_group_id_error", "client", `URL: ${url}, Error: ${error.message}`);
     return null;
   }
 }
@@ -1029,18 +975,14 @@ function extractVkGroupId(url) {
 function extractTelegramChatId(input) {
   try {
     if (!input || typeof input !== 'string') {
-      logEvent("WARN", "invalid_telegram_input_type", "client", `Input type: ${typeof input}`);
       return null;
     }
 
     const originalInput = input;
     const cleanInput = input.trim().toLowerCase().split('?')[0].split('#')[0];
 
-    logEvent("DEBUG", "telegram_chat_id_extraction_start", "client", `Input: "${originalInput}" → Clean: "${cleanInput}"`);
-
     // Если уже chat_id (число с возможным минусом)
     if (/^-?\d+$/.test(cleanInput)) {
-      logEvent("DEBUG", "telegram_chat_id_numeric", "client", `${originalInput} → ${cleanInput}`);
       return cleanInput;
     }
 
@@ -1064,23 +1006,19 @@ function extractTelegramChatId(input) {
     }
 
     if (!username) {
-      logEvent("WARN", "telegram_chat_id_unsupported_format", "client", `Unsupported format: "${originalInput}"`);
       return null;
     }
 
     // Валидация username
     if (!/^[a-z0-9_]+$/i.test(username)) {
-      logEvent("WARN", "telegram_chat_id_invalid_username", "client", `Invalid username "${username}" from "${originalInput}"`);
       return null;
     }
 
     const result = '@' + username;
-    logEvent("DEBUG", "telegram_chat_id_username", "client", `${originalInput} → ${result}`);
     
     return result;
     
   } catch (error) {
-    logEvent("ERROR", "extract_telegram_chat_id_error", "client", `Input: ${input}, Error: ${error.message}`);
     return null;
   }
 }
@@ -1180,25 +1118,52 @@ function cleanOldLogs() {
       sheetResults: sheetResults
     };
     
-    logEvent("INFO", "client_log_cleanup_completed", "client", 
-      `Client cleanup completed: ${totalDeleted} entries deleted from ${logSheets.length} sheets. Summary: ${JSON.stringify(sheetResults)}`);
-    
-    return summary;
-    
-  } catch (error) {
-    logEvent("ERROR", "client_log_cleanup_critical_error", "client", `Critical error in client log cleanup: ${error.message}, Stack: ${error.stack?.substring(0, 200)}`);
-    return { 
-      totalDeleted: 0, 
-      sheetsProcessed: 0, 
-      error: error.message,
-      sheetResults: [] 
-    };
-  }
-}
+    /**
+     * Клиентская функция очистки старых логов - делегирует серверу
+     * Все логи теперь хранятся только на сервере
+     */
+    function cleanOldLogs() {
+      try {
+        // Отправляем запрос на сервер для очистки логов
+        const license = getLicense();
+        if (!license) {
+          SpreadsheetApp.getUi().alert("❌ Лицензия не найдена");
+          return;
+        }
 
-// ============================================
-// 5. УТИЛИТЫ СОХРАНЕНИЯ СОСТОЯНИЯ
-// ============================================
+        const payload = {
+          event: "clean_logs",
+          license_key: license.key
+        };
+
+        const response = UrlFetchApp.fetch(SERVER_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          payload: JSON.stringify(payload),
+          muteHttpExceptions: true,
+          timeout: REQUEST_TIMEOUT
+        });
+
+        const result = JSON.parse(response.getContentText());
+
+        if (result.success) {
+          const message = `✅ Очистка логов завершена!\n\n` +
+            `Удалено записей: ${result.totalDeleted}\n` +
+            `Обработано листов: ${result.sheetResults?.length || 0}`;
+          SpreadsheetApp.getUi().alert(message);
+        } else {
+          SpreadsheetApp.getUi().alert("❌ Ошибка очистки логов: " + result.error);
+        }
+
+      } catch (error) {
+        logCriticalUiError("clean_logs_error", error.message);
+        SpreadsheetApp.getUi().alert("❌ Ошибка: " + error.message);
+      }
+    }
+
+    // ============================================
+    // 5. УТИЛИТЫ СОХРАНЕНИЯ СОСТОЯНИЯ
+    // ============================================
 
 function getLicense() {
   try {
@@ -1245,115 +1210,55 @@ function getLicense() {
       }
       
     } catch (serverError) {
-      logEvent("WARN", "license_server_error", "client", 
-               `Server request failed: ${serverError.message}, returning local key only`);
       // Возвращаем только ключ если сервер недоступен
       return { key: licenseKey };
     }
     
   } catch (error) {
-    logEvent("ERROR", "get_license_error", "client", error.message);
     return null;
   }
 }
 
 function getLastPostIds() {
-  logEvent("DEBUG", "last_post_ids_deprecated", "client", "Local post cache is managed on the server");
+  // Local post cache is managed on server
   return {};
 }
 
 function saveLastPostIds(ids) {
-  logEvent("DEBUG", "save_last_post_ids_deprecated", "client", "Server v6 tracks published posts; skipping local cache update");
+  // Server v6 tracks published posts; skipping local cache update
 }
 
 function isPostAlreadySent(vkGroupId, postId) {
-  logEvent("DEBUG", "is_post_already_sent_deprecated", "client", `VK Group: ${vkGroupId}, Post: ${postId}`);
   return false;
 }
 
 function markPostAsSent(vkGroupId, postId, tgChatId, postText, bindingName, tgChatName) {
-  logEvent("DEBUG", "mark_post_as_sent_deprecated", "client",
-           `VK Group: ${vkGroupId}, Post: ${postId}, Binding: ${bindingName || 'N/A'}`);
+  // Server v6 handles post tracking
 }
 
 function updatePostStatistics(vkGroupId, postId) {
-  logEvent("DEBUG", "update_post_statistics_deprecated", "client",
-           `VK Group: ${vkGroupId}, Post: ${postId}`);
+  // Server v6 handles statistics
 }
 
 function getOrCreatePublishedPostsSheet(bindingName, vkGroupId) {
-  logEvent("DEBUG", "published_sheet_deprecated", "client",
-           `Binding: ${bindingName || 'N/A'}, VK Group: ${vkGroupId}`);
   return null;
 }
 
 // ============================================
-// 6. ЛОГИРОВАНИЕ
+// 6. ЛОГИРОВАНИЕ (ТОЛЬКО КРИТИЧЕСКИЕ UI ОШИБКИ)
 // ============================================
-function logClientEvent(level, event, user, details) {
+/**
+ * Только для критических UI ошибок - все бизнес-логи идут через сервер
+ * @param {string} event - тип ошибки
+ * @param {string} details - детали ошибки
+ */
+function logCriticalUiError(event, details) {
   try {
-    if (!DEV_MODE && level === "DEBUG") {
-      return;
-    }
-
-    const sheet = getOrCreateClientLogsSheet();
-    const timestamp = new Date();
-
-    let resolvedUser = user;
-    if (!resolvedUser) {
-      try {
-        resolvedUser = Session.getActiveUser().getEmail() || "client";
-      } catch (userError) {
-        resolvedUser = "client";
-      }
-    }
-
-    let detailsValue;
-    if (details === undefined || details === null) {
-      detailsValue = "{}";
-    } else if (typeof details === "string") {
-      detailsValue = details;
-    } else {
-      try {
-        detailsValue = JSON.stringify(details);
-      } catch (jsonError) {
-        detailsValue = String(details);
-      }
-    }
-
-    sheet.appendRow([
-      timestamp,
-      level,
-      event,
-      resolvedUser,
-      detailsValue
-    ]);
-
-    console.log(`[${level}] ${event} (${resolvedUser}): ${detailsValue}`);
-  } catch (error) {
-    console.error("Client logging error:", error.message);
+    console.error(`[UI_ERROR] ${event}: ${details}`);
+    // Можно добавить отправку критических ошибок на сервер, если нужно
+  } catch (e) {
+    console.error("Failed to log critical UI error:", e.message);
   }
-}
-
-function logEvent(level, event, source, details) {
-  logClientEvent(level, event, source || "client", details);
-}
-
-function getOrCreateClientLogsSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName("Client Logs");
-
-  if (!sheet) {
-    sheet = ss.insertSheet("Client Logs");
-    sheet.appendRow(["Timestamp", "Level", "Event", "User", "Details"]);
-    const headerRange = sheet.getRange(1, 1, 1, 5);
-    headerRange.setFontWeight("bold");
-    headerRange.setBackground("#e3f2fd");
-    headerRange.setFontColor("#0f172a");
-    sheet.setFrozenRows(1);
-  }
-
-  return sheet;
 }
 
 // ============================================
@@ -1366,12 +1271,8 @@ function getOrCreateClientLogsSheet() {
  */
 function doFirstAuth() {
   try {
-    logEvent("INFO", "first_auth_start", "client", "User manually requested authorization");
-    
     // Пытаемся получить доступ к триггерам (требует авторизации)
     const triggers = ScriptApp.getProjectTriggers();
-    
-    logEvent("INFO", "first_auth_success", "client", `Authorization granted, ${triggers.length} triggers found`);
     
     SpreadsheetApp.getUi().alert(
       "✅ Разрешения активированы!\n\n" +
@@ -1381,7 +1282,7 @@ function doFirstAuth() {
     return { success: true, message: "Authorization granted" };
     
   } catch (error) {
-    logEvent("ERROR", "first_auth_error", "client", error.message);
+    logCriticalUiError("first_auth_error", error.message);
     SpreadsheetApp.getUi().alert("❌ Ошибка авторизации: " + error.message);
     return { success: false, error: error.message };
   }
@@ -1393,24 +1294,19 @@ function doFirstAuth() {
 function checkScriptAppPermissions() {
   try {
     ScriptApp.getProjectTriggers();
-    logEvent("DEBUG", "scriptapp_permissions_ok", "client", "ScriptApp permissions available");
     return { success: true, hasPermissions: true };
   } catch (error) {
-    logEvent("WARN", "scriptapp_permissions_missing", "client", error.message);
     return { success: true, hasPermissions: false, error: error.message };
   }
 }
 
 function setupTrigger() {
   try {
-    logEvent("INFO", "trigger_setup_start", "client", "Setting up 30-minute trigger");
-    
     const triggers = ScriptApp.getProjectTriggers();
     
     triggers.forEach(trigger => {
       if (trigger.getHandlerFunction() === "checkNewPosts") {
         ScriptApp.deleteTrigger(trigger);
-        logEvent("DEBUG", "old_trigger_deleted", "client", "Removed old trigger");
       }
     });
     
@@ -1418,8 +1314,6 @@ function setupTrigger() {
       .timeBased()
       .everyMinutes(30)
       .create();
-    
-    logEvent("INFO", "trigger_created", "client", "30-minute trigger created");
     
     SpreadsheetApp.getUi().alert(
       "✅ Автопроверка установлена!\n\n" +
@@ -1429,8 +1323,6 @@ function setupTrigger() {
     );
     
   } catch (error) {
-    logEvent("ERROR", "trigger_setup_error", "client", error.message);
-    
     // Если ошибка связана с разрешениями, показываем подробное сообщение
     if (error.message.includes("Authorization") || error.message.includes("permission")) {
       SpreadsheetApp.getUi().alert(
@@ -1491,24 +1383,9 @@ function showUserStatistics() {
     
     SpreadsheetApp.getUi().alert(message);
     
-    logEvent("INFO", "statistics_shown", "client", `Bindings: ${bindings.length}, Posts sent: ${totalPostsSent}`);
-    
   } catch (error) {
-    logEvent("ERROR", "show_statistics_error", "client", error.message);
+    logCriticalUiError("show_statistics_error", error.message);
     SpreadsheetApp.getUi().alert("❌ Ошибка: " + error.message);
-  }
-}
-
-function showLogsSheet() {
-  try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const logsSheet = getOrCreateClientLogsSheet();
-    ss.setActiveSheet(logsSheet);
-    
-    logEvent("INFO", "logs_sheet_opened", "client", "User opened client logs sheet");
-    
-  } catch (error) {
-    logEvent("ERROR", "show_logs_sheet_error", "client", error.message);
   }
 }
 
