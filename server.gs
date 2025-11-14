@@ -57,7 +57,7 @@ function initializeServer() {
     ]);
     
     createSheet("Bindings", [
-      "Binding ID", "License Key", "User Email", "VK Group URL", "TG Chat ID", "Status", "Created At", "Last Check", "Format Settings", "Binding Name", "Binding Description"
+      "Binding ID", "License Key", "User Email", "VK Group URL", "TG Chat ID", "Status", "Created At", "Last Check", "Format Settings", "Binding Name", "Binding Description", "VK Group ID"
     ]);
     
     createSheet("Logs", [
@@ -1182,6 +1182,7 @@ function buildBindingObjectFromRow(row) {
   var sanitizedBindingName = sanitizeBindingSheetSuffix(rawBindingName);
   migrateLegacyBindingSheets(storedBindingNameCell, sanitizedBindingName);
   var bindingDescription = sanitizeBindingText(row[10]);
+  var vkGroupId = row[11] || fallbackContext.processedVkGroupId; // Используем сохраненный VK Group ID или извлекаем
   var sheetName = getPublishedSheetNameFromBindingName(sanitizedBindingName);
   return {
     id: bindingId,
@@ -1200,6 +1201,7 @@ function buildBindingObjectFromRow(row) {
     bindingSheetSuffix: sanitizedBindingName,
     binding_sheet_suffix: sanitizedBindingName,
     bindingSheetName: sheetName,
+    vkGroupId: vkGroupId, // ← ДОБАВЛЯЕМ VK GROUP ID!
     binding_sheet_name: sheetName,
     bindingOriginalName: rawBindingName,
     binding_original_name: rawBindingName
@@ -1293,7 +1295,8 @@ function handleAddBinding(payload, clientIp) {
       new Date().toISOString(),
       formatSettingsString,  // Format Settings
       normalizedBinding.name,    // Binding Name
-      normalizedBinding.description // Binding Description
+      normalizedBinding.description, // Binding Description
+      processedVkGroupId     // VK Group ID
     ]);
     
     // Создаем Published лист для отслеживания постов
@@ -1964,11 +1967,14 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
       const successCount = results.filter(function(r) { return r.success; }).length;
       const totalCount = results.length;
       
+      // ✅ ПРАВИЛЬНАЯ ГЕНЕРАЦИЯ VK URL:
+      var vkPostUrl = buildVkPostUrl(binding.vkGroupId, vkPost.id);
+      
       // Prepare publication data for binding sheet logging
       var publicationData = {
         vkGroupId: binding.vkGroupId || '',
         vkPostId: vkPost.id || '',
-        vkPostUrl: `https://vk.com/wall${binding.vkGroupId || 'unknown'}_${vkPost.id || 'unknown'}`,
+        vkPostUrl: vkPostUrl,
         vkPostDate: vkPost.date ? new Date(vkPost.date * 1000).toISOString() : new Date().toISOString(),
         mediaSummary: createMediaSummary(vkPost.attachments || []),
         captionChars: (vkPost.text || '').length,
@@ -1989,25 +1995,19 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
       }
       
       if (successCount === 0) {
-        // ERROR case - log to binding sheet
+        // ERROR case - готовим данные для клиента
         publicationData.status = 'error';
         publicationData.notes = 'All media parts failed to send';
         
-        // Write to binding sheet (regardless of binding name validation)
-        if (binding && binding.bindingName) {
-          writePublicationRowToBindingSheet(binding.bindingName, publicationData);
-        }
-        
-        return { success: false, error: "All media parts failed to send" };
+        return { 
+          success: false, 
+          error: "All media parts failed to send",
+          publication: publicationData
+        };
       } else if (successCount < totalCount) {
-        // PARTIAL case - log to binding sheet
+        // PARTIAL case - готовим данные для клиента
         publicationData.status = 'partial';
         publicationData.notes = `Partial success: ${successCount}/${totalCount} parts sent`;
-        
-        // Write to binding sheet (regardless of binding name validation)
-        if (binding && binding.bindingName) {
-          writePublicationRowToBindingSheet(binding.bindingName, publicationData);
-        }
         
         return { 
           success: true, 
@@ -2016,22 +2016,19 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
           totalCount: totalCount,
           message_id: results.find(r => r.success)?.message_id,
           warning: `Partial success: ${successCount}/${totalCount} parts sent`,
-          results: results
+          results: results,
+          publication: publicationData
         };
       } else {
-        // SUCCESS case - log to binding sheet
-        publicationData.status = 'success';
+        // SUCCESS case - готовим данные для клиента
+        publicationData.status = 'sent';
         publicationData.notes = 'Successfully sent all media';
-        
-        // Write to binding sheet (regardless of binding name validation)
-        if (binding && binding.bindingName) {
-          writePublicationRowToBindingSheet(binding.bindingName, publicationData);
-        }
         
         var finalResult = {
           success: true,
           message_id: results.find(r => r.success)?.message_id,
-          results: results
+          results: results,
+          publication: publicationData
         };
 
         return finalResult;
@@ -4679,6 +4676,40 @@ function extractVkGroupId(url) {
     logEvent('ERROR', 'vk_url_extraction_failed', 'server', `URL: ${url}, Error: ${error.message}`);
     throw error;
   }
+}
+
+/**
+ * Строит правильную VK ссылку на пост
+ * @param {string|number} vkGroupId - ID группы (отрицательное для групп)
+ * @param {string|number} postId - ID поста
+ * @returns {string} Правильная VK ссылка или пустая строка
+ */
+function buildVkPostUrl(vkGroupId, postId) {
+  if (!vkGroupId || !postId) {
+    logEvent("WARN", "vk_url_missing_params", "server", 
+             "VK Group ID: " + vkGroupId + ", Post ID: " + postId);
+    return "";
+  }
+  
+  // Приводим к строке и убираем пробелы
+  var cleanGroupId = String(vkGroupId).trim();
+  var cleanPostId = String(postId).trim();
+  
+  // Валидация формата
+  if (!/^-?\d+$/.test(cleanGroupId)) {
+    logEvent("ERROR", "invalid_vk_group_id", "server", 
+             "Invalid format: " + cleanGroupId);
+    return "";
+  }
+  
+  if (!/^\d+$/.test(cleanPostId)) {
+    logEvent("ERROR", "invalid_vk_post_id", "server", 
+             "Invalid format: " + cleanPostId);
+    return "";
+  }
+  
+  // Правильный формат: https://vk.com/wall{owner_id}_{post_id}
+  return "https://vk.com/wall" + cleanGroupId + "_" + cleanPostId;
 }
 
 /**

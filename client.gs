@@ -44,6 +44,7 @@ function onOpen() {
     .addItem("⏱️ Настроить автопроверку (каждые 30 мин)", "setupTrigger")
     .addItem("📊 Статистика", "showUserStatistics")
     .addSeparator()
+    .addItem("📋 Показать логи", "showLogsSheet")
     .addItem("🧹 Очистить старые логи (>30 дней)", "cleanOldLogs")
     .addToUi();
   
@@ -68,7 +69,387 @@ function openMainPanel() {
 }
 
 // ============================================
-// 2. ОСНОВНЫЕ API ФУНКЦИИ
+// 2. ФУНКЦИИ ЛОГИРОВАНИЯ КЛИЕНТА
+// ============================================
+
+/**
+ * Логирует событие в лист "Logs" клиентской таблицы
+ * @param {string} level - Уровень: INFO, WARN, ERROR, DEBUG
+ * @param {string} event - Тип события (например: license_check, binding_added)
+ * @param {string} user - Email пользователя (по умолчанию текущий)
+ * @param {string} details - Детали события
+ */
+function logEvent(level, event, user, details) {
+  try {
+    var sheet = getOrCreateLogsSheet();
+    var timestamp = new Date().toISOString();
+    var userEmail = user || Session.getActiveUser().getEmail();
+    
+    sheet.appendRow([
+      timestamp,
+      level,
+      event,
+      userEmail,
+      details || ""
+    ]);
+    
+    // Применяем цветное форматирование для новой строки
+    applyLogRowFormatting(sheet, sheet.getLastRow(), level);
+    
+  } catch (error) {
+    console.error("[LogEvent] Failed:", error.message);
+  }
+}
+
+/**
+ * Создаёт или возвращает лист "Logs" с форматированием
+ */
+function getOrCreateLogsSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("Logs");
+  
+  if (!sheet) {
+    sheet = ss.insertSheet("Logs");
+    
+    // Заголовки
+    sheet.appendRow(["Timestamp", "Level", "Event", "User", "Details"]);
+    
+    // Форматирование шапки
+    var headerRange = sheet.getRange(1, 1, 1, 5);
+    headerRange.setBackground("#667eea");
+    headerRange.setFontColor("white");
+    headerRange.setFontWeight("bold");
+    headerRange.setHorizontalAlignment("center");
+    
+    // Закрепляем шапку
+    sheet.setFrozenRows(1);
+    
+    // Автоширина колонок
+    sheet.autoResizeColumns(1, 5);
+    
+    // Conditional Formatting для уровней логирования
+    applyConditionalFormattingToLogs(sheet);
+  }
+  
+  return sheet;
+}
+
+/**
+ * Применяет цветное форматирование ко ВСЕМУ листу Logs
+ * Использует Conditional Formatting Rules для автоматической раскраски
+ */
+function applyConditionalFormattingToLogs(sheet) {
+  var rules = sheet.getConditionalFormatRules();
+  
+  // Правило для INFO
+  var infoRule = SpreadsheetApp.newConditionalFormatRule()
+    .whenTextEqualTo("INFO")
+    .setBackground("#d4edda")
+    .setFontColor("#155724")
+    .setRanges([sheet.getRange("A2:E")]) // Применяем ко всей строке
+    .build();
+  
+  // Правило для WARN
+  var warnRule = SpreadsheetApp.newConditionalFormatRule()
+    .whenTextEqualTo("WARN")
+    .setBackground("#fff3cd")
+    .setFontColor("#856404")
+    .setRanges([sheet.getRange("A2:E")])
+    .build();
+  
+  // Правило для ERROR
+  var errorRule = SpreadsheetApp.newConditionalFormatRule()
+    .whenTextEqualTo("ERROR")
+    .setBackground("#f8d7da")
+    .setFontColor("#721c24")
+    .setRanges([sheet.getRange("A2:E")])
+    .build();
+  
+  // Правило для DEBUG
+  var debugRule = SpreadsheetApp.newConditionalFormatRule()
+    .whenTextEqualTo("DEBUG")
+    .setBackground("#e7f3ff")
+    .setFontColor("#004085")
+    .setRanges([sheet.getRange("A2:E")])
+    .build();
+  
+  rules.push(infoRule);
+  rules.push(warnRule);
+  rules.push(errorRule);
+  rules.push(debugRule);
+  
+  sheet.setConditionalFormatRules(rules);
+}
+
+/**
+ * Применяет цвет к конкретной строке лога СРАЗУ после добавления
+ */
+function applyLogRowFormatting(sheet, rowNumber, level) {
+  var rowRange = sheet.getRange(rowNumber, 1, 1, 5);
+  
+  switch(level) {
+    case "INFO":
+      rowRange.setBackground("#d4edda");
+      rowRange.setFontColor("#155724");
+      break;
+    case "WARN":
+      rowRange.setBackground("#fff3cd");
+      rowRange.setFontColor("#856404");
+      break;
+    case "ERROR":
+      rowRange.setBackground("#f8d7da");
+      rowRange.setFontColor("#721c24");
+      break;
+    case "DEBUG":
+      rowRange.setBackground("#e7f3ff");
+      rowRange.setFontColor("#004085");
+      break;
+  }
+}
+
+/**
+ * Открывает лист "Logs" (или создаёт его, если отсутствует)
+ */
+function showLogsSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = getOrCreateLogsSheet();
+  ss.setActiveSheet(sheet);
+  
+  SpreadsheetApp.getUi().alert(
+    "📊 Лист логов открыт!\n\n" +
+    "Цветовая схема:\n" +
+    "🟢 INFO - зелёный\n" +
+    "🟡 WARN - жёлтый\n" +
+    "🔴 ERROR - красный\n" +
+    "🔵 DEBUG - синий"
+  );
+}
+
+/**
+ * Возвращает последние N записей из листа "Logs"
+ */
+function getClientLogs(limit) {
+  try {
+    var sheet = getOrCreateLogsSheet();
+    var lastRow = sheet.getLastRow();
+    
+    if (lastRow <= 1) {
+      return [];
+    }
+    
+    var count = Math.min(limit || 50, lastRow - 1);
+    var startRow = Math.max(2, lastRow - count + 1);
+    
+    var data = sheet.getRange(startRow, 1, lastRow - startRow + 1, 5).getValues();
+    
+    // Сортируем по убыванию (последние сверху)
+    return data.reverse().map(function(row) {
+      return {
+        timestamp: row[0],
+        level: row[1],
+        event: row[2],
+        user: row[3],
+        details: row[4]
+      };
+    });
+    
+  } catch (error) {
+    logEvent("ERROR", "get_client_logs_error", "", error.message);
+    return [];
+  }
+}
+
+// ============================================
+// 3. ФУНКЦИИ ЛИСТОВ ПУБЛИКАЦИЙ
+// ============================================
+
+/**
+ * Создаёт или возвращает лист публикаций для связки
+ * @param {string} bindingName - Название связки
+ * @returns {Sheet} Лист публикаций
+ */
+function getOrCreatePublishedSheet(bindingName) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetName = sanitizeSheetName(bindingName);
+  var sheet = ss.getSheetByName(sheetName);
+  
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    
+    // Заголовки
+    sheet.appendRow([
+      "Timestamp", 
+      "Status", 
+      "VK Group ID", 
+      "VK Post ID", 
+      "VK Post URL", 
+      "VK Post Date", 
+      "Media Count", 
+      "Caption Length", 
+      "TG Chat ID", 
+      "TG Message IDs", 
+      "TG Message URLs", 
+      "Notes"
+    ]);
+    
+    // Форматирование шапки
+    var headerRange = sheet.getRange(1, 1, 1, 12);
+    headerRange.setBackground("#4285f4");
+    headerRange.setFontColor("white");
+    headerRange.setFontWeight("bold");
+    headerRange.setHorizontalAlignment("center");
+    
+    sheet.setFrozenRows(1);
+    sheet.autoResizeColumns(1, 12);
+    
+    logEvent("INFO", "published_sheet_created", "", 
+             "Sheet: " + sheetName + " for binding: " + bindingName);
+  }
+  
+  return sheet;
+}
+
+/**
+ * Очищает имя листа от недопустимых символов
+ * Поддерживает кириллицу, латиницу, цифры, пробелы, дефисы, подчёркивания
+ */
+function sanitizeSheetName(name) {
+  if (!name || typeof name !== "string") {
+    return "Binding";
+  }
+  
+  // Разрешённые символы: кириллица, латиница, цифры, пробелы, дефис, подчёркивание
+  var cleaned = name
+    .replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '') // Удаляем спецсимволы
+    .replace(/\s+/g, '_')                // Пробелы → подчёркивания
+    .substring(0, 27);                   // Лимит Google Sheets: 31 символ (оставляем запас)
+  
+  if (!cleaned) {
+    return "Binding";
+  }
+  
+  return cleaned;
+}
+
+/**
+ * Записывает строку публикации в лист связки
+ * @param {string} bindingName - Название связки
+ * @param {Object} publicationData - Данные публикации
+ */
+function writePublicationRow(bindingName, publicationData) {
+  var sheet = getOrCreatePublishedSheet(bindingName);
+  
+  // Правильная генерация VK URL
+  var vkPostUrl = buildVkPostUrl(
+    publicationData.vkGroupId, 
+    publicationData.vkPostId
+  );
+  
+  // Генерация Telegram URLs
+  var tgMessageUrls = buildTelegramMessageUrls(
+    publicationData.tgChatId,
+    publicationData.tgMessageIds
+  );
+  
+  var rowData = [
+    new Date().toISOString(),
+    publicationData.status || "sent",
+    publicationData.vkGroupId || "",
+    publicationData.vkPostId || "",
+    vkPostUrl,
+    publicationData.vkPostDate || "",
+    publicationData.mediaCount || 0,
+    publicationData.captionLength || 0,
+    publicationData.tgChatId || "",
+    (publicationData.tgMessageIds || []).join(", "),
+    tgMessageUrls,
+    publicationData.notes || ""
+  ];
+  
+  // Вставляем строку СВЕРХУ (после заголовка)
+  sheet.insertRowAfter(1);
+  sheet.getRange(2, 1, 1, rowData.length).setValues([rowData]);
+  
+  // Цветовое форматирование по статусу
+  var statusRange = sheet.getRange(2, 2); // Колонка Status
+  if (publicationData.status === "sent") {
+    statusRange.setBackground("#d4edda");
+    statusRange.setFontColor("#155724");
+  } else if (publicationData.status === "skipped") {
+    statusRange.setBackground("#fff3cd");
+    statusRange.setFontColor("#856404");
+  } else if (publicationData.status === "error") {
+    statusRange.setBackground("#f8d7da");
+    statusRange.setFontColor("#721c24");
+  }
+}
+
+/**
+ * Строит правильную VK ссылку на пост
+ * @param {string|number} vkGroupId - ID группы (отрицательное для групп)
+ * @param {string|number} postId - ID поста
+ * @returns {string} Правильная VK ссылка или пустая строка
+ */
+function buildVkPostUrl(vkGroupId, postId) {
+  if (!vkGroupId || !postId) {
+    logEvent("WARN", "vk_url_missing_params", "", 
+             "VK Group ID: " + vkGroupId + ", Post ID: " + postId);
+    return "";
+  }
+  
+  // Приводим к строке и убираем пробелы
+  var cleanGroupId = String(vkGroupId).trim();
+  var cleanPostId = String(postId).trim();
+  
+  // Валидация формата
+  if (!/^-?\d+$/.test(cleanGroupId)) {
+    logEvent("ERROR", "invalid_vk_group_id", "", 
+             "Invalid format: " + cleanGroupId);
+    return "";
+  }
+  
+  if (!/^\d+$/.test(cleanPostId)) {
+    logEvent("ERROR", "invalid_vk_post_id", "", 
+             "Invalid format: " + cleanPostId);
+    return "";
+  }
+  
+  // Правильный формат: https://vk.com/wall{owner_id}_{post_id}
+  return "https://vk.com/wall" + cleanGroupId + "_" + cleanPostId;
+}
+
+/**
+ * Строит ссылки на Telegram сообщения
+ * @param {string} chatId - Chat ID или @username
+ * @param {Array<number>} messageIds - Массив message IDs
+ * @returns {string} Список ссылок через запятую
+ */
+function buildTelegramMessageUrls(chatId, messageIds) {
+  if (!chatId || !messageIds || messageIds.length === 0) {
+    return "";
+  }
+  
+  var urls = [];
+  
+  // Для @username → https://t.me/username/123
+  if (chatId.startsWith("@")) {
+    var username = chatId.substring(1);
+    messageIds.forEach(function(msgId) {
+      urls.push("https://t.me/" + username + "/" + msgId);
+    });
+  } else {
+    // Для chat_id (числовые) → https://t.me/c/{chat_id без -100}/{msg_id}
+    var cleanChatId = chatId.replace("-100", "");
+    messageIds.forEach(function(msgId) {
+      urls.push("https://t.me/c/" + cleanChatId + "/" + msgId);
+    });
+  }
+  
+  return urls.join(", ");
+}
+
+// ============================================
+// 4. ОСНОВНЫЕ API ФУНКЦИИ
 // ============================================
 
 function getInitialData() {
@@ -747,11 +1128,11 @@ function resolveSyncPostsCount(binding) {
 
 function publishPost(binding, vkPost, licenseKey) {
   try {
-    const bindingId = binding?.id;
+    var bindingId = binding?.id;
     logEvent("DEBUG", "publish_post_start", "client",
              `Binding: ${bindingId || 'unknown'}, Post ID: ${vkPost?.id}, Text length: ${vkPost?.text ? vkPost.text.length : 0}, Attachments: ${vkPost?.attachments ? vkPost.attachments.length : 0}`);
     
-    const payload = {
+    var payload = {
       event: "send_post",
       license_key: licenseKey,
       binding_id: bindingId,
@@ -763,21 +1144,44 @@ function publishPost(binding, vkPost, licenseKey) {
       }
     };
     
-    const result = callServer(payload);
+    var result = callServer(payload);
     
     if (result.success) {
-      logEvent("INFO", "publish_post_success", "client",
-               `Binding: ${bindingId || 'unknown'}, Post ID: ${vkPost?.id}, Message ID: ${result.message_id || 'unknown'}`);
+      // ✅ ЗАПИСЫВАЕМ ПУБЛИКАЦИЮ В ЛОКАЛЬНЫЙ ЛИСТ:
+      var bindingName = binding.bindingName || binding.binding_name || "Unknown";
+      
+      // Используем publication data от сервера, если есть
+      var publicationData = result.publication;
+      
+      if (!publicationData) {
+        // Fallback: создаем сами, если сервер не вернул данные
+        var vkGroupId = binding.vkGroupId || extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
+        publicationData = {
+          vkGroupId: vkGroupId,
+          vkPostId: vkPost.id,
+          vkPostDate: new Date(vkPost.date * 1000).toISOString(),
+          mediaCount: vkPost.attachments ? vkPost.attachments.length : 0,
+          captionLength: vkPost.text ? vkPost.text.length : 0,
+          tgChatId: binding.tgChatId || binding.tg_chat_id,
+          tgMessageIds: result.message_id ? [result.message_id] : [],
+          status: "sent",
+          notes: ""
+        };
+      }
+      
+      writePublicationRow(bindingName, publicationData);
+      
+      logEvent("INFO", "post_published", "client", 
+               `Binding: ${bindingName}, VK Post: ${vkPost.id}, Status: ${publicationData.status}, TG Messages: ${publicationData.tgMessageIds || 'none'}`);
     } else {
-      logEvent("WARN", "publish_post_failed", "client",
-               `Binding: ${bindingId || 'unknown'}, Post ID: ${vkPost?.id}, Error: ${result.error || 'Unknown error'}`);
+      logEvent("WARN", "post_publish_failed", "client", 
+               `Binding: ${bindingId}, Error: ${result.error}`);
     }
     
     return result;
     
   } catch (error) {
-    logEvent("ERROR", "publish_post_error", "client",
-             `Binding: ${binding?.id || 'unknown'}, Post ID: ${vkPost?.id || 'unknown'}, Error: ${error.message}`);
+    logEvent("ERROR", "publish_post_exception", "client", error.message);
     return { success: false, error: error.message };
   }
 }
@@ -890,14 +1294,15 @@ function extractVkGroupId(url) {
       return null;
     }
     
-    const originalInput = url;
-    let cleanInput = url.trim().toLowerCase().split('?')[0].split('#')[0];
+    var originalInput = url;
+    var cleanInput = url.trim().toLowerCase().split("?")[0].split("#")[0];
     
     logEvent("DEBUG", "vk_group_id_extraction_start", "client", `Input: "${originalInput}" → Clean: "${cleanInput}"`);
 
-    // Если уже ID (число или -число)
+    // Если уже ID (число с минусом или без)
     if (/^-?\d+$/.test(cleanInput)) {
-      const normalizedId = cleanInput.startsWith('-') ? cleanInput : '-' + cleanInput;
+      // Группы ВСЕГДА должны иметь минус
+      var normalizedId = cleanInput.startsWith("-") ? cleanInput : "-" + cleanInput;
       if (validateVkGroupId(normalizedId)) {
         return normalizedId;
       } else {
@@ -905,15 +1310,10 @@ function extractVkGroupId(url) {
       }
     }
 
-    // Извлекаем из различных форматов URL
-    let screenName = null;
-    let numericId = null;
-
     // Форматы: vk.com/public123, vk.com/club123
-    const publicClubMatch = cleanInput.match(/vk\.com\/(public|club)(\d+)/i);
+    var publicClubMatch = cleanInput.match(/vk\.com\/(public|club)(\d+)/i);
     if (publicClubMatch) {
-      numericId = publicClubMatch[2];
-      const result = '-' + numericId;
+      var result = "-" + publicClubMatch[2];
       if (validateVkGroupId(result)) {
         return result;
       } else {
@@ -921,39 +1321,33 @@ function extractVkGroupId(url) {
       }
     }
 
-    // Форматы: vk.com/username, VK.COM/USERNAME, username
-    const patterns = [
-      /vk\.com\/([a-z0-9_]+)/i,     // vk.com/username
-      /^([a-z0-9_]+)$/i             // просто username
-    ];
-
-    for (const pattern of patterns) {
-      const match = cleanInput.match(pattern);
-      if (match) {
-        screenName = match[1];
-        break;
-      }
-    }
-
-    if (!screenName) {
-      return null;
-    }
-
-    // Если это numeric ID (fallback)
-    if (/^\d+$/.test(screenName)) {
-      const result = '-' + screenName;
-      if (validateVkGroupId(result)) {
-        return result;
+    // Формат: vk.com/wall-123456_789
+    var wallMatch = cleanInput.match(/vk\.com\/wall(-?\d+)_\d+/i);
+    if (wallMatch) {
+      var groupId = wallMatch[1];
+      var normalizedGroupId = groupId.startsWith("-") ? groupId : "-" + groupId;
+      if (validateVkGroupId(normalizedGroupId)) {
+        return normalizedGroupId;
       } else {
         return null;
       }
     }
 
-    // Если это screen_name - на клиенте не можем резолвить через API, возвращаем null
-    // Серверная часть сделает резолвинг через resolveVkScreenName
+    // Screen name (например: vk.com/durov или просто "durov")
+    // НА КЛИЕНТЕ: возвращаем null, сервер резолвит через API
+    var screenNameMatch = cleanInput.match(/vk\.com\/([a-z0-9_]+)/i) || 
+                        cleanInput.match(/^([a-z0-9_]+)$/i);
+    
+    if (screenNameMatch) {
+      logEvent("DEBUG", "vk_screen_name_detected", "client", 
+               "Screen name: " + screenNameMatch[1] + " - needs server resolution");
+      return null; // Сервер резолвит
+    }
+    
     return null;
     
   } catch (error) {
+    logEvent("ERROR", "extract_vk_group_id_exception", "client", error.message);
     return null;
   }
 }
@@ -1652,6 +2046,46 @@ function getMainPanelHtml() {
       <div style="margin-top: 20px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
         <button class="btn-secondary" onclick="manualCheck()">🔄 Проверить посты</button>
         <button class="btn-secondary" onclick="setupAutoCheck()">⏱️ Авто-проверка</button>
+      </div>
+    </div>
+
+    <!-- Logs Section -->
+    <div class="section" id="logs-section" style="display: none;">
+      <h2><span class="icon">📋</span> 4. Логи системы</h2>
+      <div id="logs-message" class="message"></div>
+      
+      <!-- Фильтры -->
+      <div style="margin-bottom: 20px; display: flex; gap: 12px;">
+        <select id="log-level-filter" onchange="filterLogs()" style="width: auto;">
+          <option value="">Все уровни</option>
+          <option value="INFO">INFO</option>
+          <option value="WARN">WARN</option>
+          <option value="ERROR">ERROR</option>
+          <option value="DEBUG">DEBUG</option>
+        </select>
+        
+        <input type="text" id="log-search" placeholder="Поиск по событию..." 
+               onkeyup="filterLogs()" style="flex: 1;">
+        
+        <button class="btn-small btn-secondary" onclick="refreshLogs()">🔄 Обновить</button>
+        <button class="btn-small btn-danger" onclick="clearOldLogs()">🧹 Очистить старые</button>
+      </div>
+      
+      <!-- Таблица логов -->
+      <div id="logs-table-container" style="max-height: 400px; overflow-y: auto; border: 1px solid #e9ecef; border-radius: 8px;">
+        <table id="logs-table" style="width: 100%; border-collapse: collapse;">
+          <thead>
+            <tr style="background: #667eea; color: white; position: sticky; top: 0;">
+              <th style="padding: 10px; text-align: left;">Timestamp</th>
+              <th style="padding: 10px; text-align: center;">Level</th>
+              <th style="padding: 10px; text-align: left;">Event</th>
+              <th style="padding: 10px; text-align: left;">Details</th>
+            </tr>
+          </thead>
+          <tbody id="logs-table-body">
+            <tr><td colspan="4" style="text-align: center; padding: 40px; color: #999;">Загрузка логов...</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -2366,6 +2800,170 @@ function getMainPanelHtml() {
       const modal = document.getElementById("binding-modal");
       if (event.target === modal) {
         closeModal();
+      }
+    }
+
+    // ============================================
+    // FUNCTIONS FOR LOGS SECTION
+    // ============================================
+
+    function loadLogs() {
+      google.script.run
+        .withSuccessHandler(function(logs) {
+          appState.logs = logs || [];
+          renderLogs(appState.logs);
+        })
+        .withFailureHandler(function(error) {
+          showMessage("logs", "error", "❌ Ошибка загрузки логов: " + error.message);
+        })
+        .getClientLogs(50); // Последние 50 записей
+    }
+
+    function renderLogs(logs) {
+      var tbody = document.getElementById("logs-table-body");
+      
+      if (!logs || logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 40px; color: #999;">Нет логов</td></tr>';
+        return;
+      }
+      
+      tbody.innerHTML = logs.map(function(log) {
+        var levelClass = "log-" + log.level.toLowerCase();
+        var levelColor = getLogLevelColor(log.level);
+        
+        return '<tr class="' + levelClass + '">' +
+          '<td style="padding: 10px; font-size: 12px; color: #666;">' + formatTimestamp(log.timestamp) + '</td>' +
+          '<td style="padding: 10px; text-align: center;">' +
+            '<span style="background: ' + levelColor.bg + '; color: ' + levelColor.text + '; padding: 4px 8px; border-radius: 4px; font-weight: 600; font-size: 11px;">' +
+              log.level +
+            '</span>' +
+          '</td>' +
+          '<td style="padding: 10px; font-weight: 600; font-size: 13px;">' + log.event + '</td>' +
+          '<td style="padding: 10px; font-size: 12px; color: #666;">' + log.details + '</td>' +
+        '</tr>';
+      }).join("");
+    }
+
+    function getLogLevelColor(level) {
+      switch(level) {
+        case "INFO":
+          return { bg: "#d4edda", text: "#155724" };
+        case "WARN":
+          return { bg: "#fff3cd", text: "#856404" };
+        case "ERROR":
+          return { bg: "#f8d7da", text: "#721c24" };
+        case "DEBUG":
+          return { bg: "#e7f3ff", text: "#004085" };
+        default:
+          return { bg: "#f8f9fa", text: "#333" };
+      }
+    }
+
+    function formatTimestamp(timestamp) {
+      try {
+        var date = new Date(timestamp);
+        return date.toLocaleString('ru-RU', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+      } catch (e) {
+        return timestamp;
+      }
+    }
+
+    function filterLogs() {
+      var levelFilter = document.getElementById("log-level-filter").value;
+      var searchText = document.getElementById("log-search").value.toLowerCase();
+      
+      var filtered = appState.logs.filter(function(log) {
+        var matchLevel = !levelFilter || log.level === levelFilter;
+        var matchSearch = !searchText || 
+                      log.event.toLowerCase().includes(searchText) ||
+                      log.details.toLowerCase().includes(searchText);
+        return matchLevel && matchSearch;
+      });
+      
+      renderLogs(filtered);
+    }
+
+    function refreshLogs() {
+      showMessage("logs", "loading", "🔄 Обновление логов...");
+      loadLogs();
+      setTimeout(function() {
+        showMessage("logs", "success", "✅ Логи обновлены!");
+      }, 1000);
+    }
+
+    function clearOldLogs() {
+      if (!confirm("🧹 Очистить логи старше 30 дней?\n\nЭто действие удалит все записи из листа 'Logs', которые старше 30 дней.")) {
+        return;
+      }
+
+      showMessage("logs", "loading", "🧹 Очистка старых логов...");
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            showMessage("logs", "success", "✅ " + result.message);
+            loadLogs(); // Перезагружаем логи
+          } else {
+            showMessage("logs", "error", "❌ " + (result?.error || "Ошибка очистки логов"));
+          }
+        })
+        .withFailureHandler(function(error) {
+          showMessage("logs", "error", "❌ Ошибка: " + error.message);
+        })
+        .cleanOldLogs();
+    }
+
+    // Добавляем функцию в updateLicenseSection для показа логов
+    function updateLicenseSection() {
+      const license = appState.license;
+      const licenseInputForm = document.getElementById("license-input-form");
+      const licenseInfo = document.getElementById("license-info");
+      const licenseTypeDisplay = document.getElementById("license-type-display");
+      const licenseDetailsDisplay = document.getElementById("license-details-display");
+      
+      if (license) {
+        licenseInputForm.style.display = "none";
+        licenseInfo.style.display = "block";
+        
+        const licenseType = license.type || "TRIAL";
+        const maxGroups = appState.license.maxGroups || "N/A";
+        const expires = appState.license.expires;
+        
+        licenseTypeDisplay.textContent = "✅ " + licenseType;
+        
+        let expiresText = "N/A";
+        if (expires) {
+          try {
+            const expiresDate = new Date(expires);
+            if (!isNaN(expiresDate.getTime())) {
+              expiresText = expiresDate.toLocaleDateString();
+            }
+          } catch (e) {
+            logMessageToConsole("Error parsing expires date: " + e.message);
+          }
+        }
+        
+        licenseDetailsDisplay.innerHTML = "<strong>Максимум групп:</strong> " + maxGroups + "<br>" +
+          "<strong>Действительна до:</strong> " + expiresText + "<br>" +
+          "<strong>Ключ:</strong> " + (appState.license.key ? appState.license.key.substring(0, 20) + "..." : "N/A");
+        
+        document.getElementById("bindings-section").style.display = "block";
+        document.getElementById("status-section").style.display = "block";
+        document.getElementById("logs-section").style.display = "block"; // Показываем логи
+        loadLogs(); // Загружаем логи при активации лицензии
+      } else {
+        licenseInputForm.style.display = "block";
+        licenseInfo.style.display = "none";
+        document.getElementById("bindings-section").style.display = "none";
+        document.getElementById("status-section").style.display = "none";
+        document.getElementById("logs-section").style.display = "none"; // Скрываем логи
       }
     }
   </script>
