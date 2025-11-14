@@ -1421,7 +1421,7 @@ function extractTelegramChatId(input) {
  * Клиентская функция очистки старых логов (более 30 дней) из клиентских лог-листов
  * Обрабатывает листы: "Client Logs" и другие листы с "Log" в названии в клиентской таблице
  */
-function cleanOldLogs() {
+function cleanOldLogsInternal() {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const allSheets = ss.getSheets();
@@ -1521,44 +1521,25 @@ function cleanOldLogs() {
 }
 
 /**
- * Клиентская функция очистки старых логов - делегирует серверу
- * Все логи теперь хранятся только на сервере
+ * UI функция для очистки старых логов с показом результата пользователю
  */
 function cleanOldLogs() {
   try {
-    // Отправляем запрос на сервер для очистки логов
-    const license = getLicense();
-    if (!license) {
-      SpreadsheetApp.getUi().alert("❌ Лицензия не найдена");
+    const result = cleanOldLogsInternal();
+    
+    if (result.error) {
+      SpreadsheetApp.getUi().alert("❌ Ошибка очистки логов: " + result.error);
       return;
     }
-
-    const payload = {
-      event: "clean_logs",
-      license_key: license.key
-    };
-
-    const response = UrlFetchApp.fetch(SERVER_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      payload: JSON.stringify(payload),
-      muteHttpExceptions: true,
-      timeout: REQUEST_TIMEOUT
-    });
-
-    const result = JSON.parse(response.getContentText());
-
-    if (result.success) {
-      const message = `✅ Очистка логов завершена!\n\n` +
-        `Удалено записей: ${result.totalDeleted}\n` +
-        `Обработано листов: ${result.sheetResults?.length || 0}`;
-      SpreadsheetApp.getUi().alert(message);
-    } else {
-      SpreadsheetApp.getUi().alert("❌ Ошибка очистки логов: " + result.error);
-    }
-
+    
+    const message = `✅ Очистка логов завершена!\n\n` +
+      `Удалено записей: ${result.totalDeleted}\n` +
+      `Обработано листов: ${result.sheetsProcessed || result.sheetResults?.length || 0}`;
+    
+    SpreadsheetApp.getUi().alert(message);
+    
   } catch (error) {
-    logCriticalUiError("clean_logs_error", error.message);
+    logCriticalUiError("clean_logs_ui_error", error.message);
     SpreadsheetApp.getUi().alert("❌ Ошибка: " + error.message);
   }
 }
@@ -1762,14 +1743,27 @@ function showUserStatistics() {
     const activeBindings = bindings.filter(b => b.status === "active").length;
     const pausedBindings = bindings.filter(b => b.status === "paused").length;
     
-    // Подсчитаем отправленные посты
+    // Подсчитаем отправленные посты из листов публикаций по именам связок
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheets = ss.getSheets().filter(s => s.getName().startsWith("Published_"));
+    const sheets = ss.getSheets().filter(s => {
+      const name = s.getName();
+      return name !== "Logs" && 
+             name !== "Config" && 
+             name !== "Licenses" &&
+             name !== "Bindings" &&
+             !name.startsWith("Sheet"); // Исключаем системные листы
+    });
     
     let totalPostsSent = 0;
     sheets.forEach(sheet => {
       const data = sheet.getDataRange().getValues();
-      totalPostsSent += Math.max(0, data.length - 1);
+      if (data.length > 1 && data[0].length >= 2) {
+        // Проверяем, что это лист публикаций (есть колонка статуса)
+        const hasStatusColumn = data[0][1] === "Status" || data[0][1].toString().toLowerCase().includes("status");
+        if (hasStatusColumn) {
+          totalPostsSent += Math.max(0, data.length - 1);
+        }
+      }
     });
     
     const triggerCount = ScriptApp.getProjectTriggers()
