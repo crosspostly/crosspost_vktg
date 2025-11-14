@@ -3297,7 +3297,7 @@ function migratePublishedSheetsNames() {
     SpreadsheetApp.getUi().alert(`❌ Ошибка миграции: ${error.message}`);
   }
   
-  </script>
+  <\/script>
 </body>
 </html>`;
 }
