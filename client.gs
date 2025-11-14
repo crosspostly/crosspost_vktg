@@ -36,23 +36,32 @@ var USER_PROP_LICENSE_META = 'LICENSE_META'; // JSON: { type, maxGroups, expires
 // ============================================
 
 function onOpen() {
-  const ui = SpreadsheetApp.getUi();
-  
-  ui.createMenu("VK→Telegram")
-    .addItem("🎛️ Открыть управление", "openMainPanel")
-    .addItem("🔄 Проверить посты (вручную)", "checkNewPostsManually")
-    .addItem("⏱️ Настроить автопроверку (каждые 30 мин)", "setupTrigger")
-    .addItem("📊 Статистика", "showUserStatistics")
-    .addSeparator()
-    .addItem("📋 Показать логи", "showLogsSheet")
-    .addItem("🧹 Очистить старые логи (>30 дней)", "cleanOldLogs")
-    .addToUi();
-  
-  // Только критическое логирование UI ошибок - все бизнес-логи идут через сервер
+  try {
+    logEvent("INFO", "spreadsheet_opened", "client", "VK→TG Manager spreadsheet opened by user");
+    
+    const ui = SpreadsheetApp.getUi();
+    
+    ui.createMenu("VK→Telegram")
+      .addItem("🎛️ Открыть управление", "openMainPanel")
+      .addItem("🔄 Проверить посты (вручную)", "checkNewPostsManually")
+      .addItem("⏱️ Настроить автопроверку (каждые 30 мин)", "setupTrigger")
+      .addItem("📊 Статистика", "showUserStatistics")
+      .addSeparator()
+      .addItem("📋 Показать логи", "showLogsSheet")
+      .addItem("🧹 Очистить старые логи (>30 дней)", "cleanOldLogs")
+      .addToUi();
+    
+    // Только критическое логирование UI ошибок - все бизнес-логи идут через сервер
+  } catch (error) {
+    console.error("[onOpen] Failed:", error.message);
+    logEvent("ERROR", "on_open_failed", "client", error.message);
+  }
 }
 
 function openMainPanel() {
   try {
+    logEvent("INFO", "main_panel_opened", "client", "User opened VK→TG management panel");
+    
     const htmlContent = getMainPanelHtml();
     if (!htmlContent) throw new Error("Failed to generate HTML");
     
@@ -479,7 +488,10 @@ function getInitialData() {
 
 function saveLicenseWithCheck(licenseKey) {
   try {
+    logEvent("INFO", "license_check_start", "client", `License key: ${licenseKey.substring(0, 20)}...`);
+    
     if (!SERVER_URL || SERVER_URL.includes("YOURSERVERURL")) {
+      logEvent("ERROR", "license_config_error", "client", "Server URL not configured");
       return {
         success: false,
         error: "❌ Ошибка конфигурации: URL сервера не указан"
@@ -505,6 +517,9 @@ function saveLicenseWithCheck(licenseKey) {
     if (result.success) {
       PropertiesService.getUserProperties().setProperty("LICENSE_KEY", licenseKey);
       
+      logEvent("INFO", "license_activated_successfully", "client", 
+               `Type: ${result.license.type}, Max Groups: ${result.license.maxGroups}`);
+      
       return {
         success: true,
         license: {
@@ -515,10 +530,12 @@ function saveLicenseWithCheck(licenseKey) {
         }
       };
     } else {
+      logEvent("WARN", "license_check_failed", "client", result.error);
       return { success: false, error: result.error };
     }
     
   } catch (error) {
+    logEvent("ERROR", "license_check_exception", "client", error.message);
     return { success: false, error: `❌ Ошибка проверки лицензии: ${error.message}` };
   }
 }
@@ -570,6 +587,9 @@ function addBinding(bindingName, bindingDescription, vkGroupUrl, tgChatId, forma
     const sanitizedName = typeof bindingName === "string" ? bindingName.trim() : "";
     const sanitizedDescription = typeof bindingDescription === "string" ? bindingDescription.trim() : "";
     
+    logEvent("INFO", "add_binding_start", "client", 
+             `Name: ${sanitizedName}, VK URL: ${vkGroupUrl}, TG Chat: ${tgChatId}`);
+    
     const payload = {
       event: "add_binding",
       license_key: license.key,
@@ -595,13 +615,17 @@ function addBinding(bindingName, bindingDescription, vkGroupUrl, tgChatId, forma
     const result = JSON.parse(response.getContentText());
     
     if (result.success) {
-      // Published sheets and cache lifecycle are managed by server v6
-      return result;
+      logEvent("INFO", "binding_added_successfully", "client", 
+               `Name: ${sanitizedName}, Binding ID: ${result.bindingId || 'unknown'}`);
     } else {
-      return result;
+      logEvent("WARN", "add_binding_failed", "client", 
+               `Name: ${sanitizedName}, Error: ${result.error || 'Unknown error'}`);
     }
     
+    return result;
+    
   } catch (error) {
+    logEvent("ERROR", "add_binding_exception", "client", error.message);
     return { success: false, error: error.message };
   }
 }
@@ -2251,19 +2275,28 @@ function getMainPanelHtml() {
     // ============================================
     
     function checkAndSaveLicense() {
-      const licenseKey = document.getElementById("license-key-input").value.trim();
-
-      if (!licenseKey) {
-        showMessage("license", "error", "❌ Укажите ключ лицензии");
-        logMessageToConsole("User did not enter license key");
-        return;
-      }
-
-      logMessageToConsole("Sending license key to server: " + licenseKey.substring(0, 20) + "...");
-      showMessage("license", "loading", "🔄 Проверка лицензии...");
-      showLoader(true);
-
       try {
+        logMessageToConsole('checkAndSaveLicense called');
+
+        const licenseKey = document.getElementById("license-key-input");
+        if (!licenseKey) {
+          logMessageToConsole('ERROR: license-key-input element not found');
+          showMessage("license", "error", "❌ Ошибка: элемент ввода лицензии не найден");
+          return;
+        }
+
+        const keyValue = licenseKey.value.trim();
+
+        if (!keyValue) {
+          showMessage("license", "error", "❌ Укажите ключ лицензии");
+          logMessageToConsole("User did not enter license key");
+          return;
+        }
+
+        logMessageToConsole("Sending license key to server: " + keyValue.substring(0, 20) + "...");
+        showMessage("license", "loading", "🔄 Проверка лицензии...");
+        showLoader(true);
+
         google.script.run
           .withSuccessHandler(function(result) {
             logMessageToConsole("Success handler called with result: " + JSON.stringify(result).substring(0, 200));
@@ -2274,9 +2307,12 @@ function getMainPanelHtml() {
               appState.license = result.license;
               updateUI();
               showMessage("license", "success", "✅ Лицензия активирована!");
-              
+
               setTimeout(() => {
-                document.getElementById("license-message").style.display = "none";
+                const licenseMessage = document.getElementById("license-message");
+                if (licenseMessage) {
+                  licenseMessage.style.display = "none";
+                }
               }, 3000);
             } else {
               const errorMsg = result?.error || "Неизвестная ошибка";
@@ -2290,10 +2326,10 @@ function getMainPanelHtml() {
             showMessage("license", "error", "❌ Ошибка: " + error.message);
           })
           .withUserObject({timestamp: new Date().toISOString()})
-          .saveLicenseWithCheck(licenseKey);
-          
+          .saveLicenseWithCheck(keyValue);
+
       } catch (error) {
-        logMessageToConsole("Exception caught: " + error.message);
+        logMessageToConsole("Exception caught in checkAndSaveLicense: " + error.message);
         showLoader(false);
         showMessage("license", "error", "❌ Исключение: " + error.message);
       }
@@ -2723,33 +2759,43 @@ function getMainPanelHtml() {
     let isPanelCollapsed = false;
     
     function togglePanel() {
-      isPanelCollapsed = !isPanelCollapsed;
-      
-      const content = document.querySelector('.content');
-      const miniControls = document.getElementById('mini-controls');
-      const toggleIcon = document.getElementById('toggle-icon');
-      const toggleText = document.getElementById('toggle-text');
-      const toggleIconMini = document.getElementById('toggle-icon-mini');
-      
-      if (isPanelCollapsed) {
-        // Collapse
-        content.classList.add('collapsed');
-        miniControls.classList.add('show');
-        toggleIcon.textContent = '▲';
-        toggleText.textContent = 'Развернуть';
+      try {
+        logMessageToConsole('togglePanel called, current state: ' + isPanelCollapsed);
+        isPanelCollapsed = !isPanelCollapsed;
         
-        // Update mini status based on app state
-        updateMiniStatus();
+        const content = document.querySelector('.content');
+        const miniControls = document.getElementById('mini-controls');
+        const toggleIcon = document.getElementById('toggle-icon');
+        const toggleText = document.getElementById('toggle-text');
+        const toggleIconMini = document.getElementById('toggle-icon-mini');
         
-        logMessageToConsole('Panel collapsed');
-      } else {
-        // Expand
-        content.classList.remove('collapsed');
-        miniControls.classList.remove('show');
-        toggleIcon.textContent = '▼';
-        toggleText.textContent = 'Свернуть';
+        if (!content || !miniControls || !toggleIcon || !toggleText) {
+          logMessageToConsole('ERROR: Required elements not found for togglePanel');
+          return;
+        }
         
-        logMessageToConsole('Panel expanded');
+        if (isPanelCollapsed) {
+          // Collapse
+          content.classList.add('collapsed');
+          miniControls.classList.add('show');
+          toggleIcon.textContent = '▲';
+          toggleText.textContent = 'Развернуть';
+          
+          // Update mini status based on app state
+          updateMiniStatus();
+          
+          logMessageToConsole('Panel collapsed successfully');
+        } else {
+          // Expand
+          content.classList.remove('collapsed');
+          miniControls.classList.remove('show');
+          toggleIcon.textContent = '▼';
+          toggleText.textContent = 'Свернуть';
+          
+          logMessageToConsole('Panel expanded successfully');
+        }
+      } catch (error) {
+        logMessageToConsole('ERROR in togglePanel: ' + error.message);
       }
     }
     
