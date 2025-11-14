@@ -2095,6 +2095,11 @@ function getMainPanelHtml() {
       currentEditingId: null
     };
 
+    // Utility function for console logging
+    function logMessageToConsole(message) {
+      console.log('[VK→TG] ' + message);
+    }
+
     document.addEventListener("DOMContentLoaded", function() {
       loadInitialData();
     });
@@ -2272,7 +2277,7 @@ function getMainPanelHtml() {
         </div>
       \`;
     }
-    
+
     // ============================================
     // LICENSE FUNCTIONS
     // ============================================
@@ -3291,6 +3296,10 @@ function migratePublishedSheetsNames() {
     logEvent("ERROR", "published_migration_error", "client", error.message);
     SpreadsheetApp.getUi().alert(`❌ Ошибка миграции: ${error.message}`);
   }
+  
+  </script>
+</body>
+</html>`;
 }
 
 // ============================================
