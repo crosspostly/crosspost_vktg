@@ -798,9 +798,12 @@ function doPost(e) {
         case "set_global_setting":
           return handleSetGlobalSetting(payload, clientIp);
         
+        case "clean_logs":
+          return handleCleanLogs(payload, clientIp);
+        
         default:
           logEvent("WARN", "unknown_event", payload.license_key || "anonymous", 
-                   `Unknown event: ${payload.event}, Available events: check_license, get_bindings, add_binding, edit_binding, delete_binding, toggle_binding_status, send_post, test_publication`);
+                   `Unknown event: ${payload.event}, Available events: check_license, get_bindings, add_binding, edit_binding, delete_binding, toggle_binding_status, send_post, test_publication, get_vk_posts, publish_last_post, get_global_setting, set_global_setting, clean_logs`);
           return jsonResponse({
             success: false, 
             error: `Unknown event: ${payload.event}`
@@ -1595,6 +1598,36 @@ function handleSetGlobalSetting(payload, clientIp) {
     
   } catch (error) {
     logEvent("ERROR", "set_global_setting_error", payload.license_key, error.message);
+    return jsonResponse({ success: false, error: error.message }, 500);
+  }
+}
+
+// ============================================
+// ОБРАБОТЧИК ОЧИСТКИ ЛОГОВ
+// ============================================
+
+function handleCleanLogs(payload, clientIp) {
+  try {
+    var { license_key } = payload;
+    
+    // Проверяем лицензию
+    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    var licenseData = JSON.parse(licenseCheck.getContent());
+    
+    if (!licenseData.success) {
+      return licenseCheck;
+    }
+    
+    // Вызываем функцию очистки логов
+    var result = cleanOldLogs();
+    
+    logEvent("INFO", "client_logs_cleaned", license_key, 
+             `Client requested log cleanup, IP: ${clientIp}, Deleted: ${result.totalDeleted}`);
+    
+    return jsonResponse(result);
+    
+  } catch (error) {
+    logEvent("ERROR", "clean_logs_handler_error", payload.license_key, error.message);
     return jsonResponse({ success: false, error: error.message }, 500);
   }
 }
