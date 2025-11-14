@@ -6,10 +6,10 @@
     "build:server": "node deploy-server.js",
     "build:client": "node deploy-client.js",
     "build": "npm run build:server && npm run build:client",
-    "lint": "eslint ../server/*.gs ../client/*.gs --quiet",
-    "lint:fix": "eslint ../server/*.gs ../client/*.gs --fix",
+    "lint": "eslint ../*.gs ../server/**/*.gs --quiet --config .eslintrc.js",
+    "lint:fix": "eslint ../*.gs ../server/**/*.gs --fix --config .eslintrc.js",
     "test": "npm run lint && npm run module-check",
-    "module-check": "node -e \"console.log('Checking module integrity...'); const fs = require('fs'); const serverFiles = fs.readdirSync('../server').filter(f => f.endsWith('.gs')); const clientFiles = fs.readdirSync('../client').filter(f => f.endsWith('.gs')); console.log('Server modules:', serverFiles.length, 'files'); console.log('Client modules:', clientFiles.length, 'files'); if (serverFiles.length === 0 || clientFiles.length === 0) { process.exit(1); } console.log('✓ Module integrity check passed');\"",
+    "module-check": "node ../tools/module-check.js",
     "prepare": "npm run build"
   },
   "keywords": [
