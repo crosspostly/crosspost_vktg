@@ -54,10 +54,10 @@
 
 ## 🧹 Структура и документация
 
-- [GAS_COMPATIBILITY_GUIDE.md](docs/GAS_COMPATIBILITY_GUIDE.md) — критически важная совместимость с Google Apps Script
-- [GITHUB_ACTIONS_SETUP.md](docs/GITHUB_ACTIONS_SETUP.md) — вся CI/CD-структура и автоматизация
-- [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — поиск наиболее частых причин ошибок
-- [CHANGELOG.md](docs/CHANGELOG.md) — история ключевых фиксов
+- [GAS_COMPATIBILITY.md](GAS_COMPATIBILITY.md) — критически важная совместимость с Google Apps Script
+- [GITHUB_ACTIONS_SETUP.md](GITHUB_ACTIONS_SETUP.md) — вся CI/CD-структура и автоматизация
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — поиск наиболее частых причин ошибок
+- [CHANGELOG.md](CHANGELOG.md) — история ключевых фиксов
 
 ---
 
