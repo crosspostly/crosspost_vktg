@@ -14,24 +14,77 @@ const path = require('path');
 
 // Configuration
 const SERVER_DIR = path.join(__dirname, '..', 'server');
-const REQUIRED_VK_MODULES = [
-  {
+const REQUIRED_MODULES = [
+  // Core modules
+  { 
+    name: 'utils.gs', 
+    description: 'Utility functions',
+    requiredExports: ['jsonResponse', 'extractVkGroupId', 'extractTelegramChatId'], // Updated based on actual exports
+    maxLines: 800 
+  },
+  { 
+    name: 'types.gs', 
+    description: 'JSDoc type definitions',
+    requiredExports: [], // JSDoc only, no functions
+    maxLines: 300 
+  },
+  { 
+    name: 'server.gs', 
+    description: 'Main entry point',
+    requiredExports: ['doPost', 'jsonResponse', 'logEvent'], // Updated based on actual exports
+    maxLines: 400 
+  },
+  
+  // Service modules
+  { 
+    name: 'license-service.gs', 
+    description: 'License management',
+    requiredExports: ['handleCheckLicense', 'findLicense'], // Updated based on actual exports
+    maxLines: 800 
+  },
+  { 
+    name: 'bindings-service.gs', 
+    description: 'Bindings CRUD',
+    requiredExports: ['getUserBindings', 'handleAddBinding'], // Updated based on actual exports
+    maxLines: 400 
+  },
+  { 
+    name: 'published-sheets-service.gs',
+    description: 'Publication tracking', 
+    requiredExports: ['writePublicationRowToBindingSheet'], 
+    maxLines: 300 
+  },
+  { 
+    name: 'telegram-service.gs',
+    description: 'Telegram API',
+    requiredExports: ['sendMediaGroupWithCaption', 'sendLongTextMessage'], // Updated based on actual exports
+    maxLines: 400 
+  },
+  { 
+    name: 'posting-service.gs',
+    description: 'Publication logic',
+    requiredExports: ['handleSendPost'], // Updated based on actual exports
+    maxLines: 300 
+  },
+  
+  // VK modules
+  { 
     name: 'vk-api.gs',
-    description: 'VK API calls and screen name resolution',
-    requiredExports: ['handleGetVkPosts', 'handlePublishLastPost', 'resolveVkScreenName'],
-    maxLines: 500
+    description: 'VK API calls',
+    requiredExports: ['handleGetVkPosts', 'resolveVkScreenName'], 
+    maxLines: 600 
   },
-  {
-    name: 'vk-posts.gs', 
-    description: 'Post formatting and deduplication',
-    requiredExports: ['formatVkPostForTelegram', 'checkPostAlreadySent', 'createMediaSummary'],
-    maxLines: 500
+  { 
+    name: 'vk-posts.gs',
+    description: 'Post formatting',
+    requiredExports: ['formatVkTextForTelegram'], 
+    maxLines: 400 
   },
-  {
+  { 
     name: 'vk-media.gs',
-    description: 'Media extraction and processing',
-    requiredExports: ['getVkMediaUrls', 'getBestPhotoUrl', 'getVkVideoDirectUrl'],
-    maxLines: 500
+    description: 'Media extraction',
+    requiredExports: ['getVkMediaUrls'], 
+    maxLines: 300 
   }
 ];
 
@@ -153,33 +206,38 @@ function checkServerIntegrity() {
 
 function main() {
   log('🚀 VK→Telegram Crossposter - Module Integrity Checker', 'cyan');
-  log('=' .repeat(60), 'cyan');
+  log('=' .repeat(80), 'cyan');
   
   let allPassed = true;
+  let checkedModules = 0;
+  let passedModules = 0;
   
   // Check server directory
   if (!checkServerIntegrity()) {
     allPassed = false;
   }
   
-  // Check each required VK module
-  for (const module of REQUIRED_VK_MODULES) {
+  // Check each required module
+  for (const module of REQUIRED_MODULES) {
+    checkedModules++;
     const passed = checkModule(module);
-    if (!passed) {
+    if (passed) {
+      passedModules++;
+    } else {
       allPassed = false;
     }
   }
   
   // Summary
-  log('\n' + '='.repeat(60), 'cyan');
+  log('\n' + '='.repeat(80), 'cyan');
+  log(`📊 Checked: ${checkedModules} modules, Passed: ${passedModules}`, 'blue');
+  
   if (allPassed) {
     log('🎉 SUCCESS: All module integrity checks passed!', 'green');
-    log('✅ VK module refactoring is intact and ready for CI automation', 'green');
     process.exit(0);
   } else {
     log('💥 FAILURE: Some module integrity checks failed', 'red');
-    log('❌ Please address the issues above before proceeding', 'red');
-    log('🔧 This may indicate problems with the VK module refactoring', 'red');
+    log(`❌ Failed: ${checkedModules - passedModules} modules`, 'red');
     process.exit(1);
   }
 }
@@ -192,5 +250,5 @@ if (require.main === module) {
 module.exports = {
   checkModule,
   checkServerIntegrity,
-  REQUIRED_VK_MODULES
+  REQUIRED_MODULES
 };

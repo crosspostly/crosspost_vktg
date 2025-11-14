@@ -1602,31 +1602,6 @@ function getLicense() {
   }
 }
 
-function getLastPostIds() {
-  // Local post cache is managed on server
-  return {};
-}
-
-function saveLastPostIds(ids) {
-  // Server v6 tracks published posts; skipping local cache update
-}
-
-function isPostAlreadySent(vkGroupId, postId) {
-  return false;
-}
-
-function markPostAsSent(vkGroupId, postId, tgChatId, postText, bindingName, tgChatName) {
-  // Server v6 handles post tracking
-}
-
-function updatePostStatistics(vkGroupId, postId) {
-  // Server v6 handles statistics
-}
-
-function getOrCreatePublishedPostsSheet(bindingName, vkGroupId) {
-  return null;
-}
-
 // ============================================
 // 6. ЛОГИРОВАНИЕ (ТОЛЬКО КРИТИЧЕСКИЕ UI ОШИБКИ)
 // ============================================

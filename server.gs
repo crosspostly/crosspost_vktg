@@ -1753,42 +1753,6 @@ function handleSendPost(payload, clientIp) {
   }
 }
 
-function handleTestPublication(payload, clientIp) {
-  try {
-    var { license_key, tg_chat_id } = payload;
-    
-    // Проверяем лицензию
-    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
-    var licenseData = JSON.parse(licenseCheck.getContent());
-    
-    if (!licenseData.success) {
-      return licenseCheck;
-    }
-    
-    var botToken = PropertiesService.getScriptProperties().getProperty("BOT_TOKEN");
-    
-    if (!botToken) {
-      return jsonResponse({
-        success: false,
-        error: "Bot token not configured"
-      }, 500);
-    }
-    
-    var testMessage = "✅ Тестовое сообщение VK→Telegram\n\nВаш бот успешно настроен и может отправлять сообщения в этот чат.";
-    
-    var result = sendTelegramMessage(botToken, tg_chat_id, testMessage);
-    
-    logEvent("INFO", "test_publication", license_key, 
-             `Chat ID: ${tg_chat_id}, Success: ${result.success}, IP: ${clientIp}`);
-    
-    return jsonResponse(result);
-    
-  } catch (error) {
-    logEvent("ERROR", "test_publication_error", payload.license_key, error.message);
-    return jsonResponse({ success: false, error: error.message }, 500);
-  }
-}
-
 function handleGetVkPosts(payload, clientIp) {
   try {
     var { license_key, vk_group_id, screen_name, count = 50 } = payload;
@@ -4752,73 +4716,6 @@ function buildVkPostUrl(vkGroupId, postId) {
 }
 
 /**
- * Резолвит screen name VK в числовой ID через API
- * @param {string} screenName - screen name пользователя или группы
- * @return {string} - числовой ID с префиксом - для групп
- */
-function resolveVkScreenName(screenName) {
-  try {
-    const userToken = PropertiesService.getScriptProperties().getProperty("VK_USER_ACCESS_TOKEN");
-    
-    if (!userToken) {
-      throw new Error('VK User Access Token not configured');
-    }
-    
-    const apiUrl = `https://api.vk.com/method/utils.resolveScreenName?screen_name=${encodeURIComponent(screenName)}&v=${VK_API_VERSION}&access_token=${userToken}`;
-    
-    logEvent('DEBUG', 'vk_screen_name_resolution_start', 'server', `Screen name: ${screenName}`);
-    
-    const response = UrlFetchApp.fetch(apiUrl, {
-      muteHttpExceptions: true,
-      timeout: TIMEOUTS.FAST
-    });
-    
-    const responseText = response.getContentText();
-    const data = JSON.parse(responseText);
-    
-    if (data.error) {
-      const errorCode = data.error.error_code;
-      const errorMsg = data.error.error_msg;
-      
-      switch (errorCode) {
-        case 5:
-          throw new Error('VK User Access Token invalid');
-        case 100:
-          throw new Error(`Screen name '${screenName}' invalid format`);
-        case 104:
-          throw new Error(`Screen name '${screenName}' not found`);
-        case 113:
-          throw new Error(`Screen name '${screenName}' not found`);
-        case 7:
-          throw new Error(`Access denied to '${screenName}'`);
-        default:
-          throw new Error(`VK API Error ${errorCode}: ${errorMsg}`);
-      }
-    }
-    
-    if (!data.response) {
-      throw new Error(`No response data for screen name '${screenName}'`);
-    }
-    
-    const objectId = data.response.object_id;
-    const type = data.response.type;
-    
-    // Правильное добавление минуса для групп
-    const result = (type === 'group' || type === 'page') ? `-${objectId}` : objectId.toString();
-    
-    logEvent('DEBUG', 'vk_screen_name_resolved', 'server', 
-      `Screen name: ${screenName} → Type: ${type}, ID: ${objectId} → Result: ${result}`);
-    
-    return result;
-    
-  } catch (error) {
-    logEvent('ERROR', 'vk_screen_name_resolution_failed', 'server', 
-      `Failed to resolve '${screenName}': ${error.message}`);
-    throw error;
-  }
-}
-
-/**
  * Извлекает безопасное имя листа из URL VK группы
  * @param {string} url - URL группы VK
  * @return {string} - безопасное имя для листа Google Sheets
@@ -4844,34 +4741,6 @@ function extractSheetNameFromVkUrl(url) {
   }
   
   return null;
-}
-
-/**
- * Извлекает chat_id Telegram с поддержкой всех форматов
- * @param {string} input - input в любом формате
- * @return {string} - chat_id или @username
- */
-function extractTelegramChatId(input) {
-  if (!input) throw new Error('Empty Telegram input');
-  
-  const cleanInput = input.trim();
-  
-  // Уже chat_id (число)
-  if (/^-?\d+$/.test(cleanInput)) return cleanInput;
-  
-  // Извлекаем username из разных форматов
-  const patterns = [
-    /t\.me\/([a-z0-9_]+)/i,     // t.me/username
-    /@([a-z0-9_]+)/i,           // @username  
-    /^([a-z0-9_]+)$/i           // username
-  ];
-  
-  for (const pattern of patterns) {
-    const match = cleanInput.match(pattern);
-    if (match) return '@' + match[1];
-  }
-  
-  throw new Error('Invalid Telegram format: ' + input);
 }
 
 // ============================================
@@ -5149,108 +5018,6 @@ function testCriticalFixes() {
   }
 }
 
-/**
- * Очищает старые логи (старше 30 дней) из всех лог-листов
- * @return {Object} - результат очистки
- */
-function cleanOldLogs() {
-  try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const allSheets = ss.getSheets();
-    const logSheets = [];
-    
-    // Ищем все листы с логами
-    for (let i = 0; i < allSheets.length; i++) {
-      const sheetName = allSheets[i].getName();
-      if (sheetName === "Logs" || sheetName.toLowerCase().includes("log")) {
-        logSheets.push(allSheets[i]);
-      }
-    }
-    
-    if (logSheets.length === 0) {
-      logEvent('WARN', 'no_log_sheets_found', 'server', 'No log sheets found for cleanup');
-      return { totalDeleted: 0, sheetResults: [] };
-    }
-    
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    let totalDeleted = 0;
-    const sheetResults = [];
-    
-    logEvent('INFO', 'log_cleanup_started', 'server', `Starting cleanup of ${logSheets.length} log sheets older than ${thirtyDaysAgo.toISOString()}`);
-    
-    // Обрабатываем каждый лог-лист
-    for (let j = 0; j < logSheets.length; j++) {
-      const sheet = logSheets[j];
-      const sheetName = sheet.getName();
-      let sheetDeletedCount = 0;
-      
-      try {
-        // Проверяем, есть ли у листа данные
-        const lastRow = sheet.getLastRow();
-        if (lastRow <= 1) { // Только заголовки или пустой лист
-          sheetResults.push({ sheetName, deleted: 0, status: 'empty' });
-          continue;
-        }
-        
-        // Получаем все данные
-        const data = sheet.getRange(1, 1, lastRow, sheet.getLastColumn()).getValues();
-        const rowsToDelete = [];
-        
-        // Находим строки для удаления (старше 30 дней)
-        for (let i = 1; i < data.length; i++) { // Пропускаем заголовки (i = 0)
-          const timestamp = data[i][0]; // Первая колонка - Timestamp
-          if (timestamp && typeof timestamp === 'object' && timestamp instanceof Date) {
-            if (timestamp < thirtyDaysAgo) {
-              rowsToDelete.push(i + 1); // +1 потому что диапазоны в Google Sheets 1-based
-            }
-          } else if (typeof timestamp === 'string') {
-            const dateValue = new Date(timestamp);
-            if (!isNaN(dateValue.getTime()) && dateValue < thirtyDaysAgo) {
-              rowsToDelete.push(i + 1);
-            }
-          }
-        }
-        
-        // Удаляем старые строки (в обратном порядке чтобы не сбить индексы)
-        if (rowsToDelete.length > 0) {
-          rowsToDelete.sort((a, b) => b - a); // Сортируем по убыванию
-          for (let k = 0; k < rowsToDelete.length; k++) {
-            sheet.deleteRow(rowsToDelete[k]);
-          }
-          sheetDeletedCount = rowsToDelete.length;
-        }
-        
-        totalDeleted += sheetDeletedCount;
-        sheetResults.push({ 
-          sheetName, 
-          deleted: sheetDeletedCount, 
-          status: sheetDeletedCount > 0 ? 'cleaned' : 'no_old_records'
-        });
-        
-        logEvent('INFO', 'sheet_cleanup_completed', 'server', 
-                 `Sheet: ${sheetName}, Deleted: ${sheetDeletedCount} rows`);
-        
-      } catch (sheetError) {
-        logEvent('ERROR', 'sheet_cleanup_error', 'server', 
-                 `Sheet: ${sheetName}, Error: ${sheetError.message}`);
-        sheetResults.push({ sheetName, deleted: 0, status: 'error', error: sheetError.message });
-      }
-    }
-    
-    logEvent('INFO', 'log_cleanup_completed', 'server', 
-             `Cleanup complete. Total deleted: ${totalDeleted} rows from ${logSheets.length} sheets`);
-    
-    return {
-      success: true,
-      totalDeleted: totalDeleted,
-      sheetResults: sheetResults
-    };
-    
-  } catch (error) {
-    logEvent('ERROR', 'log_cleanup_failed', 'server', error.message);
-    return { success: false, error: error.message, totalDeleted: 0, sheetResults: [] };
-  }
-}
 
 // ============================================
 // 9. BINDING NAME PUBLICATION LOGGING

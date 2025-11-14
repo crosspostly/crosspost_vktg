@@ -21,15 +21,16 @@ if (!fs.existsSync(DIST_DIR)) {
 // Порядок загрузки модулей (важно для зависимостей)
 const modules = [
   'utils.gs',              // 1. Базовые утилиты (без зависимостей)
-  'server.gs',             // 2. Константы и главный entry point
-  'license-service.gs',    // 3. Лицензии
-  'bindings-service.gs',   // 4. Связки
-  'published-sheets-service.gs', // 5. Работа с листами
-  'vk-api.gs',             // 6a. VK API вызовы
-  'vk-posts.gs',           // 6b. Форматирование постов
-  'vk-media.gs',           // 6c. Обработка медиа
-  'telegram-service.gs',   // 7. Telegram API
-  'posting-service.gs'     // 8. Публикация (зависит от всех)
+  'types.gs',              // 2. JSDoc определения типов
+  'server.gs',             // 3. Константы и главный entry point
+  'license-service.gs',    // 4. Лицензии
+  'bindings-service.gs',   // 5. Связки
+  'published-sheets-service.gs', // 6. Работа с листами
+  'vk-api.gs',             // 7a. VK API вызовы
+  'vk-posts.gs',           // 7b. Форматирование постов
+  'vk-media.gs',           // 7c. Обработка медиа
+  'telegram-service.gs',   // 8. Telegram API
+  'posting-service.gs'     // 9. Публикация (зависит от всех)
 ];
 
 let bundle = '// VK→Telegram Crossposter - Server Bundle\n';
