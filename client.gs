@@ -506,10 +506,10 @@ function publishLastPost(bindingId) {
     logEvent("INFO", "publish_last_post_start", "client", `Binding ID: ${bindingId}`);
     
     const payload = {
-      event: "send_post",  // Используем send_post БЕЗ vk_post — сервер опубликует последний пост
+      event: "send_post",  // Используем send_post с vk_post: null
       license_key: license.key,
-      binding_id: bindingId
-      // vk_post НЕ передаем — сервер сам возьмет последний или N постов по настройке
+      binding_id: bindingId,
+      vk_post: null  // Явно указываем null - сервер сам возьмет последний пост
     };
     
     const response = UrlFetchApp.fetch(SERVER_URL, {
@@ -523,15 +523,25 @@ function publishLastPost(bindingId) {
     const result = JSON.parse(response.getContentText());
     
     if (result.success) {
-      logEvent("INFO", "publish_last_post_success", "client", `Binding ID: ${bindingId}, Message ID: ${result.message_id || 'N/A'}`);
+      if (result.skipped) {
+        logEvent("INFO", "publish_last_post_skipped", "client", `Binding ID: ${bindingId}, Reason: ${result.message || 'Already sent'}`);
+      } else {
+        logEvent("INFO", "publish_last_post_success", "client", `Binding ID: ${bindingId}, Message ID: ${result.message_id || 'N/A'}`);
+      }
     } else {
-      logEvent("WARN", "publish_last_post_failed", "client", result.error);
+      logEvent("WARN", "publish_last_post_failed", "client", `Binding ID: ${bindingId}, Error: ${result.error || 'Unknown error'}`);
     }
     
-    return result;
+    return {
+      success: result.success,
+      skipped: result.skipped || false,
+      message: result.message || (result.success ? 'Published successfully' : 'Failed to publish'),
+      message_id: result.message_id,
+      error: result.error
+    };
     
   } catch (error) {
-    logEvent("ERROR", "publish_last_post_error", "client", error.message);
+    logEvent("ERROR", "publish_last_post_error", "client", `Binding ID: ${bindingId}, Error: ${error.message}`);
     return { success: false, error: error.message };
   }
 }
@@ -696,7 +706,7 @@ function checkNewPosts() {
         }
         
         const syncCount = resolveSyncPostsCount(binding);
-        const postsResult = getVkPosts(vkGroupId, syncCount);
+        const postsResult = getVkPosts(vkGroupId, syncCount, binding.id);
         
         if (!postsResult.success) {
           logEvent("WARN", "get_vk_posts_failed", "client",
@@ -842,7 +852,7 @@ function handleGetUserBindingsWithNames(payload, clientIp) {
 // 4. VK API ФУНКЦИИ
 // ============================================
 
-function getVkPosts(vkGroupId, count) {
+function getVkPosts(vkGroupId, count, bindingId) {
   try {
     if (!vkGroupId) {
       logEvent("WARN", "get_vk_posts_missing_group", "client", "VK Group ID is required");
@@ -861,6 +871,7 @@ function getVkPosts(vkGroupId, count) {
       event: "get_vk_posts",
       license_key: license.key,
       vk_group_id: vkGroupId,
+      binding_id: bindingId,
       count: Math.min(count || MAX_POSTS_CHECK, MAX_POSTS_CHECK)
     };
     
