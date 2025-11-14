@@ -1991,7 +1991,10 @@ function getMainPanelHtml() {
       </div>
 
       <div id="license-info" class="license-info" style="display: none;">
-        <button class="btn-small btn-secondary license-change" onclick="changeLicense()">🔄 Изменить</button>
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+          <button class="btn-small btn-secondary license-change" onclick="changeLicense()">🔄 Изменить</button>
+          <button class="btn-small btn-secondary license-check" onclick="checkLicenseStatus()">🔍 Проверить лицензию</button>
+        </div>
         <div class="license-type" id="license-type-display"></div>
         <div class="license-details" id="license-details-display"></div>
       </div>
@@ -2343,6 +2346,35 @@ function getMainPanelHtml() {
         updateUI();
         showMessage("license", "warning", "🔄 Введите новый ключ лицензии");
       }
+    }
+
+    function checkLicenseStatus() {
+      if (!appState.license) {
+        showMessage("license", "error", "❌ Нет активной лицензии для проверки");
+        return;
+      }
+
+      showMessage("license", "loading", "🔍 Проверка статуса лицензии...");
+      logMessageToConsole("Checking license status");
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            appState.license = result.license;
+            updateUI();
+            showMessage("license", "success", "✅ Статус лицензии обновлен!");
+            logMessageToConsole("License status check completed successfully");
+          } else {
+            const errorMsg = result?.error || "Ошибка проверки лицензии";
+            showMessage("license", "error", "❌ " + errorMsg);
+            logMessageToConsole("License status check failed: " + errorMsg);
+          }
+        })
+        .withFailureHandler(function(error) {
+          showMessage("license", "error", "❌ Ошибка: " + error.message);
+          logMessageToConsole("License status check error: " + error.message);
+        })
+        .getLicense();
     }
 
     // ============================================
