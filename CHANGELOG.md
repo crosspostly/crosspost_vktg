@@ -283,8 +283,7 @@ Updated: 2025-11-07
 - **[README.md](README.md)**: Main project documentation and setup guide
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)**: Comprehensive error resolution
 - **[GAS_COMPATIBILITY.md](GAS_COMPATIBILITY.md)**: Google Apps Script compatibility guide
-- **[TODO.md](TODO.md)**: Current development tasks and architecture
-- **[FINAL_CHECKLIST.md](FINAL_CHECKLIST.md)**: Implementation verification checklist
+- **[GITHUB_ACTIONS_SETUP.md](GITHUB_ACTIONS_SETUP.md)**: CI/CD pipeline and automation guide
 
 ---
 
