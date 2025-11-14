@@ -2535,33 +2535,222 @@ function getVkPosts(groupId, count = 10) {
 // ============================================
 
 function formatVkTextForTelegram(text, options) {
-  if (!text) return '';
+  if (!text) return "";
   
   options = options || {};
-  var boldFirstLine = options.boldFirstLine !== false; // true по умолчанию
-  var boldUppercase = options.boldUppercase !== false; // true по умолчанию
-
-  // Выделяем первую строку жирным
+  var boldFirstLine = options.boldFirstLine !== false; // по умолчанию true
+  var boldUppercase = options.boldUppercase !== false; // по умолчанию true
+  
+  // Экранируем HTML специальные символы
+  text = text.replace(/&/g, '&amp;')
+             .replace(/</g, '&lt;')
+             .replace(/>/g, '&gt;')
+             .replace(/"/g, '&quot;')
+             .replace(/'/g, '&#039;');
+  
+  // Делаем жирным первое предложение (если включено)
   if (boldFirstLine) {
-    text = text.replace(/(^.+?)([\r\n]|$)/, '**$1**$2');
+    text = text.replace(/^([^.!?]*[.!?])/, '<b>$1</b>');
   }
   
-  // Выделяем слова из заглавных букв (2+ символа)
+  // Делаем жирными слова в ВЕРХНЕМ РЕГИСТРЕ (если включено)
   if (boldUppercase) {
-    text = text.replace(/\b[A-ZА-Я]{2,}\b/g, '**$&**');
+    text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '<b>function formatVkTextForTelegram(text, options) {
+  if (!text) return "";
+  
+  options = options || {};
+  var boldFirstLine = options.boldFirstLine !== false; // по умолчанию true
+  var boldUppercase = options.boldUppercase !== false; // по умолчанию true
+  
+  // Экранируем HTML специальные символы
+  text = text.replace(/&/g, '&amp;')
+             .replace(/</g, '&lt;')
+             .replace(/>/g, '&gt;')
+             .replace(/"/g, '&quot;')
+             .replace(/'/g, '&#039;');
+  
+  // Делаем жирным первое предложение (если включено)
+  if (boldFirstLine) {
+    text = text.replace(/^([^.!?]*[.!?])/, '<b>$1</b>');
   }
   
-  // Преобразуем VK ссылки в Telegram формат
-  text = text.replace(/\[id(\d+)\|(.+?)\]/g, '[$2](https://vk.com/id$1)');
-  text = text.replace(/\[(club|public)(\d+)\|(.+?)\]/g, function(match, type, id, title) {
-    return `[${title}](https://vk.com/${type}${id})`;
+  // Делаем жирными слова в ВЕРХНЕМ РЕГИСТРЕ (если включено)
+  if (boldUppercase) {
+    text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '<b>// Делаем жирными слова в ВЕРХНЕМ РЕГИСТРЕ (если включено)
+  if (boldUppercase) {
+    text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '<b>// Делаем жирными слова в ВЕРХНЕМ РЕГИСТРЕ (если включено)
+  if (boldUppercase) {
+    text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '<b>function formatVkTextForTelegram(text, options) {
+  if (!text) return "";
+  
+  options = options || {};
+  var boldFirstLine = options.boldFirstLine !== false; // по умолчанию true
+  var boldUppercase = options.boldUppercase !== false; // по умолчанию true
+  
+  // Экранируем HTML специальные символы
+  text = text.replace(/&/g, '&amp;')
+             .replace(/</g, '&lt;')
+             .replace(/>/g, '&gt;')
+             .replace(/"/g, '&quot;')
+             .replace(/'/g, '&#039;');
+  
+  // Делаем жирным первое предложение (если включено)
+  if (boldFirstLine) {
+    text = text.replace(/^([^.!?]*[.!?])/, '<b>$1</b>');
+  }
+  
+  // Делаем жирными слова в ВЕРХНЕМ РЕГИСТРЕ (если включено)
+  if (boldUppercase) {
+    text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '<b>function formatVkTextForTelegram(text, options) {
+  if (!text) return "";
+  
+  options = options || {};
+  var boldFirstLine = options.boldFirstLine !== false; // по умолчанию true
+  var boldUppercase = options.boldUppercase !== false; // по умолчанию true
+  
+  // Делаем жирным первое предложение (если включено)
+  if (boldFirstLine) {
+    text = text.replace(/^([^.!?]*[.!?])/, '*$1*');
+  }
+  
+  // Делаем жирными слова в ВЕРХНЕМ РЕГИСТРЕ (если включено)
+  if (boldUppercase) {
+    text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '*$&*');
+  }
+  
+  // Преобразуем ссылки VK в правильный формат для Telegram
+  text = text.replace(/\[(id\d+|club\d+|public\d+|\w+)\|([^\]]+)\]/g, function(match, id, title) {
+    // Если это числовой ID пользователя или группы
+    if (id.startsWith('id')) {
+      return `[${title}](https://vk.com/${id})`;
+    } else if (id.startsWith('club') || id.startsWith('public')) {
+      return `[${title}](https://vk.com/${id})`;
+    } else {
+      // Обычное имя пользователя или группы
+      return `[${title}](https://vk.com/${id})`;
+    }
   });
   
-  // Убираем лишние пробелы
-  text = text.replace(/\n{3,}/g, '\n\n').trim();
+  // Удаляем лишние пробелы
+  text = text.replace(/\s+/g, ' ').trim();
+  
+  return text;
+}</b>');
+  }
+  
+  // Преобразуем VK-ссылки в HTML формат
+  text = text.replace(/\[(id\d+|club\d+|public\d+|\w+)\|([^\]]+)\]/g, function(match, id, title) {
+    // Если это числовой ID пользователя или группы
+    if (id.startsWith('id')) {
+      return `<a href="https://vk.com/${id}">${title}</a>`;
+    } else if (id.startsWith('club') || id.startsWith('public')) {
+      return `<a href="https://vk.com/${id}">${title}</a>`;
+    } else {
+      // Обычное имя пользователя или группы
+      return `<a href="https://vk.com/${id}">${title}</a>`;
+    }
+  });
+  
+  // Сохраняем переносы строк
+  text = text.replace(/\n/g, '\n');
+  
+  // Удаляем лишние пробелы (но сохраняем переносы строк)
+  text = text.replace(/[ \t]+/g, ' ').trim();
+  
+  return text;
+}</b>');
+  }
+  
+  // Преобразуем VK-ссылки в HTML формат
+  text = text.replace(/\[(id\d+|club\d+|public\d+|\w+)\|([^\]]+)\]/g, function(match, id, title) {
+    // Если это числовой ID пользователя или группы
+    if (id.startsWith('id')) {
+      return `<a href="https://vk.com/${id}">${title}</a>`;
+    } else if (id.startsWith('club') || id.startsWith('public')) {
+      return `<a href="https://vk.com/${id}">${title}</a>`;
+    } else {
+      // Обычное имя пользователя или группы
+      return `<a href="https://vk.com/${id}">${title}</a>`;
+    }
+  });
+  
+  // Сохраняем переносы строк
+  text = text.replace(/\n/g, '\n');
+  
+  // Удаляем лишние пробелы (но сохраняем переносы строк)
+  text = text.replace(/[ \t]+/g, ' ').trim();
+  
+  return text;
+}</b>');
+  }
+  
+  // Преобразуем VK-ссылки в HTML формат
+  text = text.replace(/\[(id\d+|club\d+|public\d+|\w+)\|([^\]]+)\]/g, function(match, id, title) {
+    // Если это числовой ID пользователя или группы
+    if (id.startsWith('id')) {
+      return `<a href="https://vk.com/${id}">${title}</a>`;
+    } else if (id.startsWith('club') || id.startsWith('public')) {
+      return `<a href="https://vk.com/${id}">${title}</a>`;
+    } else {
+      // Обычное имя пользователя или группы
+      return `<a href="https://vk.com/${id}">${title}</a>`;
+    }
+  });
+  
+  // Сохраняем переносы строк
+  text = text.replace(/\n/g, '\n');
+  
+  // Удаляем лишние пробелы (но сохраняем переносы строк)
+  text = text.replace(/[ \t]+/g, ' ').trim();
+  
+  return text;</b>');
+  }
+  
+  // Преобразуем VK-ссылки в HTML формат
+  text = text.replace(/\[(id\d+|club\d+|public\d+|\w+)\|([^\]]+)\]/g, function(match, id, title) {
+    // Если это числовой ID пользователя или группы
+    if (id.startsWith('id')) {
+      return `<a href="https://vk.com/${id}">${title}</a>`;
+    } else if (id.startsWith('club') || id.startsWith('public')) {
+      return `<a href="https://vk.com/${id}">${title}</a>`;
+    } else {
+      // Обычное имя пользователя или группы
+      return `<a href="https://vk.com/${id}">${title}</a>`;
+    }
+  });
+  
+  // Сохраняем переносы строк
+  text = text.replace(/\n/g, '\n');
+  
+  // Удаляем лишние пробелы (но сохраняем переносы строк)
+  text = text.replace(/[ \t]+/g, ' ').trim();
+  
+  return text;
+}</b>');
+  }
+  
+  // Преобразуем VK-ссылки в HTML формат
+  text = text.replace(/\[(id\d+|club\d+|public\d+|\w+)\|([^\]]+)\]/g, function(match, id, title) {
+    // Если это числовой ID пользователя или группы
+    if (id.startsWith('id')) {
+      return `<a href="https://vk.com/${id}">${title}</a>`;
+    } else if (id.startsWith('club') || id.startsWith('public')) {
+      return `<a href="https://vk.com/${id}">${title}</a>`;
+    } else {
+      // Обычное имя пользователя или группы
+      return `<a href="https://vk.com/${id}">${title}</a>`;
+    }
+  });
+  
+  // Сохраняем переносы строк
+  text = text.replace(/\n/g, '\n');
+  
+  // Удаляем лишние пробелы (но сохраняем переносы строк)
+  text = text.replace(/[ \t]+/g, ' ').trim();
   
   return text;
 }
+
 /**
  * Форматирует полный VK пост для отправки в Telegram с учетом настроек связки
  */
@@ -5478,121 +5667,6 @@ function testPublicationRowWrites() {
     return {
       success: false,
       error: error.message
-    };
-  }
-}
-
-/**
- * Тестирует создание листов для постов
- * @return {Object} - результат тестирования
- */
-function testBindingSheetCreation() {
-  try {
-    logEvent("INFO", "test_binding_sheet_creation_start", "system", "Starting binding sheet creation tests");
-    
-    const results = {
-      success: true,
-      tests: []
-    };
-    
-    // Test 1: Создание листа для новой связки
-    try {
-      const testBindingName = "TestBinding123";
-      const sheet = getOrCreateBindingSheet(testBindingName);
-      
-      results.tests.push({
-        name: "create_binding_sheet",
-        success: sheet && sheet.getName() === testBindingName,
-        details: `Sheet created: ${sheet ? sheet.getName() : 'null'}`,
-        expected: `Should create sheet named "${testBindingName}"`
-      });
-      
-    } catch (error) {
-      results.tests.push({
-        name: "create_binding_sheet",
-        success: false,
-        error: error.message
-      });
-    }
-    
-    // Test 2: Запись публикации в лист
-    try {
-      const testBindingName = "TestBinding123";
-      const testData = {
-        status: 'success',
-        vkGroupId: '-12345',
-        vkPostId: '9876',
-        vkPostUrl: 'https://vk.com/wall-12345_9876',
-        vkPostDate: new Date().toISOString(),
-        mediaSummary: '2 photos',
-        captionChars: 150,
-        captionParts: 1,
-        tgChat: '@testchannel',
-        tgMessageIds: '12345',
-        tgMessageUrls: 'https://t.me/testchannel/12345',
-        notes: 'Test entry'
-      };
-      
-      writePublicationRowToBindingSheet(testBindingName, testData);
-      
-      results.tests.push({
-        name: "write_publication_row",
-        success: true,
-        details: `Publication row written to ${testBindingName}`,
-        expected: "Should write publication data to binding sheet"
-      });
-      
-    } catch (error) {
-      results.tests.push({
-        name: "write_publication_row",
-        success: false,
-        error: error.message
-      });
-    }
-    
-    // Test 3: Проверка формата текста
-    try {
-      const testText = "Hello [id123|John] and [club456|MyGroup]!\n\nThis is UPPERCASE and multiline.";
-      const formatted = formatVkTextForTelegram(testText, { boldFirstLine: true, boldUppercase: true });
-      
-      const hasMarkdownLinks = formatted.includes('[John](https://vk.com/id123)') &&
-                              formatted.includes('[MyGroup](https://vk.com/club456)');
-      const hasBoldFirst = formatted.includes('**Hello');
-      const hasBoldUppercase = formatted.includes('**UPPERCASE**');
-      const hasNewlines = formatted.includes('\n');
-      
-      results.tests.push({
-        name: "format_vk_text",
-        success: hasMarkdownLinks && hasBoldFirst && hasBoldUppercase && hasNewlines,
-        details: `Markdown links: ${hasMarkdownLinks}, Bold first: ${hasBoldFirst}, Bold uppercase: ${hasBoldUppercase}, Newlines: ${hasNewlines}`,
-        expected: "Should create Markdown links, preserve newlines, and apply bold formatting",
-        sample: formatted.substring(0, 200) + (formatted.length > 200 ? "..." : "")
-      });
-      
-    } catch (error) {
-      results.tests.push({
-        name: "format_vk_text",
-        success: false,
-        error: error.message
-      });
-    }
-    
-    // Overall result
-    const passedTests = results.tests.filter(t => t.success).length;
-    const totalTests = results.tests.length;
-    results.success = passedTests === totalTests;
-    results.summary = `Passed ${passedTests}/${totalTests} tests`;
-    
-    logEvent("INFO", "test_binding_sheet_creation_complete", "system", results.summary);
-    
-    return results;
-    
-  } catch (error) {
-    logEvent("ERROR", "test_binding_sheet_creation_error", "system", error.message);
-    return {
-      success: false,
-      error: error.message,
-      summary: "Test execution failed"
     };
   }
 }
