@@ -1229,18 +1229,29 @@ function handleAddBinding(payload, clientIp) {
       }, 429);
     }
     
-    // АВТОМАТИЧЕСКОЕ ПРЕОБРАЗОВАНИЕ ССЫЛОК В ID
+    // УНИВЕРСАЛЬНОЕ ПРЕОБРАЗОВАНИЕ ССЫЛОК В ID
     var processedVkGroupId;
     var processedTgChatId;
     
     try {
       // Извлекаем ID ВК группы из ссылки
       processedVkGroupId = extractVkGroupId(vk_group_url);
+      
+      // Если extractVkGroupId вернул null (screen_name), резолвим через API
+      if (!processedVkGroupId) {
+        var screenName = vk_group_url.replace(/^https?:\/\/vk\.com\//i, '').split('/')[0].split('?')[0].split('#')[0];
+        processedVkGroupId = resolveVkScreenName(screenName);
+      }
+      
+      if (!processedVkGroupId) {
+        throw new Error("Не удалось определить VK Group ID");
+      }
+      
       logEvent("INFO", "vk_url_converted", license_key, `${vk_group_url} -> ${processedVkGroupId}`);
     } catch (error) {
       return jsonResponse({
         success: false,
-        error: `Ошибка в ВК ссылке: ${error.message}`
+        error: `❌ Ошибка в ВК ссылке: ${error.message}`
       }, 400);
     }
     
@@ -1355,18 +1366,29 @@ function handleEditBinding(payload, clientIp) {
     var existingRowValues = bindingsSheet.getRange(bindingRow, 1, 1, 11).getValues()[0];
     var oldBinding = buildBindingObjectFromRow(existingRowValues);
     
-    // АВТОМАТИЧЕСКОЕ ПРЕОБРАЗОВАНИЕ ССЫЛОК В ID
+    // УНИВЕРСАЛЬНОЕ ПРЕОБРАЗОВАНИЕ ССЫЛОК В ID
     var processedVkGroupId;
     var processedTgChatId;
     
     try {
       // Извлекаем ID ВК группы из ссылки
       processedVkGroupId = extractVkGroupId(vk_group_url);
+      
+      // Если extractVkGroupId вернул null (screen_name), резолвим через API
+      if (!processedVkGroupId) {
+        var screenName = vk_group_url.replace(/^https?:\/\/vk\.com\//i, '').split('/')[0].split('?')[0].split('#')[0];
+        processedVkGroupId = resolveVkScreenName(screenName);
+      }
+      
+      if (!processedVkGroupId) {
+        throw new Error("Не удалось определить VK Group ID");
+      }
+      
       logEvent("INFO", "vk_url_converted", license_key, `${vk_group_url} -> ${processedVkGroupId}`);
     } catch (error) {
       return jsonResponse({
         success: false,
-        error: `Ошибка в ВК ссылке: ${error.message}`
+        error: `❌ Ошибка в ВК ссылке: ${error.message}`
       }, 400);
     }
     
@@ -1778,38 +1800,32 @@ function handleGetVkPosts(payload, clientIp) {
       return licenseCheck;
     }
 
-    // 2) Resolve group id
+    // 2) Resolve group id - УНИВЕРСАЛЬНЫЙ ПОДХОД
     var resolvedGroupId = null;
 
-    // Prefer vk_group_id if provided
-    if (vk_group_id && typeof vk_group_id === 'string') {
-      var trimmed = vk_group_id.trim();
-      if (/^-?\d+$/.test(trimmed)) {
-        // Numeric format already
-        resolvedGroupId = trimmed;
-      } else {
-        // Non-numeric: treat as screen_name or URL fragment
-        try {
-          // Accept raw screen_name like "varsmana" or forms like "vk.com/varsmana"
-          var sn = trimmed.replace(/^https?:\/\/vk\.com\//i, '').split('/')[0].split('?')[0].split('#')[0];
-          resolvedGroupId = resolveVkScreenName(sn);
-        } catch (e) {
-          logEvent("WARN", "vk_group_id_screen_name_resolution_failed", license_key, `Input: ${trimmed}, Error: ${e.message}`);
-          return jsonResponse({ success: false, error: `Cannot resolve vk_group_id "${trimmed}": ${e.message}` }, 400);
+    try {
+      // Используем extractVkGroupId для универсального парсинга
+      if (vk_group_id) {
+        resolvedGroupId = extractVkGroupId(vk_group_id.toString());
+        
+        // Если extractVkGroupId вернул null (screen_name), резолвим через API
+        if (!resolvedGroupId) {
+          var screenName = vk_group_id.toString().replace(/^https?:\/\/vk\.com\//i, '').split('/')[0].split('?')[0].split('#')[0];
+          resolvedGroupId = resolveVkScreenName(screenName);
         }
+      } else if (screen_name && typeof screen_name === 'string' && screen_name.trim()) {
+        // Для обратной совместимости поддерживаем параметр screen_name
+        var cleanScreenName = screen_name.trim().replace(/^https?:\/\/vk\.com\//i, '').split('/')[0].split('?')[0].split('#')[0];
+        resolvedGroupId = resolveVkScreenName(cleanScreenName);
       }
-    } else if (typeof vk_group_id === 'number') {
-      resolvedGroupId = vk_group_id.toString();
-    } else if (screen_name && typeof screen_name === 'string' && screen_name.trim()) {
-      try {
-        var sn2 = screen_name.trim().replace(/^https?:\/\/vk\.com\//i, '').split('/')[0].split('?')[0].split('#')[0];
-        resolvedGroupId = resolveVkScreenName(sn2);
-      } catch (e) {
-        logEvent("WARN", "screen_name_resolution_failed", license_key, `Screen: ${screen_name}, Error: ${e.message}`);
-        return jsonResponse({ success: false, error: `Cannot resolve screen_name "${screen_name}": ${e.message}` }, 400);
+
+      if (!resolvedGroupId) {
+        return jsonResponse({ success: false, error: "vk_group_id or screen_name required and could not be resolved" }, 400);
       }
-    } else {
-      return jsonResponse({ success: false, error: "vk_group_id or screen_name required" }, 400);
+
+    } catch (e) {
+      logEvent("WARN", "vk_group_resolution_failed", license_key, `Input: ${vk_group_id || screen_name}, Error: ${e.message}`);
+      return jsonResponse({ success: false, error: `Cannot resolve VK group: ${e.message}` }, 400);
     }
 
     // Ensure groups have leading minus
@@ -2045,7 +2061,7 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
        var fallbackPublicationData = {
          vkGroupId: binding.vkGroupId || '',
          vkPostId: vkPost.id || '',
-         vkPostUrl: `https://vk.com/wall${binding.vkGroupId || 'unknown'}_${vkPost.id || 'unknown'}`,
+         vkPostUrl: buildVkPostUrl(binding.vkGroupId, vkPost.id),
          vkPostDate: vkPost.date ? new Date(vkPost.date * 1000).toISOString() : new Date().toISOString(),
          mediaSummary: createMediaSummary(vkPost.attachments || []),
          captionChars: (vkPost.text || '').length,
@@ -2075,6 +2091,8 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
          writePublicationRowToBindingSheet(binding.bindingName, fallbackPublicationData);
        }
 
+       // ✅ ДОБАВЛЯЕМ publication В РЕЗУЛЬТАТ
+       fallbackResult.publication = fallbackPublicationData;
        return fallbackResult;
       }
 
@@ -2083,7 +2101,7 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
         status: 'error',
         vkGroupId: binding.vkGroupId || '',
         vkPostId: vkPost.id || '',
-        vkPostUrl: `https://vk.com/wall${binding.vkGroupId || 'unknown'}_${vkPost.id || 'unknown'}`,
+        vkPostUrl: buildVkPostUrl(binding.vkGroupId, vkPost.id),
         vkPostDate: vkPost.date ? new Date(vkPost.date * 1000).toISOString() : new Date().toISOString(),
         mediaSummary: createMediaSummary(vkPost.attachments || []),
         captionChars: (vkPost.text || '').length,
@@ -2099,7 +2117,11 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
         writePublicationRowToBindingSheet(binding.bindingName, errorPublicationData);
       }
 
-      return { success: false, error: mediaError.message };
+      return { 
+        success: false, 
+        error: mediaError.message,
+        publication: errorPublicationData
+      };
     }
     
   } catch (error) {
@@ -2107,25 +2129,42 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
     
     // Log to binding sheet for any other errors
     if (binding && binding.bindingName && vkPost) {
-      var errorPublicationData = {
-        status: 'error',
-        vkGroupId: binding.vkGroupId || '',
-        vkPostId: vkPost.id || '',
-        vkPostUrl: `https://vk.com/wall${binding.vkGroupId || 'unknown'}_${vkPost.id || 'unknown'}`,
-        vkPostDate: vkPost.date ? new Date(vkPost.date * 1000).toISOString() : new Date().toISOString(),
-        mediaSummary: createMediaSummary(vkPost.attachments || []),
-        captionChars: (vkPost.text || '').length,
-        captionParts: 1,
-        tgChat: chatId,
-        tgMessageIds: '',
-        tgMessageUrls: '',
-        notes: `General error: ${error.message}`
-      };
-      
-      writePublicationRowToBindingSheet(binding.bindingName, errorPublicationData);
+     var errorPublicationData = {
+       status: 'error',
+       vkGroupId: binding.vkGroupId || '',
+       vkPostId: vkPost.id || '',
+       vkPostUrl: buildVkPostUrl(binding.vkGroupId, vkPost.id),
+       vkPostDate: vkPost.date ? new Date(vkPost.date * 1000).toISOString() : new Date().toISOString(),
+       mediaSummary: createMediaSummary(vkPost.attachments || []),
+       captionChars: (vkPost.text || '').length,
+       captionParts: 1,
+       tgChat: chatId,
+       tgMessageIds: '',
+       tgMessageUrls: '',
+       notes: `General error: ${error.message}`
+     };
+
+     writePublicationRowToBindingSheet(binding.bindingName, errorPublicationData);
     }
-    
-    return { success: false, error: error.message };
+
+    return {
+     success: false,
+     error: error.message,
+     publication: binding && binding.bindingName && vkPost ? {
+       status: 'error',
+       vkGroupId: binding.vkGroupId || '',
+       vkPostId: vkPost.id || '',
+       vkPostUrl: buildVkPostUrl(binding.vkGroupId, vkPost.id),
+       vkPostDate: vkPost.date ? new Date(vkPost.date * 1000).toISOString() : new Date().toISOString(),
+       mediaSummary: createMediaSummary(vkPost.attachments || []),
+       captionChars: (vkPost.text || '').length,
+       captionParts: 1,
+       tgChat: chatId,
+       tgMessageIds: '',
+       tgMessageUrls: '',
+       notes: `General error: ${error.message}`
+     } : null
+    };
   }
 }
 
