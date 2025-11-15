@@ -2093,7 +2093,7 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
     
     // Log to binding sheet for any other errors
     if (binding && binding.bindingName && vkPost) {
-     var errorPublicationData = {
+     var catchPublicationData = {
        status: 'error',
        vkGroupId: binding.vkGroupId || '',
        vkPostId: vkPost.id || '',
@@ -3927,7 +3927,7 @@ function cleanOldLogs() {
     // Обрабатываем каждый лог-лист
     for (var j = 0; j < logSheets.length; j++) {
       var sheet = logSheets[j];
-      var currentSheetName = sheet.getName();
+      var logSheetName = sheet.getName();
       var sheetDeletedCount = 0;
       
       try {
