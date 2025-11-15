@@ -1,6 +1,6 @@
 /**
  * VK→Telegram Crossposter - SERVER v6.0 FINAL (PRODUCTION-READY)
- * 
+ *
  * ✅ Центральный сервер для всех пользователей
  * ✅ Хранит все токены и секреты VK + Telegram API
  * ✅ Управляет лицензиями и связками пользователей
@@ -9,7 +9,7 @@
  * ✅ Встроенный HTML админ-интерфейс
  * ✅ Система логирования и статистики
  * ✅ Защита от дублирования и проверка лимитов
- * 
+ *
  * Автор: f_den
  * Дата: 2025-10-31
  * Архитектура: Сервер (хранит секреты) + Клиент (UI + автоматизация)
@@ -19,16 +19,16 @@
 // КОНФИГУРАЦИЯ
 // ============================================
 
-var DEV_MODE = false; // true для подробного логирования (только для отладки)
-var SERVER_VERSION = "6.0";
-var MAX_MEDIA_GROUP_SIZE = 10; // Лимит Telegram для media group
-var VK_API_VERSION = "5.131";
-var REQUEST_TIMEOUT = 30000; // 30 секунд (по умолчанию)
+const DEV_MODE = false; // true для подробного логирования (только для отладки)
+const SERVER_VERSION = '6.0';
+const MAX_MEDIA_GROUP_SIZE = 10; // Лимит Telegram для media group
+const VK_API_VERSION = '5.131';
+const REQUEST_TIMEOUT = 30000; // 30 секунд (по умолчанию)
 
 // Таймауты по типу операции
-var TIMEOUTS = {
+const TIMEOUTS = {
   FAST: 8000,    // 8 секунд - быстрые операции
-  MEDIUM: 15000, // 15 секунд - средние операции  
+  MEDIUM: 15000, // 15 секунд - средние операции
   SLOW: 30000    // 30 секунд - медленные операции
 };
 
@@ -36,77 +36,92 @@ var TIMEOUTS = {
 // 1. ИНИЦИАЛИЗАЦИЯ И МЕНЮ
 // ============================================
 
+/**
+ *
+ */
 function onOpen() {
-  var ui = SpreadsheetApp.getUi();
-  
-  ui.createMenu("VK→TG Сервер")
-    .addItem("▶️ 1. Инициализировать сервер", "initializeServer")
-    .addItem("⚙️ 2. Настроить конфигурацию", "showConfigDialog")
-    .addItem("🔧 3. Проверить состояние сервера", "checkServerHealth")
-    .addItem("🎛️ 4. Админ панель", "showAdminPanel")
-    .addItem("📊 5. Статистика", "showStatistics")
-    .addItem("🔍 6. Показать логи", "showLogsSheet")
+  const ui = SpreadsheetApp.getUi();
+
+  ui.createMenu('VK→TG Сервер')
+    .addItem('▶️ 1. Инициализировать сервер', 'initializeServer')
+    .addItem('⚙️ 2. Настроить конфигурацию', 'showConfigDialog')
+    .addItem('🔧 3. Проверить состояние сервера', 'checkServerHealth')
+    .addItem('🎛️ 4. Админ панель', 'showAdminPanel')
+    .addItem('📊 5. Статистика', 'showStatistics')
+    .addItem('🔍 6. Показать логи', 'showLogsSheet')
     .addToUi();
 }
 
+/**
+ *
+ */
 function initializeServer() {
   try {
     // Создаем необходимые листы
-    createSheet("Licenses", [
-      "License Key", "Email", "Type", "Max Groups", "Expires", "Created At", "Status", "Notes"
+    createSheet('Licenses', [
+      'License Key', 'Email', 'Type', 'Max Groups', 'Expires', 'Created At', 'Status', 'Notes'
     ]);
-    
-    createSheet("Bindings", [
-      "Binding ID", "License Key", "User Email", "VK Group URL", "TG Chat ID", "Status", "Created At", "Last Check", "Format Settings", "Binding Name", "Binding Description", "VK Group ID"
+
+    createSheet('Bindings', [
+      'Binding ID', 'License Key', 'User Email', 'VK Group URL', 'TG Chat ID', 'Status', 'Created At', 'Last Check', 'Format Settings', 'Binding Name', 'Binding Description', 'VK Group ID'
     ]);
-    
-    createSheet("Logs", [
-      "Timestamp", "Level", "Event", "User", "Details", "IP"
+
+    createSheet('Logs', [
+      'Timestamp', 'Level', 'Event', 'User', 'Details', 'IP'
     ]);
-    
+
     // Логируем инициализацию
-    logEvent("INFO", "server_initialized", "system", `Server v${SERVER_VERSION} initialized`);
-    
+    logEvent('INFO', 'server_initialized', 'system', `Server v${SERVER_VERSION} initialized`);
+
     SpreadsheetApp.getUi().alert(
-      "✅ Сервер инициализирован!\n\n" +
-      "Созданы листы:\n" +
-      "• Licenses - управление лицензиями\n" +
-      "• Bindings - связки пользователей\n" +
-      "• Logs - логи системы\n\n" +
-      "Теперь настройте конфигурацию (пункт 2)."
+      '✅ Сервер инициализирован!\n\n' +
+      'Созданы листы:\n' +
+      '• Licenses - управление лицензиями\n' +
+      '• Bindings - связки пользователей\n' +
+      '• Logs - логи системы\n\n' +
+      'Теперь настройте конфигурацию (пункт 2).'
     );
-    
+
   } catch (error) {
-    logEvent("ERROR", "server_init_failed", "system", error.message);
-    SpreadsheetApp.getUi().alert("❌ Ошибка инициализации: " + error.message);
+    logEvent('ERROR', 'server_init_failed', 'system', error.message);
+    SpreadsheetApp.getUi().alert('❌ Ошибка инициализации: ' + error.message);
   }
 }
 
+/**
+ *
+ */
 function showConfigDialog() {
   try {
-    var htmlContent = getConfigDialogHtml();
+    const htmlContent = getConfigDialogHtml();
     if (!htmlContent) {
-      throw new Error("Failed to generate HTML content");
+      throw new Error('Failed to generate HTML content');
     }
-    
-    var html = HtmlService.createHtmlOutput(htmlContent);
+
+    const html = HtmlService.createHtmlOutput(htmlContent);
     if (!html) {
-      throw new Error("Failed to create HTML output");
+      throw new Error('Failed to create HTML output');
     }
-    
+
     html.setWidth(600).setHeight(700);
-    
+
     SpreadsheetApp.getUi()
-      .showModelessDialog(html, "⚙️ Конфигурация сервера");
-      
+      .showModelessDialog(html, '⚙️ Конфигурация сервера');
+
   } catch (error) {
-    logEvent("ERROR", "config_dialog_error", "system", error.message);
-    SpreadsheetApp.getUi().alert("❌ Ошибка: " + error.message);
+    logEvent('ERROR', 'config_dialog_error', 'system', error.message);
+    SpreadsheetApp.getUi().alert('❌ Ошибка: ' + error.message);
   }
 }
 
+/**
+ *
+ * @param text
+ */
 function escapeHtml(text) {
-  if (!text) return '';
+  if (!text) {
+return '';
+}
   return String(text)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -115,15 +130,18 @@ function escapeHtml(text) {
     .replace(/'/g, '&#039;');
 }
 
+/**
+ *
+ */
 function getConfigDialogHtml() {
-  var props = PropertiesService.getScriptProperties();
-  var config = {
-    BOT_TOKEN: props.getProperty("BOT_TOKEN") || "",
-    VK_USER_ACCESS_TOKEN: props.getProperty("VK_USER_ACCESS_TOKEN") || "",
-    ADMIN_CHAT_ID: props.getProperty("ADMIN_CHAT_ID") || ""
+  const props = PropertiesService.getScriptProperties();
+  const config = {
+    BOT_TOKEN: props.getProperty('BOT_TOKEN') || '',
+    VK_USER_ACCESS_TOKEN: props.getProperty('VK_USER_ACCESS_TOKEN') || '',
+    ADMIN_CHAT_ID: props.getProperty('ADMIN_CHAT_ID') || ''
   };
-  
-  var html = '<!DOCTYPE html>\n';
+
+  let html = '<!DOCTYPE html>\n';
   html += '<html lang="ru">\n';
   html += '<head>\n';
   html += '<meta charset="UTF-8">\n';
@@ -149,65 +167,65 @@ function getConfigDialogHtml() {
   html += '<div class="container">\n';
   html += '<h1>⚙️ Конфигурация сервера</h1>\n';
   html += '<div id="status" class="status"></div>\n';
-  
+
   html += '<label>🤖 Telegram Bot Token</label>\n';
   html += '<input type="password" id="botToken" value="' + escapeHtml(config.BOT_TOKEN) + '" placeholder="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz">\n';
   html += '<small>Получить в BotFather: /start → /newbot</small>\n';
-  
+
   html += '<label>ВКонтакте User Token</label>\n';
   html += '<input type="password" id="vkUserToken" value="' + escapeHtml(config.VK_USER_ACCESS_TOKEN) + '" placeholder="abc123def456...">\n';
   html += '<small>Требуемые права: wall, video, offline</small>\n';
-  
+
   html += '<label>📱 Admin Chat ID</label>\n';
   html += '<input type="text" id="adminChatId" value="' + escapeHtml(config.ADMIN_CHAT_ID) + '" placeholder="-1001234567890">\n';
   html += '<small>Получить через @userinfobot после добавления бота в канал/группу</small>\n';
-  
+
   html += '<button id="saveBtn" onclick="saveAndCloseConfig()">💾 Сохранить конфигурацию</button>\n';
-  
+
   html += '<script>\n';
-  
+
   html += 'function escapeHtml(text) {\n';
   html += '  if (!text) return "";\n';
   html += '  const div = document.createElement("div");\n';
   html += '  div.textContent = text;\n';
   html += '  return div.innerHTML;\n';
   html += '}\n';
-  
+
   html += 'function showStatus(message, type) {\n';
   html += '  const status = document.getElementById("status");\n';
   html += '  status.innerHTML = message;\n';
   html += '  status.className = "status " + type;\n';
   html += '  status.style.display = "block";\n';
   html += '}\n';
-  
+
   html += 'function saveAndCloseConfig() {\n';
   html += '  const botToken = document.getElementById("botToken").value.trim();\n';
   html += '  const vkUserToken = document.getElementById("vkUserToken").value.trim();\n';
   html += '  const adminChatId = document.getElementById("adminChatId").value.trim();\n';
   html += '  const btn = document.getElementById("saveBtn");\n';
-  
+
   html += '  if (!botToken || !vkUserToken || !adminChatId) {\n';
   html += '    showStatus("❌ Все поля должны быть заполнены!", "error");\n';
   html += '    return;\n';
   html += '  }\n';
-  
+
   html += '  btn.disabled = true;\n';
   html += '  btn.textContent = "🔄 Проверка...";\n';
   html += '  showStatus("🔄 Проверка токенов...", "info");\n';
-  
+
   html += '  try {\n';
   html += '    google.script.run\n';
   html += '      .withSuccessHandler(function(result) {\n';
   html += '        if (result.success) {\n';
   html += '          let message = "<strong>✅ Конфигурация сохранена!</strong><br><br>";\n';
-  
+
   html += '          if (result.validation) {\n';
   html += '            const v = result.validation;\n';
   html += '            message += "🤖 Telegram: " + v.telegram.status + " " + v.telegram.message + "<br>";\n';
   html += '            message += "ВК User: " + v.vkUser.status + " " + v.vkUser.message + "<br>";\n';
   html += '            message += "Admin Chat: " + v.adminChat.status + " " + v.adminChat.message + "<br>";\n';
   html += '          }\n';
-  
+
   html += '          showStatus(message, "success");\n';
   html += '          setTimeout(function() {\n';
   html += '            google.script.host.close();\n';
@@ -230,172 +248,184 @@ function getConfigDialogHtml() {
   html += '    btn.textContent = "💾 Сохранить конфигурацию";\n';
   html += '  }\n';
   html += '}\n';
-  
+
   html += '</script>\n';
-  
+
   html += '</div>\n';
   html += '</body>\n';
   html += '</html>\n';
-  
+
   return html;
 }
 
 
+/**
+ *
+ * @param botToken
+ * @param vkUserToken
+ * @param adminChatId
+ */
 function saveServerConfig(botToken, vkUserToken, adminChatId) {
   try {
     // ========== 1. ПРОВЕРЯЕМ НЕ ПУСТО ==========
     if (!botToken || !botToken.trim()) {
-      logEvent("WARN", "config_empty_bot_token", "admin", "Bot token is empty");
-      return { 
-        success: false, 
-        error: "❌ Telegram Bot Token не может быть пустым" 
+      logEvent('WARN', 'config_empty_bot_token', 'admin', 'Bot token is empty');
+      return {
+        success: false,
+        error: '❌ Telegram Bot Token не может быть пустым'
       };
     }
-    
+
     if (!vkUserToken || !vkUserToken.trim()) {
-      logEvent("WARN", "config_empty_vk_token", "admin", "VK token is empty");
-      return { 
-        success: false, 
-        error: "❌ VK User Access Token не может быть пустым" 
+      logEvent('WARN', 'config_empty_vk_token', 'admin', 'VK token is empty');
+      return {
+        success: false,
+        error: '❌ VK User Access Token не может быть пустым'
       };
     }
-    
+
     if (!adminChatId || !adminChatId.trim()) {
-      logEvent("WARN", "config_empty_admin_id", "admin", "Admin chat ID is empty");
-      return { 
-        success: false, 
-        error: "❌ Admin Chat ID не может быть пустым" 
+      logEvent('WARN', 'config_empty_admin_id', 'admin', 'Admin chat ID is empty');
+      return {
+        success: false,
+        error: '❌ Admin Chat ID не может быть пустым'
       };
     }
-    
+
     // ========== 2. ВАЛИДИРУЕМ ТОКЕНЫ ==========
-    logEvent("INFO", "config_validation_start", "admin", "Starting token validation");
-    
-    var validation = validateTokens(botToken, vkUserToken, adminChatId);
-    
+    logEvent('INFO', 'config_validation_start', 'admin', 'Starting token validation');
+
+    const validation = validateTokens(botToken, vkUserToken, adminChatId);
+
     if (!validation.success) {
-      logEvent("WARN", "config_validation_failed", "admin", validation.error);
+      logEvent('WARN', 'config_validation_failed', 'admin', validation.error);
       return { success: false, error: validation.error };
     }
-    
+
     // ========== 3. СОХРАНЯЕМ КОНФИГ ==========
-    var props = PropertiesService.getScriptProperties();
-    
+    const props = PropertiesService.getScriptProperties();
+
     props.setProperties({
-      "BOT_TOKEN": botToken,
-      "VK_USER_ACCESS_TOKEN": vkUserToken,
-      "ADMIN_CHAT_ID": adminChatId
+      'BOT_TOKEN': botToken,
+      'VK_USER_ACCESS_TOKEN': vkUserToken,
+      'ADMIN_CHAT_ID': adminChatId
     });
-    
-    logEvent("INFO", "config_updated", "admin", "Server configuration updated and validated");
-    
-    return { 
-      success: true, 
-      validation: validation.details 
+
+    logEvent('INFO', 'config_updated', 'admin', 'Server configuration updated and validated');
+
+    return {
+      success: true,
+      validation: validation.details
     };
-    
+
   } catch (error) {
-    logEvent("ERROR", "config_save_failed", "admin", error.message);
+    logEvent('ERROR', 'config_save_failed', 'admin', error.message);
     return { success: false, error: error.message };
   }
 }
 
+/**
+ *
+ * @param botToken
+ * @param vkUserToken
+ * @param adminChatId
+ */
 function validateTokens(botToken, vkUserToken, adminChatId) {
-  var results = {
+  const results = {
     telegram: { status: '❌', message: 'Не проверен' },
     vkUser: { status: '❌', message: 'Не проверен' },
     adminChat: { status: '❌', message: 'Не проверен' }
   };
-  
+
   try {
     // 1. Проверяем Telegram Bot Token
-    logEvent("DEBUG", "validating_telegram_token", "admin", "Testing Telegram Bot API");
-    
+    logEvent('DEBUG', 'validating_telegram_token', 'admin', 'Testing Telegram Bot API');
+
     try {
-      var tgResponse = UrlFetchApp.fetch(`https://api.telegram.org/bot${botToken}/getMe`, {
+      const tgResponse = UrlFetchApp.fetch(`https://api.telegram.org/bot${botToken}/getMe`, {
         muteHttpExceptions: true,
         timeout: 10000
       });
-      
-      var tgData = JSON.parse(tgResponse.getContentText());
-      
+
+      const tgData = JSON.parse(tgResponse.getContentText());
+
       if (tgData.ok) {
-        results.telegram = { 
-          status: '✅', 
-          message: `Бот: @${tgData.result.username}` 
+        results.telegram = {
+          status: '✅',
+          message: `Бот: @${tgData.result.username}`
         };
-        logEvent("INFO", "telegram_token_valid", "admin", `Bot: @${tgData.result.username}`);
+        logEvent('INFO', 'telegram_token_valid', 'admin', `Bot: @${tgData.result.username}`);
       } else {
-        results.telegram = { 
-          status: '❌', 
-          message: `Ошибка: ${tgData.description}` 
+        results.telegram = {
+          status: '❌',
+          message: `Ошибка: ${tgData.description}`
         };
-        logEvent("WARN", "telegram_token_invalid", "admin", tgData.description);
+        logEvent('WARN', 'telegram_token_invalid', 'admin', tgData.description);
       }
     } catch (tgError) {
-      results.telegram = { 
-        status: '❌', 
-        message: `Сетевая ошибка: ${tgError.message}` 
+      results.telegram = {
+        status: '❌',
+        message: `Сетевая ошибка: ${tgError.message}`
       };
     }
-    
+
     // 2. Проверяем VK User Token
-    logEvent("DEBUG", "validating_vk_user_token", "admin", "Testing VK User Token");
-    
+    logEvent('DEBUG', 'validating_vk_user_token', 'admin', 'Testing VK User Token');
+
     try {
-      var vkUserResponse = UrlFetchApp.fetch(
+      const vkUserResponse = UrlFetchApp.fetch(
         `https://api.vk.com/method/users.get?v=${VK_API_VERSION}&access_token=${vkUserToken}`,
         {
           muteHttpExceptions: true,
           timeout: 10000
         }
       );
-      
-      var vkUserData = JSON.parse(vkUserResponse.getContentText());
-      
+
+      const vkUserData = JSON.parse(vkUserResponse.getContentText());
+
       if (vkUserData.response && vkUserData.response.length > 0) {
-        var user = vkUserData.response[0];
+        const user = vkUserData.response[0];
         if (user && user.first_name && user.last_name) {
-          results.vkUser = { 
-            status: '✅', 
-            message: `Пользователь: ${user.first_name} ${user.last_name}` 
+          results.vkUser = {
+            status: '✅',
+            message: `Пользователь: ${user.first_name} ${user.last_name}`
           };
-          logEvent("INFO", "vk_user_token_valid", "admin", `User: ${user.first_name} ${user.last_name}`);
+          logEvent('INFO', 'vk_user_token_valid', 'admin', `User: ${user.first_name} ${user.last_name}`);
         } else {
-          results.vkUser = { 
-            status: '❌', 
-            message: 'VK API: Некорректные данные пользователя' 
+          results.vkUser = {
+            status: '❌',
+            message: 'VK API: Некорректные данные пользователя'
           };
-          logEvent("WARN", "vk_user_data_incomplete", "admin", "User data is incomplete or missing");
+          logEvent('WARN', 'vk_user_data_incomplete', 'admin', 'User data is incomplete or missing');
         }
       } else if (vkUserData.error) {
         // Детализированная обработка ошибок VK API
-        var vkErrorMessage = vkUserData.error.error_msg;
+        let vkErrorMessage = vkUserData.error.error_msg;
         if (vkUserData.error.error_code === 4) {
           vkErrorMessage = 'Неверный или истёкший User Access Token. Получите новый токен с правами wall, offline';
         } else if (vkUserData.error.error_code === 5) {
           vkErrorMessage = 'User Access Token не имеет необходимых прав. Нужны права: wall, offline';
         }
-        
-        results.vkUser = { 
-          status: '❌', 
-          message: `VK API: ${vkErrorMessage} (код ${vkUserData.error.error_code})` 
+
+        results.vkUser = {
+          status: '❌',
+          message: `VK API: ${vkErrorMessage} (код ${vkUserData.error.error_code})`
         };
-        logEvent("WARN", "vk_user_token_invalid", "admin", `Error code ${vkUserData.error.error_code}: ${vkErrorMessage}`);
+        logEvent('WARN', 'vk_user_token_invalid', 'admin', `Error code ${vkUserData.error.error_code}: ${vkErrorMessage}`);
       }
     } catch (vkUserError) {
-      results.vkUser = { 
-        status: '❌', 
-        message: `Сетевая ошибка: ${vkUserError.message}` 
+      results.vkUser = {
+        status: '❌',
+        message: `Сетевая ошибка: ${vkUserError.message}`
       };
     }
-    
+
     // 4. Проверяем Admin Chat ID (сначала получаем информацию о чате)
     if (results.telegram.status === '✅') {
-      logEvent("DEBUG", "validating_admin_chat", "admin", `Testing Admin Chat ID: ${adminChatId}`);
-      
+      logEvent('DEBUG', 'validating_admin_chat', 'admin', `Testing Admin Chat ID: ${adminChatId}`);
+
       try {
-        var adminTestResponse = UrlFetchApp.fetch(
+        const adminTestResponse = UrlFetchApp.fetch(
           `https://api.telegram.org/bot${botToken}/getChat?chat_id=${encodeURIComponent(adminChatId)}`,
           {
             method: 'GET',
@@ -403,18 +433,18 @@ function validateTokens(botToken, vkUserToken, adminChatId) {
             timeout: 10000
           }
         );
-        
-        var adminTestData = JSON.parse(adminTestResponse.getContentText());
-        
+
+        const adminTestData = JSON.parse(adminTestResponse.getContentText());
+
         if (adminTestData.ok) {
-          results.adminChat = { 
-            status: '✅', 
-            message: 'Тестовое сообщение отправлено' 
+          results.adminChat = {
+            status: '✅',
+            message: 'Тестовое сообщение отправлено'
           };
-          logEvent("INFO", "admin_chat_valid", "admin", `Chat ID: ${adminChatId}`);
+          logEvent('INFO', 'admin_chat_valid', 'admin', `Chat ID: ${adminChatId}`);
         } else {
           // Более детальная обработка ошибок Telegram
-          var adminErrorMessage = adminTestData.description || 'Неизвестная ошибка';
+          let adminErrorMessage = adminTestData.description || 'Неизвестная ошибка';
           if (adminErrorMessage.includes('chat not found')) {
             adminErrorMessage = 'Чат не найден. Проверьте Chat ID или добавьте бота в канал/группу';
           } else if (adminErrorMessage.includes('bot was blocked')) {
@@ -422,31 +452,31 @@ function validateTokens(botToken, vkUserToken, adminChatId) {
           } else if (adminErrorMessage.includes('not enough rights')) {
             adminErrorMessage = 'Недостаточно прав для отправки сообщений';
           }
-          
-          results.adminChat = { 
-            status: '❌', 
-            message: `Ошибка: ${adminErrorMessage}` 
+
+          results.adminChat = {
+            status: '❌',
+            message: `Ошибка: ${adminErrorMessage}`
           };
-          logEvent("WARN", "admin_chat_invalid", "admin", `Chat ID: ${adminChatId}, Error: ${adminErrorMessage}`);
+          logEvent('WARN', 'admin_chat_invalid', 'admin', `Chat ID: ${adminChatId}, Error: ${adminErrorMessage}`);
         }
       } catch (adminError) {
-        results.adminChat = { 
-          status: '❌', 
-          message: `Сетевая ошибка: ${adminError.message}` 
+        results.adminChat = {
+          status: '❌',
+          message: `Сетевая ошибка: ${adminError.message}`
         };
       }
     } else {
-      results.adminChat = { 
-        status: '⚠️', 
-        message: 'Пропущено (Bot Token неверен)' 
+      results.adminChat = {
+        status: '⚠️',
+        message: 'Пропущено (Bot Token неверен)'
       };
     }
-    
+
     // Проверяем, все ли токены валидны
-    var allValid = Object.values(results).every(r => r.status === '✅');
-    var partialValid = Object.values(results).some(r => r.status === '✅');
-    
-    var message = '';
+    const allValid = Object.values(results).every(r => r.status === '✅');
+    const partialValid = Object.values(results).some(r => r.status === '✅');
+
+    let message = '';
     if (allValid) {
       message = '✅ Все токены настроены корректно!';
     } else if (partialValid) {
@@ -454,20 +484,20 @@ function validateTokens(botToken, vkUserToken, adminChatId) {
     } else {
       message = '❌ Ни один токен не работает корректно!';
     }
-    
-    logEvent("INFO", "token_validation_complete", "admin", message);
-    
+
+    logEvent('INFO', 'token_validation_complete', 'admin', message);
+
     return {
       success: allValid || partialValid, // Считаем успехом если хотя бы что-то работает
       error: allValid ? null : message,
       details: results
     };
-    
+
   } catch (error) {
-    logEvent("ERROR", "token_validation_error", "admin", error.message);
+    logEvent('ERROR', 'token_validation_error', 'admin', error.message);
     return {
       success: false,
-      error: "Ошибка проверки токенов: " + error.message,
+      error: 'Ошибка проверки токенов: ' + error.message,
       details: results
     };
   }
@@ -478,70 +508,82 @@ function validateTokens(botToken, vkUserToken, adminChatId) {
 // 2. ПРОВЕРКА СОСТОЯНИЯ СЕРВЕРА
 // ============================================
 
+/**
+ *
+ */
 function checkServerHealth() {
   try {
-    var healthData = getServerHealthData();
-    var htmlContent = getServerHealthHtml(healthData);
-    
+    const healthData = getServerHealthData();
+    const htmlContent = getServerHealthHtml(healthData);
+
     if (!htmlContent) {
-      throw new Error("Failed to generate health check HTML");
+      throw new Error('Failed to generate health check HTML');
     }
-    
-    var html = HtmlService.createHtmlOutput(htmlContent);
+
+    const html = HtmlService.createHtmlOutput(htmlContent);
     html.setWidth(800).setHeight(700);
-    
+
     SpreadsheetApp.getUi()
-      .showModelessDialog(html, "🔧 Состояние сервера");
-      
+      .showModelessDialog(html, '🔧 Состояние сервера');
+
   } catch (error) {
-    logEvent("ERROR", "health_check_error", "system", error.message);
-    SpreadsheetApp.getUi().alert("❌ Ошибка проверки состояния: " + error.message);
+    logEvent('ERROR', 'health_check_error', 'system', error.message);
+    SpreadsheetApp.getUi().alert('❌ Ошибка проверки состояния: ' + error.message);
   }
 }
 
+/**
+ *
+ */
 function getServerHealthData() {
-  var props = PropertiesService.getScriptProperties();
-  var serverUrl = ScriptApp.getService().getUrl();
-  
-  var config = {
-    BOT_TOKEN: props.getProperty("BOT_TOKEN"),
-    VK_USER_ACCESS_TOKEN: props.getProperty("VK_USER_ACCESS_TOKEN"),
-    ADMIN_CHAT_ID: props.getProperty("ADMIN_CHAT_ID")
+  const props = PropertiesService.getScriptProperties();
+  const serverUrl = ScriptApp.getService().getUrl();
+
+  const config = {
+    BOT_TOKEN: props.getProperty('BOT_TOKEN'),
+    VK_USER_ACCESS_TOKEN: props.getProperty('VK_USER_ACCESS_TOKEN'),
+    ADMIN_CHAT_ID: props.getProperty('ADMIN_CHAT_ID')
   };
-  
-  logEvent("DEBUG", "health_check_config", "system", 
+
+  logEvent('DEBUG', 'health_check_config', 'system',
            `Tokens found - Bot: ${!!config.BOT_TOKEN}, VK User: ${!!config.VK_USER_ACCESS_TOKEN}, Admin: ${!!config.ADMIN_CHAT_ID}`);
-  
-  var configStatus = {
+
+  const configStatus = {
     hasAllTokens: !!(config.BOT_TOKEN && config.VK_USER_ACCESS_TOKEN && config.ADMIN_CHAT_ID),
     missingTokens: []
   };
-  
-  if (!config.BOT_TOKEN) configStatus.missingTokens.push("Telegram Bot Token");
-  if (!config.VK_USER_ACCESS_TOKEN) configStatus.missingTokens.push("VK User Token");
-  if (!config.ADMIN_CHAT_ID) configStatus.missingTokens.push("Admin Chat ID");
-  
+
+  if (!config.BOT_TOKEN) {
+configStatus.missingTokens.push('Telegram Bot Token');
+}
+  if (!config.VK_USER_ACCESS_TOKEN) {
+configStatus.missingTokens.push('VK User Token');
+}
+  if (!config.ADMIN_CHAT_ID) {
+configStatus.missingTokens.push('Admin Chat ID');
+}
+
   // Проверяем листы
-  var sheetsStatus = {
-    licenses: checkSheetExists("Licenses"),
-    bindings: checkSheetExists("Bindings"),
-    logs: checkSheetExists("Logs")
+  const sheetsStatus = {
+    licenses: checkSheetExists('Licenses'),
+    bindings: checkSheetExists('Bindings'),
+    logs: checkSheetExists('Logs')
   };
-  
+
   // Тестируем API эндпоинт (с таймаутом)
-  var endpointStatus = testServerEndpointQuick();
-  
+  const endpointStatus = testServerEndpointQuick();
+
   // Общий статус
-  var isHealthy = configStatus.hasAllTokens && 
-                   sheetsStatus.licenses && 
-                   sheetsStatus.bindings && 
+  const isHealthy = configStatus.hasAllTokens &&
+                   sheetsStatus.licenses &&
+                   sheetsStatus.bindings &&
                    sheetsStatus.logs &&
                    endpointStatus.working;
-  
+
   return {
     serverUrl: serverUrl,
     isHealthy: isHealthy,
-    status: isHealthy ? "✅ ГОТОВ К РАБОТЕ" : "⚠️ ТРЕБУЕТ НАСТРОЙКИ",
+    status: isHealthy ? '✅ ГОТОВ К РАБОТЕ' : '⚠️ ТРЕБУЕТ НАСТРОЙКИ',
     config: configStatus,
     sheets: sheetsStatus,
     endpoint: endpointStatus,
@@ -550,55 +592,64 @@ function getServerHealthData() {
   };
 }
 
+/**
+ *
+ * @param bindingId
+ * @param licenseKey
+ */
 function findBindingById(bindingId, licenseKey) {
   try {
-    var sheet = getSheet("Bindings");
-    var data = sheet.getDataRange().getValues();
-    
+    const sheet = getSheet('Bindings');
+    const data = sheet.getDataRange().getValues();
+
     for (let i = 1; i < data.length; i++) {
       if (data[i][0] === bindingId && data[i][1] === licenseKey) {
-        var bindingObject = buildBindingObjectFromRow(data[i]);
+        const bindingObject = buildBindingObjectFromRow(data[i]);
         if (bindingObject) {
           return bindingObject;
         }
       }
     }
-    
+
     return null;
   } catch (error) {
-    logEvent("ERROR", "find_binding_error", "system", error.message);
+    logEvent('ERROR', 'find_binding_error', 'system', error.message);
     return null;
   }
 }
 
+/**
+ *
+ * @param row
+ */
 function buildBindingObjectFromRow(row) {
   if (!row) {
     return null;
   }
-  
-  var bindingId = row[0];
-  var vkGroupUrl = row[3];
-  var tgChatId = row[4];
-  var fallbackContext = {
+
+  const bindingId = row[0];
+  const vkGroupUrl = row[3];
+  const tgChatId = row[4];
+  const fallbackContext = {
     bindingId: bindingId,
     vkGroupUrl: vkGroupUrl,
     processedTgChatId: tgChatId
   };
-  
+
   try {
     fallbackContext.processedVkGroupId = extractVkGroupId(vkGroupUrl);
   } catch (vkError) {
-    fallbackContext.processedVkGroupId = "";
+    fallbackContext.processedVkGroupId = '';
   }
-  
-  var storedBindingNameCell = row[9];
-  var rawBindingName = resolveBindingName(storedBindingNameCell, fallbackContext);
-  var sanitizedBindingName = sanitizeBindingSheetSuffix(rawBindingName);
+
+  const storedBindingNameCell = row[9];
+  const rawBindingName = resolveBindingName(storedBindingNameCell, fallbackContext);
+  const sanitizedBindingName = sanitizeBindingSheetSuffix(rawBindingName);
   migrateLegacyBindingSheets(storedBindingNameCell, sanitizedBindingName);
-  var bindingDescription = sanitizeBindingText(row[10]);
-  var vkGroupId = row[11] || fallbackContext.processedVkGroupId; // Используем сохраненный VK Group ID или извлекаем
-  var sheetName = getPublishedSheetNameFromBindingName(sanitizedBindingName);
-  
+  const bindingDescription = sanitizeBindingText(row[10]);
+  const vkGroupId = row[11] || fallbackContext.processedVkGroupId; // Используем сохраненный VK Group ID или извлекаем
+  const sheetName = getPublishedSheetNameFromBindingName(sanitizedBindingName);
+
   return {
     id: bindingId,
     licenseKey: row[1],
@@ -608,7 +659,7 @@ function buildBindingObjectFromRow(row) {
     status: row[5],
     createdAt: row[6],
     lastCheck: row[7],
-    formatSettings: row[8] || "",
+    formatSettings: row[8] || '',
     bindingName: sanitizedBindingName,
     binding_name: sanitizedBindingName,
     bindingDescription: bindingDescription,
@@ -623,9 +674,13 @@ function buildBindingObjectFromRow(row) {
   };
 }
 
+/**
+ *
+ * @param sheetName
+ */
 function checkSheetExists(sheetName) {
   try {
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
     return !!sheet;
   } catch (error) {
     return false;
@@ -637,43 +692,47 @@ function checkSheetExists(sheetName) {
  */
 function testServerEndpointQuick() {
   try {
-    var serverUrl = ScriptApp.getService().getUrl();
-    
+    const serverUrl = ScriptApp.getService().getUrl();
+
     if (!serverUrl) {
-      return { 
-        working: false, 
-        error: "Не удалось получить URL сервера. Убедитесь что скрипт развернут как Web App." 
+      return {
+        working: false,
+        error: 'Не удалось получить URL сервера. Убедитесь что скрипт развернут как Web App.'
       };
     }
-    
+
     // ✅ КЛЮЧЕВОЕ ИЗМЕНЕНИЕ - просто проверяем что URL существует и содержит /exec
     if (!serverUrl.includes('/exec')) {
-      return { 
-        working: false, 
-        error: "Web App не развернут как /exec. Откройте Deploy → New deployment → Web app" 
+      return {
+        working: false,
+        error: 'Web App не развернут как /exec. Откройте Deploy → New deployment → Web app'
       };
     }
-    
+
     // ✅ НЕ ОТПРАВЛЯЕМ POST самому себе - просто проверяем что URL правильный
     // Если URL содержит /exec - сервер правильно развернут
-    
-    return { 
+
+    return {
       working: true,
-      responseTime: "inline",
-      message: "Сервер развернут как Web App" 
+      responseTime: 'inline',
+      message: 'Сервер развернут как Web App'
     };
-    
+
   } catch (error) {
-    return { 
+    return {
       working: false,
-      error: error.message 
+      error: error.message
     };
   }
 }
 
 
+/**
+ *
+ * @param healthData
+ */
 function getServerHealthHtml(healthData) {
-  var html = '<!DOCTYPE html>\n';
+  let html = '<!DOCTYPE html>\n';
   html += '<html lang="ru">\n';
   html += '<head>\n';
   html += '<meta charset="UTF-8">\n';
@@ -697,23 +756,23 @@ function getServerHealthHtml(healthData) {
   html += '</head>\n';
   html += '<body>\n';
   html += '<div class="container">\n';
-  
+
   html += '<h2>' + escapeHtml(healthData.status) + '</h2>\n';
   html += '<p>VK→Telegram Crossposter Server v' + escapeHtml(healthData.version) + '</p>\n';
   html += '<p><small>Развертывание: ' + escapeHtml(healthData.deploymentDate) + '</small></p>\n';
   html += '<hr>\n';
-  
+
   // ===== URL сервера =====
   html += '<h3>🌐 URL сервера</h3>\n';
   html += '<p><code>' + escapeHtml(healthData.serverUrl) + '</code></p>\n';
   html += '<p><small>Этот URL используется клиентами для подключения к серверу</small></p>\n';
   html += '<hr>\n';
-  
+
   // ===== Конфигурация =====
   html += '<h3>🔧 Конфигурация</h3>\n';
   html += '<table border="1" cellpadding="5" cellspacing="0">\n';
   html += '<tr><td>Все токены настроены</td><td><strong ' + (healthData.config.hasAllTokens ? 'class="success"' : 'class="error"') + '>' + (healthData.config.hasAllTokens ? '✅ Да' : '❌ Нет') + '</strong></td></tr>\n';
-  
+
   if (!healthData.config.hasAllTokens) {
     html += '<tr><td colspan="2"><strong>Отсутствуют токены:</strong><ul>\n';
     healthData.config.missingTokens.forEach(function(token) {
@@ -721,10 +780,10 @@ function getServerHealthHtml(healthData) {
     });
     html += '</ul></td></tr>\n';
   }
-  
+
   html += '</table>\n';
   html += '<hr>\n';
-  
+
   // ===== Структура данных =====
   html += '<h3>📊 Структура данных</h3>\n';
   html += '<table border="1" cellpadding="5" cellspacing="0">\n';
@@ -733,219 +792,226 @@ function getServerHealthHtml(healthData) {
   html += '<tr><td>Лист "Logs"</td><td><strong ' + (healthData.sheets.logs ? 'class="success"' : 'class="error"') + '>' + (healthData.sheets.logs ? '✅ Создан' : '❌ Не создан') + '</strong></td></tr>\n';
   html += '</table>\n';
   html += '<hr>\n';
-  
+
   // ===== API Endpoint =====
   html += '<h3>🚀 API Endpoint</h3>\n';
   html += '<table border="1" cellpadding="5" cellspacing="0">\n';
   html += '<tr><td>Статус сервера</td><td><strong ' + (healthData.endpoint.working ? 'class="success"' : 'class="error"') + '>' + (healthData.endpoint.working ? '✅ Доступен' : '❌ Недоступен') + '</strong></td></tr>\n';
-  
+
   if (healthData.endpoint.working && healthData.endpoint.responseTime) {
     html += '<tr><td>Время ответа</td><td>' + escapeHtml(healthData.endpoint.responseTime) + '</td></tr>\n';
   }
-  
+
   if (!healthData.endpoint.working) {
     html += '<tr><td colspan="2"><strong class="error">❌ Ошибка:</strong> ' + escapeHtml(healthData.endpoint.error) + '</td></tr>\n';
   }
-  
+
   html += '</table>\n';
   html += '<hr>\n';
-  
+
   // ===== Требуемые действия =====
   if (!healthData.isHealthy) {
     html += '<h3>⚠️ Требуется дополнительная настройка</h3>\n';
     html += '<p><strong>Что нужно сделать:</strong></p>\n';
     html += '<ul>\n';
-    
+
     if (!healthData.config.hasAllTokens) {
       html += '<li>1. Заполните все токены в конфигурации</li>\n';
     }
-    
+
     if (!healthData.sheets.licenses || !healthData.sheets.bindings || !healthData.sheets.logs) {
       html += '<li>2. Создайте листы данных (нажмите "1. 🚀 Инициализировать сервер" в меню)</li>\n';
     }
-    
+
     if (!healthData.endpoint.working) {
       html += '<li>3. Проверьте развертывание сервера - используйте Deploy → New deployment → Web app</li>\n';
     }
-    
+
     html += '</ul>\n';
     html += '<p><strong>После исправления:</strong> нажмите "🔄 Обновить проверку"</p>\n';
   } else {
     html += '<h3 class="success">✅ ВСЕ СИСТЕМЫ В НОРМЕ!</h3>\n';
     html += '<p>Сервер полностью настроен и готов к использованию.</p>\n';
   }
-  
+
   html += '<p><button onclick="google.script.run.checkServerHealth(); google.script.host.close();">🔄 Обновить проверку</button></p>\n';
     html += '<p><button onclick="google.script.run.withSuccessHandler(function(result) { alert(\'Логи очищены: \' + result.totalDeleted + \' записей из \' + result.sheetsProcessed + \' листов\'); }).withFailureHandler(function(error) { alert(\'Ошибка: \' + error.message); }).cleanOldLogs();">🧹 Очистить старые логи (>30 дней)</button></p>\n';
 
     html += '</div>\n';
     html += '</body>\n';
     html += '</html>\n';
-  
+
   return html;
 }
-
 
 
 // ============================================
 // 2. ГЛАВНЫЙ API ENDPOINT
 // ============================================
 
+/**
+ *
+ * @param e
+ */
 function doPost(e) {
   try {
     // Проверяем входящие данные
     if (!e || !e.postData || !e.postData.contents) {
-      logEvent("ERROR", "invalid_request_structure", "anonymous", "Missing post data");
+      logEvent('ERROR', 'invalid_request_structure', 'anonymous', 'Missing post data');
       return jsonResponse({
-        success: false, 
-        error: "Invalid request: missing post data"
+        success: false,
+        error: 'Invalid request: missing post data'
       }, 400);
     }
 
-    var clientIp = e.parameter?.clientIp || "unknown";
-    
-    var payload;
+    const clientIp = e.parameter?.clientIp || 'unknown';
+
+    let payload;
     try {
       payload = JSON.parse(e.postData.contents);
     } catch (parseError) {
-      logEvent("ERROR", "json_parse_error", "anonymous", 
+      logEvent('ERROR', 'json_parse_error', 'anonymous',
                `Invalid JSON: ${parseError.message}, Content: ${e.postData.contents.substring(0, 100)}`);
       return jsonResponse({
-        success: false, 
-        error: "Invalid JSON in request body"
+        success: false,
+        error: 'Invalid JSON in request body'
       }, 400);
     }
 
     // Проверяем обязательные поля
     if (!payload.event) {
-      logEvent("WARN", "missing_event_field", payload.license_key || "anonymous", 
+      logEvent('WARN', 'missing_event_field', payload.license_key || 'anonymous',
                `Payload keys: ${Object.keys(payload).join(', ')}`);
       return jsonResponse({
-        success: false, 
-        error: "Missing 'event' field in request"
+        success: false,
+        error: 'Missing \'event\' field in request'
       }, 400);
     }
-    
-    logEvent("DEBUG", "api_request", payload.license_key || "anonymous", 
+
+    logEvent('DEBUG', 'api_request', payload.license_key || 'anonymous',
              `Event: ${payload.event}, IP: ${clientIp}`);
-    
+
     // Безопасное выполнение обработчиков с дополнительной обработкой ошибок
     try {
-      switch(payload.event) {
-        case "check_license":
+      switch (payload.event) {
+        case 'check_license':
           return handleCheckLicense(payload, clientIp);
-        
-        case "get_bindings":
+
+        case 'get_bindings':
           return handleGetBindings(payload, clientIp);
-        
-        case "get_user_bindings_with_names":
+
+        case 'get_user_bindings_with_names':
           return handleGetUserBindingsWithNames(payload, clientIp);
-        
-        case "add_binding":
+
+        case 'add_binding':
           return handleAddBinding(payload, clientIp);
-        
-        case "edit_binding":
+
+        case 'edit_binding':
           return handleEditBinding(payload, clientIp);
-        
-        case "delete_binding":
+
+        case 'delete_binding':
           return handleDeleteBinding(payload, clientIp);
-        
-        case "toggle_binding_status":
+
+        case 'toggle_binding_status':
           return handleToggleBindingStatus(payload, clientIp);
-        
-        case "send_post":
+
+        case 'send_post':
           return handleSendPost(payload, clientIp);
-        
-        case "test_publication":
+
+        case 'test_publication':
           return handleTestPublication(payload, clientIp);
-        
-        case "get_vk_posts":
+
+        case 'get_vk_posts':
           return handleGetVkPosts(payload, clientIp);
-        
-        case "publish_last_post":
+
+        case 'publish_last_post':
           return handlePublishLastPost(payload, clientIp);
-        
-        case "get_global_setting":
+
+        case 'get_global_setting':
           return handleGetGlobalSetting(payload, clientIp);
-        
-        case "set_global_setting":
+
+        case 'set_global_setting':
           return handleSetGlobalSetting(payload, clientIp);
-        
-        case "clean_logs":
+
+        case 'clean_logs':
           return handleCleanLogs(payload, clientIp);
-        
+
         default:
-          logEvent("WARN", "unknown_event", payload.license_key || "anonymous", 
+          logEvent('WARN', 'unknown_event', payload.license_key || 'anonymous',
                    `Unknown event: ${payload.event}, Available events: check_license, get_bindings, add_binding, edit_binding, delete_binding, toggle_binding_status, send_post, test_publication, get_vk_posts, publish_last_post, get_global_setting, set_global_setting, clean_logs`);
           return jsonResponse({
-            success: false, 
+            success: false,
             error: `Unknown event: ${payload.event}`
           }, 400);
       }
     } catch (handlerError) {
-      logEvent("ERROR", "handler_execution_error", payload.license_key || "anonymous", 
+      logEvent('ERROR', 'handler_execution_error', payload.license_key || 'anonymous',
                `Event: ${payload.event}, Handler error: ${handlerError.message}, Stack: ${handlerError.stack?.substring(0, 200)}`);
       return jsonResponse({
-        success: false, 
+        success: false,
         error: `Handler error for event '${payload.event}': ${handlerError.message}`
       }, 500);
     }
-    
+
   } catch (error) {
-    logEvent("ERROR", "api_critical_error", "system", 
+    logEvent('ERROR', 'api_critical_error', 'system',
              `Critical API error: ${error.message}, Stack: ${error.stack?.substring(0, 200)}`);
     return jsonResponse({
-      success: false, 
-      error: "Critical server error: " + error.message
+      success: false,
+      error: 'Critical server error: ' + error.message
     }, 500);
   }
 }
-
 
 
 // ============================================
 // 3. ОБРАБОТЧИКИ API ЗАПРОСОВ
 // ============================================
 
+/**
+ *
+ * @param payload
+ * @param clientIp
+ */
 function handleCheckLicense(payload, clientIp) {
   try {
-    var { license_key } = payload;
-    
+    const { license_key } = payload;
+
     if (!license_key) {
       return jsonResponse({
         success: false,
-        error: "License key required"
+        error: 'License key required'
       }, 400);
     }
-    
-    var license = findLicense(license_key);
-    
+
+    const license = findLicense(license_key);
+
     if (!license) {
-      logEvent("WARN", "license_not_found", license_key, `IP: ${clientIp}`);
+      logEvent('WARN', 'license_not_found', license_key, `IP: ${clientIp}`);
       return jsonResponse({
         success: false,
-        error: "License not found"
+        error: 'License not found'
       }, 404);
     }
-    
-    if (license.status !== "active") {
-      logEvent("WARN", "license_inactive", license_key, `Status: ${license.status}, IP: ${clientIp}`);
+
+    if (license.status !== 'active') {
+      logEvent('WARN', 'license_inactive', license_key, `Status: ${license.status}, IP: ${clientIp}`);
       return jsonResponse({
         success: false,
-        error: "License inactive"
+        error: 'License inactive'
       }, 403);
     }
-    
+
     if (new Date() > new Date(license.expires)) {
-      logEvent("WARN", "license_expired", license_key, `Expires: ${license.expires}, IP: ${clientIp}`);
+      logEvent('WARN', 'license_expired', license_key, `Expires: ${license.expires}, IP: ${clientIp}`);
       return jsonResponse({
         success: false,
-        error: "License expired"
+        error: 'License expired'
       }, 403);
     }
-    
-    logEvent("INFO", "license_check_success", license_key, `IP: ${clientIp}`);
-    
+
+    logEvent('INFO', 'license_check_success', license_key, `IP: ${clientIp}`);
+
     return jsonResponse({
       success: true,
       license: {
@@ -954,87 +1020,105 @@ function handleCheckLicense(payload, clientIp) {
         expires: license.expires
       }
     });
-    
+
   } catch (error) {
-    logEvent("ERROR", "license_check_error", payload.license_key, error.message);
+    logEvent('ERROR', 'license_check_error', payload.license_key, error.message);
     return jsonResponse({ success: false, error: error.message }, 500);
   }
 }
 
+/**
+ *
+ * @param payload
+ * @param clientIp
+ */
 function handleGetBindings(payload, clientIp) {
   try {
-    var { license_key } = payload;
-    
+    const { license_key } = payload;
+
     // Проверяем лицензию
-    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
-    var licenseData = JSON.parse(licenseCheck.getContent());
-    
+    const licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    const licenseData = JSON.parse(licenseCheck.getContent());
+
     if (!licenseData.success) {
       return licenseCheck;
     }
-    
-    var bindings = getUserBindings(license_key);
-    
-    logEvent("INFO", "bindings_retrieved", license_key, `Count: ${bindings.length}, IP: ${clientIp}`);
-    
+
+    const bindings = getUserBindings(license_key);
+
+    logEvent('INFO', 'bindings_retrieved', license_key, `Count: ${bindings.length}, IP: ${clientIp}`);
+
     return jsonResponse({
       success: true,
       bindings: bindings
     });
-    
+
   } catch (error) {
-    logEvent("ERROR", "get_bindings_error", payload.license_key, error.message);
+    logEvent('ERROR', 'get_bindings_error', payload.license_key, error.message);
     return jsonResponse({ success: false, error: error.message }, 500);
   }
 }
 
+/**
+ *
+ * @param payload
+ * @param clientIp
+ */
 function handleGetUserBindingsWithNames(payload, clientIp) {
   try {
-    var { license_key } = payload;
-    
+    const { license_key } = payload;
+
     // Проверяем лицензию
-    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
-    var licenseData = JSON.parse(licenseCheck.getContent());
-    
+    const licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    const licenseData = JSON.parse(licenseCheck.getContent());
+
     if (!licenseData.success) {
       return licenseCheck;
     }
-    
-    var bindings = getUserBindingsWithNames(license_key);
-    
-    logEvent("INFO", "bindings_with_names_retrieved", license_key, `Count: ${bindings.length}, IP: ${clientIp}`);
-    
+
+    const bindings = getUserBindingsWithNames(license_key);
+
+    logEvent('INFO', 'bindings_with_names_retrieved', license_key, `Count: ${bindings.length}, IP: ${clientIp}`);
+
     return jsonResponse({
       success: true,
       bindings: bindings
     });
-    
+
   } catch (error) {
-    logEvent("ERROR", "get_bindings_with_names_error", payload.license_key, error.message);
+    logEvent('ERROR', 'get_bindings_with_names_error', payload.license_key, error.message);
     return jsonResponse({ success: false, error: error.message }, 500);
   }
 }
 
+/**
+ *
+ * @param value
+ */
 function sanitizeBindingText(value) {
   if (value === null || value === undefined) {
-    return "";
+    return '';
   }
-  var text = String(value).trim();
+  let text = String(value).trim();
   if (text.length > 250) {
     text = text.substring(0, 250);
   }
   return text;
 }
 
+/**
+ *
+ * @param value
+ */
 function normalizeTgBindingLabel(value) {
-  var text = sanitizeBindingText(value);
+  const text = sanitizeBindingText(value);
   if (!text) {
-    return "";
+    return '';
   }
   if (/^-?\d+$/.test(text)) {
     return text;
   }
-  var urlMatch = text.match(/t\.me\/([^/?#]+)/i);
+  const urlMatch = text.match(/t\.me\/([^/?#]+)/i);
   if (urlMatch && urlMatch[1]) {
     return '@' + urlMatch[1];
   }
@@ -1044,69 +1128,87 @@ function normalizeTgBindingLabel(value) {
   return '@' + text.replace(/^@/, '');
 }
 
+/**
+ *
+ * @param context
+ */
 function getVkLabelFromContext(context) {
   if (!context) {
-    return "";
+    return '';
   }
-  var url = sanitizeBindingText(context.vkGroupUrl);
+  const url = sanitizeBindingText(context.vkGroupUrl);
   if (url) {
-    var screenMatch = url.match(/vk\.com\/([^/?#]+)/i);
+    const screenMatch = url.match(/vk\.com\/([^/?#]+)/i);
     if (screenMatch && screenMatch[1]) {
       return screenMatch[1];
     }
-    var idMatch = url.match(/(public|club)(\d+)/i);
+    const idMatch = url.match(/(public|club)(\d+)/i);
     if (idMatch && idMatch[0]) {
       return idMatch[0];
     }
   }
-  var processed = sanitizeBindingText(context.processedVkGroupId || context.vkGroupId);
+  const processed = sanitizeBindingText(context.processedVkGroupId || context.vkGroupId);
   if (processed) {
     return processed;
   }
-  return "";
+  return '';
 }
 
+/**
+ *
+ * @param context
+ */
 function deriveBindingFallbackName(context) {
-  var vkLabel = getVkLabelFromContext(context);
-  var tgLabel = normalizeTgBindingLabel(context ? (context.processedTgChatId || context.tgChatId || context.tgChatUrl) : "");
+  let vkLabel = getVkLabelFromContext(context);
+  let tgLabel = normalizeTgBindingLabel(context ? (context.processedTgChatId || context.tgChatId || context.tgChatUrl) : '');
   if (!vkLabel && context && context.bindingId) {
     vkLabel = context.bindingId.substring(0, 6);
   }
   if (!vkLabel) {
-    vkLabel = "VK";
+    vkLabel = 'VK';
   }
   if (!tgLabel) {
-    tgLabel = "Telegram";
+    tgLabel = 'Telegram';
   }
-  return vkLabel + " → " + tgLabel;
+  return vkLabel + ' → ' + tgLabel;
 }
 
+/**
+ *
+ * @param name
+ */
 function sanitizeBindingSheetSuffix(name) {
-  var base = sanitizeBindingText(name);
+  let base = sanitizeBindingText(name);
   if (!base) {
-    base = "Binding";
+    base = 'Binding';
   }
-  var cleaned = base
+  let cleaned = base
     .replace(/[^a-zA-Z0-9а-яА-ЯёЁ]/g, '');
   if (!cleaned) {
-    cleaned = "Binding";
+    cleaned = 'Binding';
   }
   return cleaned.substring(0, 30);
 }
 
+/**
+ *
+ * @param bindingName
+ * @param bindingDescription
+ * @param context
+ */
 function normalizeBindingMetadata(bindingName, bindingDescription, context) {
-  var normalizedName = sanitizeBindingText(bindingName);
-  var normalizedDescription = sanitizeBindingText(bindingDescription);
-  var effectiveName = normalizedName || deriveBindingFallbackName(context);
+  const normalizedName = sanitizeBindingText(bindingName);
+  const normalizedDescription = sanitizeBindingText(bindingDescription);
+  let effectiveName = normalizedName || deriveBindingFallbackName(context);
   if (!effectiveName) {
-    effectiveName = context && context.bindingId ? "Binding" + context.bindingId.substring(0, 8) : "Binding";
+    effectiveName = context && context.bindingId ? 'Binding' + context.bindingId.substring(0, 8) : 'Binding';
   }
-  var sheetSuffix = sanitizeBindingSheetSuffix(effectiveName);
-  if (!normalizedName && sheetSuffix === "Binding" && context && context.bindingId) {
-    effectiveName = "Binding" + context.bindingId.substring(0, 8);
+  let sheetSuffix = sanitizeBindingSheetSuffix(effectiveName);
+  if (!normalizedName && sheetSuffix === 'Binding' && context && context.bindingId) {
+    effectiveName = 'Binding' + context.bindingId.substring(0, 8);
     sheetSuffix = sanitizeBindingSheetSuffix(effectiveName);
   }
-  var strictName = sheetSuffix;
+  const strictName = sheetSuffix;
   return {
     name: strictName,
     description: normalizedDescription,
@@ -1116,34 +1218,52 @@ function normalizeBindingMetadata(bindingName, bindingDescription, context) {
   };
 }
 
+/**
+ *
+ * @param storedName
+ * @param context
+ */
 function resolveBindingName(storedName, context) {
-  var normalizedStored = sanitizeBindingText(storedName);
+  const normalizedStored = sanitizeBindingText(storedName);
   if (normalizedStored) {
     return sanitizeBindingSheetSuffix(normalizedStored);
   }
   return normalizeBindingMetadata(null, null, context).name;
 }
 
+/**
+ *
+ * @param suffix
+ */
 function getPublishedSheetNameFromSuffix(suffix) {
   return suffix;
 }
 
+/**
+ *
+ * @param bindingName
+ */
 function getPublishedSheetNameFromBindingName(bindingName) {
-  var sanitized = sanitizeBindingSheetSuffix(bindingName);
+  const sanitized = sanitizeBindingSheetSuffix(bindingName);
   if (!validateBindingName(sanitized)) {
-    throw new Error("Unable to resolve binding sheet name: invalid characters after sanitization");
+    throw new Error('Unable to resolve binding sheet name: invalid characters after sanitization');
   }
   return getPublishedSheetNameFromSuffix(sanitized);
 }
 
+/**
+ *
+ * @param oldName
+ * @param newName
+ */
 function renameBindingArtifacts(oldName, newName) {
-  var oldSuffix = sanitizeBindingSheetSuffix(oldName);
-  var newSuffix = sanitizeBindingSheetSuffix(newName);
+  const oldSuffix = sanitizeBindingSheetSuffix(oldName);
+  const newSuffix = sanitizeBindingSheetSuffix(newName);
   if (oldSuffix === newSuffix) {
     return;
   }
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var mappings = [
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const mappings = [
     { from: 'Published_' + oldSuffix, to: newSuffix },
     { from: oldSuffix, to: newSuffix },
     { from: 'Log_' + oldSuffix, to: 'Log_' + newSuffix },
@@ -1151,68 +1271,81 @@ function renameBindingArtifacts(oldName, newName) {
   ];
   mappings.forEach(function(mapping) {
     try {
-      var oldSheet = ss.getSheetByName(mapping.from);
+      const oldSheet = ss.getSheetByName(mapping.from);
       if (!oldSheet) {
         return;
       }
-      var existing = ss.getSheetByName(mapping.to);
+      const existing = ss.getSheetByName(mapping.to);
       if (existing && existing.getSheetId() === oldSheet.getSheetId()) {
         return;
       }
       if (existing && existing.getSheetId() !== oldSheet.getSheetId()) {
-        logEvent("WARN", "binding_sheet_rename_conflict", "server",
-          "Skipping rename " + mapping.from + " -> " + mapping.to + ": target already exists");
+        logEvent('WARN', 'binding_sheet_rename_conflict', 'server',
+          'Skipping rename ' + mapping.from + ' -> ' + mapping.to + ': target already exists');
         return;
       }
       oldSheet.setName(mapping.to);
-      logEvent("INFO", "binding_sheet_renamed", "server",
-        mapping.from + " -> " + mapping.to);
+      logEvent('INFO', 'binding_sheet_renamed', 'server',
+        mapping.from + ' -> ' + mapping.to);
     } catch (renameError) {
-      logEvent("WARN", "binding_sheet_rename_failed", "server",
-        "Failed to rename " + mapping.from + " -> " + mapping.to + ": " + renameError.message);
+      logEvent('WARN', 'binding_sheet_rename_failed', 'server',
+        'Failed to rename ' + mapping.from + ' -> ' + mapping.to + ': ' + renameError.message);
     }
   });
 }
 
+/**
+ *
+ * @param name
+ */
 function legacySanitizeBindingSheetSuffix(name) {
-  var base = sanitizeBindingText(name);
+  let base = sanitizeBindingText(name);
   if (!base) {
-    base = "Binding";
+    base = 'Binding';
   }
-  var safe = base
+  let safe = base
     .replace(/[^\w\s\-_а-яА-ЯёЁ]/g, '')
     .replace(/\s+/g, '_')
     .substring(0, 27);
   if (!safe) {
-    safe = "Binding";
+    safe = 'Binding';
   }
   return safe;
 }
 
+/**
+ *
+ * @param rawName
+ * @param sanitizedName
+ */
 function migrateLegacyBindingSheets(rawName, sanitizedName) {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var legacyCandidates = [];
-    var legacySuffixFromRaw = legacySanitizeBindingSheetSuffix(rawName);
-    var legacySuffixFromSanitized = legacySanitizeBindingSheetSuffix(sanitizedName);
-    var sanitized = sanitizeBindingSheetSuffix(sanitizedName);
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const legacyCandidates = [];
+    const legacySuffixFromRaw = legacySanitizeBindingSheetSuffix(rawName);
+    const legacySuffixFromSanitized = legacySanitizeBindingSheetSuffix(sanitizedName);
+    const sanitized = sanitizeBindingSheetSuffix(sanitizedName);
     legacyCandidates.push('Published_' + legacySuffixFromRaw);
     legacyCandidates.push(legacySuffixFromRaw);
     legacyCandidates.push('Published_' + legacySuffixFromSanitized);
     legacyCandidates.push(legacySuffixFromSanitized);
     legacyCandidates.push('Published_' + sanitized);
-    var uniqueCandidates = legacyCandidates
-      .filter(function(name) { return name && name !== sanitized; })
-      .filter(function(value, index, self) { return self.indexOf(value) === index; });
+    const uniqueCandidates = legacyCandidates
+      .filter(function(name) {
+ return name && name !== sanitized;
+})
+      .filter(function(value, index, self) {
+ return self.indexOf(value) === index;
+});
     uniqueCandidates.forEach(function(oldSheetName) {
       try {
-        var oldSheet = ss.getSheetByName(oldSheetName);
+        const oldSheet = ss.getSheetByName(oldSheetName);
         if (!oldSheet) {
           return;
         }
-        var existing = ss.getSheetByName(sanitized);
+        const existing = ss.getSheetByName(sanitized);
         if (existing && existing.getSheetId() !== oldSheet.getSheetId()) {
-          logEvent("WARN", "binding_sheet_migration_conflict", "server",
+          logEvent('WARN', 'binding_sheet_migration_conflict', 'server',
             `Cannot rename ${oldSheetName} to ${sanitized}: destination already exists`);
           return;
         }
@@ -1220,94 +1353,99 @@ function migrateLegacyBindingSheets(rawName, sanitizedName) {
           return;
         }
         oldSheet.setName(sanitized);
-        logEvent("INFO", "binding_sheet_migrated", "server",
+        logEvent('INFO', 'binding_sheet_migrated', 'server',
           `Legacy sheet ${oldSheetName} renamed to ${sanitized}`);
       } catch (innerError) {
-        logEvent("WARN", "binding_sheet_migration_failed", "server",
+        logEvent('WARN', 'binding_sheet_migration_failed', 'server',
           `Failed to migrate sheet ${oldSheetName} -> ${sanitized}: ${innerError.message}`);
       }
     });
   } catch (migrationError) {
-    logEvent("WARN", "binding_sheet_migration_error", "server",
+    logEvent('WARN', 'binding_sheet_migration_error', 'server',
       `Migration failed for binding "${rawName}" -> "${sanitizedName}": ${migrationError.message}`);
   }
 }
 
+/**
+ *
+ * @param payload
+ * @param clientIp
+ */
 function handleAddBinding(payload, clientIp) {
   try {
-    var { license_key, vk_group_url, tg_chat_id, formatSettings, binding_name, binding_description } = payload;
-    
+    const { license_key, vk_group_url, tg_chat_id, formatSettings, binding_name, binding_description } = payload;
+
     // Проверяем лицензию
-    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
-    var licenseData = JSON.parse(licenseCheck.getContent());
-    
+    const licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    const licenseData = JSON.parse(licenseCheck.getContent());
+
     if (!licenseData.success) {
       return licenseCheck;
     }
-    
+
     // Проверяем лимит
-    var currentBindings = getUserBindings(license_key);
+    const currentBindings = getUserBindings(license_key);
     if (currentBindings.length >= licenseData.license.maxGroups) {
       return jsonResponse({
         success: false,
-        error: "Max groups limit exceeded"
+        error: 'Max groups limit exceeded'
       }, 429);
     }
-    
+
     // УНИВЕРСАЛЬНОЕ ПРЕОБРАЗОВАНИЕ ССЫЛОК В ID
-    var processedVkGroupId;
-    var processedTgChatId;
-    
+    let processedVkGroupId;
+    let processedTgChatId;
+
     try {
       // Извлекаем ID ВК группы из ссылки
       processedVkGroupId = extractVkGroupId(vk_group_url);
-      
+
       // Если extractVkGroupId вернул null (screen_name), резолвим через API
       if (!processedVkGroupId) {
-        var screenName = vk_group_url.replace(/^https?:\/\/vk\.com\//i, '').split('/')[0].split('?')[0].split('#')[0];
+        const screenName = vk_group_url.replace(/^https?:\/\/vk\.com\//i, '').split('/')[0].split('?')[0].split('#')[0];
         processedVkGroupId = resolveVkScreenName(screenName);
       }
-      
+
       if (!processedVkGroupId) {
-        throw new Error("Не удалось определить VK Group ID");
+        throw new Error('Не удалось определить VK Group ID');
       }
-      
-      logEvent("INFO", "vk_url_converted", license_key, `${vk_group_url} -> ${processedVkGroupId}`);
+
+      logEvent('INFO', 'vk_url_converted', license_key, `${vk_group_url} -> ${processedVkGroupId}`);
     } catch (error) {
       return jsonResponse({
         success: false,
         error: `❌ Ошибка в ВК ссылке: ${error.message}`
       }, 400);
     }
-    
+
     try {
       // Извлекаем chat_id Telegram канала
       processedTgChatId = extractTelegramChatId(tg_chat_id);
-      logEvent("INFO", "tg_url_converted", license_key, `${tg_chat_id} -> ${processedTgChatId}`);
+      logEvent('INFO', 'tg_url_converted', license_key, `${tg_chat_id} -> ${processedTgChatId}`);
     } catch (error) {
       return jsonResponse({
         success: false,
         error: `Ошибка в Telegram ссылке: ${error.message}`
       }, 400);
     }
-    
+
     // Создаем новую связку с обработанными ID
-    var bindingId = generateBindingId();
-    var license = findLicense(license_key);
-    
+    const bindingId = generateBindingId();
+    const license = findLicense(license_key);
+
     // Обработка formatSettings
-    var formatSettingsString = "";
-    if (formatSettings && typeof formatSettings === "object") {
+    let formatSettingsString = '';
+    if (formatSettings && typeof formatSettings === 'object') {
       try {
         formatSettingsString = JSON.stringify(formatSettings);
-        logEvent("DEBUG", "format_settings_stored", license_key, 
+        logEvent('DEBUG', 'format_settings_stored', license_key,
                  `Binding ${bindingId}: ${formatSettingsString}`);
       } catch (e) {
-        logEvent("WARN", "format_settings_json_error", license_key, e.message);
+        logEvent('WARN', 'format_settings_json_error', license_key, e.message);
       }
     }
 
-    var normalizedBinding = normalizeBindingMetadata(binding_name, binding_description, {
+    const normalizedBinding = normalizeBindingMetadata(binding_name, binding_description, {
       bindingId: bindingId,
       vkGroupUrl: vk_group_url,
       processedVkGroupId: processedVkGroupId,
@@ -1315,18 +1453,18 @@ function handleAddBinding(payload, clientIp) {
     });
 
     if (normalizedBinding.fallbackApplied) {
-      logEvent("INFO", "binding_name_fallback_applied", license_key,
+      logEvent('INFO', 'binding_name_fallback_applied', license_key,
                `Binding ${bindingId}: generated fallback name "${normalizedBinding.name}"`);
     }
 
-    var bindingsSheet = getSheet("Bindings");
+    const bindingsSheet = getSheet('Bindings');
     bindingsSheet.appendRow([
       bindingId,
       license_key,
       license.email,
       vk_group_url,          // Сохраняем оригинальную ссылку для отображения
       processedTgChatId,     // Сохраняем обработанный chat_id для API
-      "active",
+      'active',
       new Date().toISOString(),
       new Date().toISOString(),
       formatSettingsString,  // Format Settings
@@ -1334,21 +1472,21 @@ function handleAddBinding(payload, clientIp) {
       normalizedBinding.description, // Binding Description
       processedVkGroupId     // VK Group ID
     ]);
-    
+
     // Создаем Published лист для отслеживания постов
     try {
       createPublishedSheet(normalizedBinding.name);
-      logEvent("INFO", "published_sheet_created_for_binding", license_key, 
+      logEvent('INFO', 'published_sheet_created_for_binding', license_key,
                `Created Published sheet for binding: ${normalizedBinding.name}`);
     } catch (sheetError) {
-      logEvent("WARN", "published_sheet_creation_warning", license_key, 
+      logEvent('WARN', 'published_sheet_creation_warning', license_key,
                `Failed to create Published sheet for binding ${bindingId}: ${sheetError.message}`);
       // Не прерываем процесс, так как основная функция выполнена
     }
-    
-    logEvent("INFO", "binding_added", license_key, 
+
+    logEvent('INFO', 'binding_added', license_key,
              `Binding ID: ${bindingId}, Name: ${normalizedBinding.name}, VK: ${vk_group_url} (${processedVkGroupId}), TG: ${processedTgChatId}, IP: ${clientIp}`);
-    
+
     return jsonResponse({
       success: true,
       binding_id: bindingId,
@@ -1359,88 +1497,93 @@ function handleAddBinding(payload, clientIp) {
         tg_chat_id: processedTgChatId
       }
     });
-    
+
   } catch (error) {
-    logEvent("ERROR", "binding_add_error", payload.license_key, error.message);
+    logEvent('ERROR', 'binding_add_error', payload.license_key, error.message);
     return jsonResponse({ success: false, error: error.message }, 500);
   }
 }
 
+/**
+ *
+ * @param payload
+ * @param clientIp
+ */
 function handleEditBinding(payload, clientIp) {
   try {
-    var { license_key, binding_id, vk_group_url, tg_chat_id, formatSettings, binding_name, binding_description } = payload;
-    
+    const { license_key, binding_id, vk_group_url, tg_chat_id, formatSettings, binding_name, binding_description } = payload;
+
     // Проверяем лицензию
-    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
-    var licenseData = JSON.parse(licenseCheck.getContent());
-    
+    const licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    const licenseData = JSON.parse(licenseCheck.getContent());
+
     if (!licenseData.success) {
       return licenseCheck;
     }
-    
+
     // Находим связку
-    var bindingRow = findBindingRowById(binding_id, license_key);
+    const bindingRow = findBindingRowById(binding_id, license_key);
     if (!bindingRow) {
       return jsonResponse({
         success: false,
-        error: "Binding not found"
+        error: 'Binding not found'
       }, 404);
     }
-    
-    var bindingsSheet = getSheet("Bindings");
-    var existingRowValues = bindingsSheet.getRange(bindingRow, 1, 1, 11).getValues()[0];
-    var oldBinding = buildBindingObjectFromRow(existingRowValues);
-    
+
+    const bindingsSheet = getSheet('Bindings');
+    const existingRowValues = bindingsSheet.getRange(bindingRow, 1, 1, 11).getValues()[0];
+    const oldBinding = buildBindingObjectFromRow(existingRowValues);
+
     // УНИВЕРСАЛЬНОЕ ПРЕОБРАЗОВАНИЕ ССЫЛОК В ID
-    var processedVkGroupId;
-    var processedTgChatId;
-    
+    let processedVkGroupId;
+    let processedTgChatId;
+
     try {
       // Извлекаем ID ВК группы из ссылки
       processedVkGroupId = extractVkGroupId(vk_group_url);
-      
+
       // Если extractVkGroupId вернул null (screen_name), резолвим через API
       if (!processedVkGroupId) {
-        var screenName = vk_group_url.replace(/^https?:\/\/vk\.com\//i, '').split('/')[0].split('?')[0].split('#')[0];
+        const screenName = vk_group_url.replace(/^https?:\/\/vk\.com\//i, '').split('/')[0].split('?')[0].split('#')[0];
         processedVkGroupId = resolveVkScreenName(screenName);
       }
-      
+
       if (!processedVkGroupId) {
-        throw new Error("Не удалось определить VK Group ID");
+        throw new Error('Не удалось определить VK Group ID');
       }
-      
-      logEvent("INFO", "vk_url_converted", license_key, `${vk_group_url} -> ${processedVkGroupId}`);
+
+      logEvent('INFO', 'vk_url_converted', license_key, `${vk_group_url} -> ${processedVkGroupId}`);
     } catch (error) {
       return jsonResponse({
         success: false,
         error: `❌ Ошибка в ВК ссылке: ${error.message}`
       }, 400);
     }
-    
+
     try {
       // Извлекаем chat_id Telegram канала
       processedTgChatId = extractTelegramChatId(tg_chat_id);
-      logEvent("INFO", "tg_url_converted", license_key, `${tg_chat_id} -> ${processedTgChatId}`);
+      logEvent('INFO', 'tg_url_converted', license_key, `${tg_chat_id} -> ${processedTgChatId}`);
     } catch (error) {
       return jsonResponse({
         success: false,
         error: `Ошибка в Telegram ссылке: ${error.message}`
       }, 400);
     }
-    
+
     // Обработка formatSettings
-    var formatSettingsString = "";
-    if (formatSettings && typeof formatSettings === "object") {
+    let formatSettingsString = '';
+    if (formatSettings && typeof formatSettings === 'object') {
       try {
         formatSettingsString = JSON.stringify(formatSettings);
-        logEvent("DEBUG", "format_settings_updated", license_key, 
+        logEvent('DEBUG', 'format_settings_updated', license_key,
                  `Binding ${binding_id}: ${formatSettingsString}`);
       } catch (e) {
-        logEvent("WARN", "format_settings_json_error", license_key, e.message);
+        logEvent('WARN', 'format_settings_json_error', license_key, e.message);
       }
     }
 
-    var normalizedBinding = normalizeBindingMetadata(binding_name, binding_description, {
+    const normalizedBinding = normalizeBindingMetadata(binding_name, binding_description, {
       bindingId: binding_id,
       vkGroupUrl: vk_group_url,
       processedVkGroupId: processedVkGroupId,
@@ -1448,7 +1591,7 @@ function handleEditBinding(payload, clientIp) {
     });
 
     if (normalizedBinding.fallbackApplied) {
-      logEvent("INFO", "binding_name_fallback_applied", license_key,
+      logEvent('INFO', 'binding_name_fallback_applied', license_key,
                `Binding ${binding_id}: fallback name "${normalizedBinding.name}" applied on edit`);
     }
 
@@ -1456,7 +1599,7 @@ function handleEditBinding(payload, clientIp) {
     bindingsSheet.getRange(bindingRow, 5).setValue(processedTgChatId); // TG Chat ID (обработанный)
     bindingsSheet.getRange(bindingRow, 8).setValue(new Date().toISOString()); // Last Check
     bindingsSheet.getRange(bindingRow, 9).setValue(formatSettingsString); // Format Settings
-    
+
     bindingsSheet.getRange(bindingRow, 10).setValue(normalizedBinding.name);        // Binding Name
     bindingsSheet.getRange(bindingRow, 11).setValue(normalizedBinding.description); // Binding Description
 
@@ -1466,14 +1609,14 @@ function handleEditBinding(payload, clientIp) {
       }
       createPublishedSheet(normalizedBinding.name);
     } catch (sheetError) {
-      logEvent("WARN", "binding_sheet_update_warning", license_key,
+      logEvent('WARN', 'binding_sheet_update_warning', license_key,
                `Binding ${binding_id}: ${sheetError.message}`);
     }
-    
-    logEvent("INFO", "binding_edited", license_key, 
+
+    logEvent('INFO', 'binding_edited', license_key,
              `Binding ID: ${binding_id}, Name: ${normalizedBinding.name}, VK: ${vk_group_url} (${processedVkGroupId}), TG: ${processedTgChatId}, IP: ${clientIp}`);
-    
-    return jsonResponse({ 
+
+    return jsonResponse({
       success: true,
       binding_name: normalizedBinding.name,
       binding_description: normalizedBinding.description,
@@ -1482,172 +1625,191 @@ function handleEditBinding(payload, clientIp) {
         tg_chat_id: processedTgChatId
       }
     });
-    
+
   } catch (error) {
-    logEvent("ERROR", "binding_edit_error", payload.license_key, error.message);
+    logEvent('ERROR', 'binding_edit_error', payload.license_key, error.message);
     return jsonResponse({ success: false, error: error.message }, 500);
   }
 }
 
 
-
+/**
+ *
+ * @param payload
+ * @param clientIp
+ */
 function handleDeleteBinding(payload, clientIp) {
   try {
-    var { license_key, binding_id } = payload;
-    
+    const { license_key, binding_id } = payload;
+
     // Проверяем лицензию
-    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
-    var licenseData = JSON.parse(licenseCheck.getContent());
-    
+    const licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    const licenseData = JSON.parse(licenseCheck.getContent());
+
     if (!licenseData.success) {
       return licenseCheck;
     }
-    
+
     // Находим и удаляем связку
-    var bindingRow = findBindingRowById(binding_id, license_key);
+    const bindingRow = findBindingRowById(binding_id, license_key);
     if (!bindingRow) {
       return jsonResponse({
         success: false,
-        error: "Binding not found"
+        error: 'Binding not found'
       }, 404);
     }
-    
-    var bindingsSheet = getSheet("Bindings");
+
+    const bindingsSheet = getSheet('Bindings');
     bindingsSheet.deleteRow(bindingRow);
-    
-    logEvent("INFO", "binding_deleted", license_key, 
+
+    logEvent('INFO', 'binding_deleted', license_key,
              `Binding ID: ${binding_id}, IP: ${clientIp}`);
-    
+
     return jsonResponse({ success: true });
-    
+
   } catch (error) {
-    logEvent("ERROR", "binding_delete_error", payload.license_key, error.message);
+    logEvent('ERROR', 'binding_delete_error', payload.license_key, error.message);
     return jsonResponse({ success: false, error: error.message }, 500);
   }
 }
 
+/**
+ *
+ * @param payload
+ * @param clientIp
+ */
 function handleToggleBindingStatus(payload, clientIp) {
   try {
-    var { license_key, binding_id } = payload;
-    
+    const { license_key, binding_id } = payload;
+
     // Проверяем лицензию
-    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
-    var licenseData = JSON.parse(licenseCheck.getContent());
-    
+    const licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    const licenseData = JSON.parse(licenseCheck.getContent());
+
     if (!licenseData.success) {
       return licenseCheck;
     }
-    
+
     // Находим связку
-    var bindingRow = findBindingRowById(binding_id, license_key);
+    const bindingRow = findBindingRowById(binding_id, license_key);
     if (!bindingRow) {
       return jsonResponse({
         success: false,
-        error: "Binding not found"
+        error: 'Binding not found'
       }, 404);
     }
-    
+
     // Переключаем статус
-    var bindingsSheet = getSheet("Bindings");
-    var currentStatus = bindingsSheet.getRange(bindingRow, 6).getValue();
-    var newStatus = currentStatus === "active" ? "paused" : "active";
-    
+    const bindingsSheet = getSheet('Bindings');
+    const currentStatus = bindingsSheet.getRange(bindingRow, 6).getValue();
+    const newStatus = currentStatus === 'active' ? 'paused' : 'active';
+
     bindingsSheet.getRange(bindingRow, 6).setValue(newStatus);
     bindingsSheet.getRange(bindingRow, 8).setValue(new Date().toISOString());
-    
-    logEvent("INFO", "binding_status_changed", license_key, 
+
+    logEvent('INFO', 'binding_status_changed', license_key,
              `Binding ID: ${binding_id}, Status: ${currentStatus} → ${newStatus}, IP: ${clientIp}`);
-    
+
     return jsonResponse({
       success: true,
       new_status: newStatus
     });
-    
+
   } catch (error) {
-    logEvent("ERROR", "binding_status_error", payload.license_key, error.message);
+    logEvent('ERROR', 'binding_status_error', payload.license_key, error.message);
     return jsonResponse({ success: false, error: error.message }, 500);
   }
 }
 
+/**
+ *
+ * @param payload
+ * @param clientIp
+ */
 function handleGetGlobalSetting(payload, clientIp) {
   try {
-    var { license_key, setting_key } = payload;
-    
+    const { license_key, setting_key } = payload;
+
     // Проверяем лицензию
-    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
-    var licenseData = JSON.parse(licenseCheck.getContent());
-    
+    const licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    const licenseData = JSON.parse(licenseCheck.getContent());
+
     if (!licenseData.success) {
       return licenseCheck;
     }
-    
+
     if (!setting_key) {
       return jsonResponse({
         success: false,
-        error: "Setting key required"
+        error: 'Setting key required'
       }, 400);
     }
-    
+
     // Получаем настройку из ScriptProperties
-    var props = PropertiesService.getScriptProperties();
-    var globalSettingKey = `global_${setting_key}`;
-    var value = props.getProperty(globalSettingKey);
-    
-    logEvent("INFO", "global_setting_retrieved", license_key, 
+    const props = PropertiesService.getScriptProperties();
+    const globalSettingKey = `global_${setting_key}`;
+    const value = props.getProperty(globalSettingKey);
+
+    logEvent('INFO', 'global_setting_retrieved', license_key,
              `Setting: ${setting_key}, Value: ${value}, IP: ${clientIp}`);
-    
+
     return jsonResponse({
       success: true,
       value: value
     });
-    
+
   } catch (error) {
-    logEvent("ERROR", "get_global_setting_error", payload.license_key, error.message);
+    logEvent('ERROR', 'get_global_setting_error', payload.license_key, error.message);
     return jsonResponse({ success: false, error: error.message }, 500);
   }
 }
 
+/**
+ *
+ * @param payload
+ * @param clientIp
+ */
 function handleSetGlobalSetting(payload, clientIp) {
   try {
-    var { license_key, setting_key, setting_value } = payload;
-    
+    const { license_key, setting_key, setting_value } = payload;
+
     // Проверяем лицензию
-    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
-    var licenseData = JSON.parse(licenseCheck.getContent());
-    
+    const licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    const licenseData = JSON.parse(licenseCheck.getContent());
+
     if (!licenseData.success) {
       return licenseCheck;
     }
-    
+
     if (!setting_key) {
       return jsonResponse({
         success: false,
-        error: "Setting key required"
+        error: 'Setting key required'
       }, 400);
     }
-    
+
     // Сохраняем настройку в ScriptProperties
-    var props = PropertiesService.getScriptProperties();
-    var globalSettingKey = `global_${setting_key}`;
-    
+    const props = PropertiesService.getScriptProperties();
+    const globalSettingKey = `global_${setting_key}`;
+
     if (setting_value === null || setting_value === undefined) {
       // Удаляем настройку если значение null/undefined
       props.deleteProperty(globalSettingKey);
-      logEvent("INFO", "global_setting_deleted", license_key, 
+      logEvent('INFO', 'global_setting_deleted', license_key,
                `Setting: ${setting_key}, IP: ${clientIp}`);
     } else {
       props.setProperty(globalSettingKey, String(setting_value));
-      logEvent("INFO", "global_setting_saved", license_key, 
+      logEvent('INFO', 'global_setting_saved', license_key,
                `Setting: ${setting_key}, Value: ${setting_value}, IP: ${clientIp}`);
     }
-    
+
     return jsonResponse({
       success: true,
       value: setting_value
     });
-    
+
   } catch (error) {
-    logEvent("ERROR", "set_global_setting_error", payload.license_key, error.message);
+    logEvent('ERROR', 'set_global_setting_error', payload.license_key, error.message);
     return jsonResponse({ success: false, error: error.message }, 500);
   }
 }
@@ -1656,131 +1818,146 @@ function handleSetGlobalSetting(payload, clientIp) {
 // ОБРАБОТЧИК ОЧИСТКИ ЛОГОВ
 // ============================================
 
+/**
+ *
+ * @param payload
+ * @param clientIp
+ */
 function handleCleanLogs(payload, clientIp) {
   try {
-    var { license_key } = payload;
-    
+    const { license_key } = payload;
+
     // Проверяем лицензию
-    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
-    var licenseData = JSON.parse(licenseCheck.getContent());
-    
+    const licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    const licenseData = JSON.parse(licenseCheck.getContent());
+
     if (!licenseData.success) {
       return licenseCheck;
     }
-    
+
     // Вызываем функцию очистки логов
-    var result = cleanOldLogs();
-    
-    logEvent("INFO", "client_logs_cleaned", license_key, 
+    const result = cleanOldLogs();
+
+    logEvent('INFO', 'client_logs_cleaned', license_key,
              `Client requested log cleanup, IP: ${clientIp}, Deleted: ${result.totalDeleted}`);
-    
+
     return jsonResponse(result);
-    
+
   } catch (error) {
-    logEvent("ERROR", "clean_logs_handler_error", payload.license_key, error.message);
+    logEvent('ERROR', 'clean_logs_handler_error', payload.license_key, error.message);
     return jsonResponse({ success: false, error: error.message }, 500);
   }
 }
 
 // Дополнительные обработчики для отправки постов и публикации
 
+/**
+ *
+ * @param payload
+ * @param clientIp
+ */
 function handleSendPost(payload, clientIp) {
   try {
-    var { license_key, binding_id, vk_post } = payload;
-    
+    const { license_key, binding_id, vk_post } = payload;
+
     // Проверяем лицензию
-    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
-    var licenseData = JSON.parse(licenseCheck.getContent());
-    
+    const licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    const licenseData = JSON.parse(licenseCheck.getContent());
+
     if (!licenseData.success) {
       return licenseCheck;
     }
-    
+
     // Проверяем глобальную настройку "disable_all_stores"
-    var props = PropertiesService.getScriptProperties();
-    var disableAllStores = props.getProperty("global_disable_all_stores");
-    
-    if (disableAllStores === "true") {
-      logEvent("INFO", "post_blocked_by_global_setting", license_key, 
-               `Post sending blocked by global disable_all_stores setting`);
+    const props = PropertiesService.getScriptProperties();
+    const disableAllStores = props.getProperty('global_disable_all_stores');
+
+    if (disableAllStores === 'true') {
+      logEvent('INFO', 'post_blocked_by_global_setting', license_key,
+               'Post sending blocked by global disable_all_stores setting');
       return jsonResponse({
         success: false,
-        error: "All stores are globally disabled",
+        error: 'All stores are globally disabled',
         blocked_by_global_setting: true
       }, 403);
     }
 
     // Находим связку
-    var binding = findBindingById(binding_id, license_key);
+    const binding = findBindingById(binding_id, license_key);
     if (!binding) {
       return jsonResponse({
         success: false,
-        error: "Binding not found"
+        error: 'Binding not found'
       }, 404);
     }
-    
-    if (binding.status !== "active") {
+
+    if (binding.status !== 'active') {
       return jsonResponse({
         success: false,
-        error: "Binding is not active"
+        error: 'Binding is not active'
       }, 403);
     }
-    
+
     // Отправляем пост в Telegram с учетом настроек связки
-    var sendResult = sendVkPostToTelegram(binding.tgChatId, vk_post, binding);
-    
+    const sendResult = sendVkPostToTelegram(binding.tgChatId, vk_post, binding);
+
     if (sendResult.success) {
-      logEvent("INFO", "post_sent_successfully", license_key, 
+      logEvent('INFO', 'post_sent_successfully', license_key,
                `Binding ID: ${binding_id}, Post ID: ${vk_post.id}, Message ID: ${sendResult.message_id}, IP: ${clientIp}`);
     } else {
-      logEvent("ERROR", "post_send_failed", license_key, 
+      logEvent('ERROR', 'post_send_failed', license_key,
                `Binding ID: ${binding_id}, Post ID: ${vk_post.id}, Error: ${sendResult.error}, IP: ${clientIp}`);
     }
-    
+
     return jsonResponse(sendResult);
-    
+
   } catch (error) {
-    logEvent("ERROR", "send_post_error", payload.license_key, error.message);
+    logEvent('ERROR', 'send_post_error', payload.license_key, error.message);
     return jsonResponse({ success: false, error: error.message }, 500);
   }
 }
 
+/**
+ *
+ * @param payload
+ * @param clientIp
+ */
 function handleGetVkPosts(payload, clientIp) {
   try {
-    var { license_key, vk_group_id, screen_name, count = 50 } = payload;
-    
+    const { license_key, vk_group_id, screen_name, count = 50 } = payload;
+
     // 1) License check
-    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
-    var licenseData = JSON.parse(licenseCheck.getContent());
+    const licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    const licenseData = JSON.parse(licenseCheck.getContent());
     if (!licenseData.success) {
       return licenseCheck;
     }
 
     // 2) Resolve group id - УНИВЕРСАЛЬНЫЙ ПОДХОД
-    var resolvedGroupId = null;
+    let resolvedGroupId = null;
 
     try {
       // Используем extractVkGroupId для универсального парсинга
       if (vk_group_id) {
         resolvedGroupId = extractVkGroupId(vk_group_id.toString());
-        
+
         // Если extractVkGroupId вернул null (screen_name), резолвим через API
         if (!resolvedGroupId) {
-          var screenName = vk_group_id.toString().replace(/^https?:\/\/vk\.com\//i, '').split('/')[0].split('?')[0].split('#')[0];
+          const screenName = vk_group_id.toString().replace(/^https?:\/\/vk\.com\//i, '').split('/')[0].split('?')[0].split('#')[0];
           resolvedGroupId = resolveVkScreenName(screenName);
         }
       } else if (screen_name && typeof screen_name === 'string' && screen_name.trim()) {
         // Для обратной совместимости поддерживаем параметр screen_name
-        var cleanScreenName = screen_name.trim().replace(/^https?:\/\/vk\.com\//i, '').split('/')[0].split('?')[0].split('#')[0];
+        const cleanScreenName = screen_name.trim().replace(/^https?:\/\/vk\.com\//i, '').split('/')[0].split('?')[0].split('#')[0];
         resolvedGroupId = resolveVkScreenName(cleanScreenName);
       }
 
       if (!resolvedGroupId) {
-        return jsonResponse({ success: false, error: "vk_group_id or screen_name required and could not be resolved" }, 400);
+        return jsonResponse({ success: false, error: 'vk_group_id or screen_name required and could not be resolved' }, 400);
       }
 
     } catch (e) {
-      logEvent("WARN", "vk_group_resolution_failed", license_key, `Input: ${vk_group_id || screen_name}, Error: ${e.message}`);
+      logEvent('WARN', 'vk_group_resolution_failed', license_key, `Input: ${vk_group_id || screen_name}, Error: ${e.message}`);
       return jsonResponse({ success: false, error: `Cannot resolve VK group: ${e.message}` }, 400);
     }
 
@@ -1790,45 +1967,50 @@ function handleGetVkPosts(payload, clientIp) {
     }
 
     // 3) VK token
-    var userToken = PropertiesService.getScriptProperties().getProperty("VK_USER_ACCESS_TOKEN");
+    const userToken = PropertiesService.getScriptProperties().getProperty('VK_USER_ACCESS_TOKEN');
     if (!userToken) {
-      logEvent("ERROR", "vk_user_token_missing", license_key, `Cannot fetch posts without VK User Access Token, Group ID: ${resolvedGroupId}, IP: ${clientIp}`);
-      return jsonResponse({ success: false, error: "VK User Access Token не настроен на сервере" }, 500);
+      logEvent('ERROR', 'vk_user_token_missing', license_key, `Cannot fetch posts without VK User Access Token, Group ID: ${resolvedGroupId}, IP: ${clientIp}`);
+      return jsonResponse({ success: false, error: 'VK User Access Token не настроен на сервере' }, 500);
     }
 
     // 4) wall.get
-    var safeCount = Math.max(1, Math.min(parseInt(count, 10) || 50, 100));
-    var apiUrl = `https://api.vk.com/method/wall.get?owner_id=${encodeURIComponent(resolvedGroupId)}&count=${encodeURIComponent(safeCount)}&v=${VK_API_VERSION}&access_token=${userToken}`;
-    var logUrl = `https://api.vk.com/method/wall.get?owner_id=${resolvedGroupId}&count=${safeCount}&v=${VK_API_VERSION}&access_token=***`;
-    logEvent("DEBUG", "vk_api_request", license_key, `Request URL: ${logUrl}, IP: ${clientIp}`);
+    const safeCount = Math.max(1, Math.min(parseInt(count, 10) || 50, 100));
+    const apiUrl = `https://api.vk.com/method/wall.get?owner_id=${encodeURIComponent(resolvedGroupId)}&count=${encodeURIComponent(safeCount)}&v=${VK_API_VERSION}&access_token=${userToken}`;
+    const logUrl = `https://api.vk.com/method/wall.get?owner_id=${resolvedGroupId}&count=${safeCount}&v=${VK_API_VERSION}&access_token=***`;
+    logEvent('DEBUG', 'vk_api_request', license_key, `Request URL: ${logUrl}, IP: ${clientIp}`);
 
-    var response = UrlFetchApp.fetch(apiUrl, { muteHttpExceptions: true, timeout: 15000 });
-    var responseData = JSON.parse(response.getContentText());
+    const response = UrlFetchApp.fetch(apiUrl, { muteHttpExceptions: true, timeout: 15000 });
+    const responseData = JSON.parse(response.getContentText());
 
     if (responseData.error) {
-      var err = responseData.error;
-      logEvent("ERROR", "vk_api_error", license_key, `Group ID: ${resolvedGroupId}, VK Error code: ${err.error_code}, Message: ${err.error_msg}, IP: ${clientIp}`);
-      var errorMessage = `VK API Error: ${err.error_msg}`;
-      if (err.error_code === 5) errorMessage = "User authorization failed: VK Access Token is invalid or expired";
-      else if (err.error_code === 15) errorMessage = "Access denied: Unable to access VK group posts";
-      else if (err.error_code === 100) errorMessage = "Invalid VK group ID";
-      else if (err.error_code === 200) errorMessage = "Access to this VK group denied";
+      const err = responseData.error;
+      logEvent('ERROR', 'vk_api_error', license_key, `Group ID: ${resolvedGroupId}, VK Error code: ${err.error_code}, Message: ${err.error_msg}, IP: ${clientIp}`);
+      let errorMessage = `VK API Error: ${err.error_msg}`;
+      if (err.error_code === 5) {
+errorMessage = 'User authorization failed: VK Access Token is invalid or expired';
+} else if (err.error_code === 15) {
+errorMessage = 'Access denied: Unable to access VK group posts';
+} else if (err.error_code === 100) {
+errorMessage = 'Invalid VK group ID';
+} else if (err.error_code === 200) {
+errorMessage = 'Access to this VK group denied';
+}
       return jsonResponse({ success: false, error: errorMessage, vk_error_code: err.error_code }, 400);
     }
 
-    var posts = responseData.response ? (responseData.response.items || []) : [];
+    const posts = responseData.response ? (responseData.response.items || []) : [];
 
     // Filter out already sent posts if binding_id provided
     try {
-      var filteredPosts = [];
-      var bindingId = payload.binding_id;
-      
+      let filteredPosts = [];
+      const bindingId = payload.binding_id;
+
       if (bindingId) {
         // Filter only for current binding
-        var binding = findBindingById(bindingId, license_key);
+        const binding = findBindingById(bindingId, license_key);
         if (binding && binding.bindingName) {
-          for (var i = 0; i < posts.length; i++) {
-            var post = posts[i];
+          for (let i = 0; i < posts.length; i++) {
+            const post = posts[i];
             if (!checkPostAlreadySent(binding.bindingName, post.id)) {
               filteredPosts.push(post);
             }
@@ -1838,79 +2020,83 @@ function handleGetVkPosts(payload, clientIp) {
         // No binding_id - return all posts
         filteredPosts = posts;
       }
-      
-      logEvent("INFO", "vk_posts_filtered", license_key, `Group ID: ${resolvedGroupId}, Original: ${posts.length}, Filtered: ${filteredPosts.length}, IP: ${clientIp}`);
+
+      logEvent('INFO', 'vk_posts_filtered', license_key, `Group ID: ${resolvedGroupId}, Original: ${posts.length}, Filtered: ${filteredPosts.length}, IP: ${clientIp}`);
       return jsonResponse({ success: true, posts: filteredPosts, group_id: resolvedGroupId, total_count: responseData.response ? responseData.response.count : 0, filtered_count: filteredPosts.length });
     } catch (filterError) {
-      logEvent("WARN", "post_filtering_failed", license_key, `Failed to filter posts: ${filterError.message}, returning all posts`);
+      logEvent('WARN', 'post_filtering_failed', license_key, `Failed to filter posts: ${filterError.message}, returning all posts`);
       return jsonResponse({ success: true, posts: posts, group_id: resolvedGroupId, total_count: responseData.response ? responseData.response.count : 0 });
     }
 
   } catch (error) {
-    logEvent("ERROR", "get_vk_posts_error", payload.license_key || "unknown", error.message);
+    logEvent('ERROR', 'get_vk_posts_error', payload.license_key || 'unknown', error.message);
     return jsonResponse({ success: false, error: error.message }, 500);
   }
 }
-
-
 
 
 // ============================================
 // 4. TELEGRAM API
 // ============================================
 
+/**
+ *
+ * @param chatId
+ * @param vkPost
+ * @param binding
+ */
 function sendVkPostToTelegram(chatId, vkPost, binding) {
   try {
-    var botToken = PropertiesService.getScriptProperties().getProperty("BOT_TOKEN");
-    
+    const botToken = PropertiesService.getScriptProperties().getProperty('BOT_TOKEN');
+
     if (!botToken) {
-      return { success: false, error: "Bot token not configured" };
+      return { success: false, error: 'Bot token not configured' };
     }
-    
+
     // Форматируем текст с учетом настроек связки
-    var text = formatVkPostForTelegram(vkPost, binding);
-    
+    const text = formatVkPostForTelegram(vkPost, binding);
+
     // Обрабатываем все типы вложений
-    var mediaData = getVkMediaUrls(vkPost.attachments || []);
-    
-    logEvent("DEBUG", "media_processing_result", "server", 
+    const mediaData = getVkMediaUrls(vkPost.attachments || []);
+
+    logEvent('DEBUG', 'media_processing_result', 'server',
              `Photos: ${mediaData.photos.length}, Videos: ${mediaData.videos.length}, Docs: ${mediaData.docLinks.length}, Audio: ${mediaData.audioLinks.length}`);
-    
+
     // Подготавливаем массив медиа для оптимизированной отправки
-    var allMedia = [];
-    
+    let allMedia = [];
+
     // Добавляем фото
     allMedia = allMedia.concat(mediaData.photos);
-    
+
     // Добавляем видео
     allMedia = allMedia.concat(mediaData.videos);
-    
+
     // Добавляем документы как объекты (преобразуем из ссылок)
     // Note: docLinks сейчас содержат markdown ссылки, а не URL документов
     // Для отправки документов нужны прямые URL, которые пока не поддерживаются
     // Оставляем docLinks для текстовой отправки как раньше
-    
-    var results = [];
-    
+
+    const results = [];
+
     try {
       // ИСПОЛЬЗУЕМ ОПТИМИЗИРОВАННУЮ ОТПРАВКУ!
       if (allMedia.length > 0) {
-        var optimizedResult = sendMixedMediaOptimized(
-          botToken, 
-          chatId, 
-          allMedia, 
+        const optimizedResult = sendMixedMediaOptimized(
+          botToken,
+          chatId,
+          allMedia,
           text,
           { parse_mode: 'HTML' }
         );
         results.push(optimizedResult);
-        
+
         if (!optimizedResult.success) {
-          logEvent("WARN", "optimized_media_send_failed", "server", 
+          logEvent('WARN', 'optimized_media_send_failed', 'server',
                    `Error: ${optimizedResult.error}`);
         } else {
           // Логируем успешную оптимизацию
           if (optimizedResult.optimization_stats && optimizedResult.optimization_stats.api_calls_saved > 0) {
-            logEvent("INFO", "media_optimization_success", "server", 
+            logEvent('INFO', 'media_optimization_success', 'server',
                      `API calls saved: ${optimizedResult.optimization_stats.api_calls_saved}, Photo groups: ${optimizedResult.optimization_stats.photo_groups}`);
           }
         }
@@ -1919,31 +2105,33 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
         const textResult = sendTelegramMessage(botToken, chatId, text);
         results.push(textResult);
       }
-      
+
       // Отправляем документы и аудио отдельными сообщениями (как и раньше)
-      var additionalContent = [];
+      const additionalContent = [];
       if (mediaData.docLinks.length > 0) {
-        additionalContent.push("📎 Документы:\n" + mediaData.docLinks.join("\n"));
+        additionalContent.push('📎 Документы:\n' + mediaData.docLinks.join('\n'));
       }
       if (mediaData.audioLinks.length > 0) {
-        additionalContent.push("🎵 Аудио:\n" + mediaData.audioLinks.join("\n"));
+        additionalContent.push('🎵 Аудио:\n' + mediaData.audioLinks.join('\n'));
       }
-      
+
       if (additionalContent.length > 0) {
-        const additionalText = additionalContent.join("\n\n");
+        const additionalText = additionalContent.join('\n\n');
         const additionalResult = sendTelegramMessage(botToken, chatId, additionalText);
         results.push(additionalResult);
       }
-      
+
       // Определяем общий результат
-      const successCount = results.filter(function(r) { return r.success; }).length;
+      const successCount = results.filter(function(r) {
+ return r.success;
+}).length;
       const totalCount = results.length;
-      
+
       // ✅ ПРАВИЛЬНАЯ ГЕНЕРАЦИЯ VK URL:
-      var vkPostUrl = buildVkPostUrl(binding.vkGroupId, vkPost.id);
-      
+      const vkPostUrl = buildVkPostUrl(binding.vkGroupId, vkPost.id);
+
       // Prepare publication data for binding sheet logging
-      var publicationData = {
+      const publicationData = {
         vkGroupId: binding.vkGroupId || '',
         vkPostId: vkPost.id || '',
         vkPostUrl: vkPostUrl,
@@ -1956,33 +2144,39 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
         tgMessageUrls: '',
         notes: ''
       };
-      
+
       // Extract message IDs from successful results
-      var successfulResults = results.filter(function(r) { return r.success; });
-      var messageIds = successfulResults.map(function(r) { return r.message_id; }).filter(function(id) { return id; });
-      
+      const successfulResults = results.filter(function(r) {
+ return r.success;
+});
+      const messageIds = successfulResults.map(function(r) {
+ return r.message_id;
+}).filter(function(id) {
+ return id;
+});
+
       if (messageIds.length > 0) {
         publicationData.tgMessageIds = messageIds.join(',');
         publicationData.tgMessageUrls = generateTelegramMessageUrls(chatId, messageIds);
       }
-      
+
       if (successCount === 0) {
         // ERROR case - готовим данные для клиента
         publicationData.status = 'error';
         publicationData.notes = 'All media parts failed to send';
-        
-        return { 
-          success: false, 
-          error: "All media parts failed to send",
+
+        return {
+          success: false,
+          error: 'All media parts failed to send',
           publication: publicationData
         };
       } else if (successCount < totalCount) {
         // PARTIAL case - готовим данные для клиента
         publicationData.status = 'partial';
         publicationData.notes = `Partial success: ${successCount}/${totalCount} parts sent`;
-        
-        return { 
-          success: true, 
+
+        return {
+          success: true,
           partial: true,
           successCount: successCount,
           totalCount: totalCount,
@@ -1995,8 +2189,8 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
         // SUCCESS case - готовим данные для клиента
         publicationData.status = 'sent';
         publicationData.notes = 'Successfully sent all media';
-        
-        var finalResult = {
+
+        const finalResult = {
           success: true,
           message_id: results.find(r => r.success)?.message_id,
           results: results,
@@ -2007,14 +2201,14 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
       }
 
       } catch (mediaError) {
-      logEvent("ERROR", "media_send_strategy_error", "server", mediaError.message);
+      logEvent('ERROR', 'media_send_strategy_error', 'server', mediaError.message);
 
       // Fallback: отправляем только текст
       if (text) {
-       var fallbackResult = sendTelegramMessage(botToken, chatId, text);
+       const fallbackResult = sendTelegramMessage(botToken, chatId, text);
 
        // Prepare publication data for fallback case
-       var fallbackPublicationData = {
+       const fallbackPublicationData = {
          vkGroupId: binding.vkGroupId || '',
          vkPostId: vkPost.id || '',
          vkPostUrl: buildVkPostUrl(binding.vkGroupId, vkPost.id),
@@ -2053,7 +2247,7 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
       }
 
       // Complete failure case - log to binding sheet
-      var completeFailureData = {
+      const completeFailureData = {
         status: 'error',
         vkGroupId: binding.vkGroupId || '',
         vkPostId: vkPost.id || '',
@@ -2073,19 +2267,19 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
         writePublicationRowToBindingSheet(binding.bindingName, completeFailureData);
       }
 
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: mediaError.message,
         publication: completeFailureData
       };
     }
-    
+
   } catch (error) {
-    logEvent("ERROR", "send_telegram_error", "server", error.message);
-    
+    logEvent('ERROR', 'send_telegram_error', 'server', error.message);
+
     // Log to binding sheet for any other errors
     if (binding && binding.bindingName && vkPost) {
-     var catchPublicationData = {
+     const catchPublicationData = {
        status: 'error',
        vkGroupId: binding.vkGroupId || '',
        vkPostId: vkPost.id || '',
@@ -2124,75 +2318,88 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
   }
 }
 
+/**
+ *
+ * @param token
+ * @param chatId
+ * @param text
+ */
 function sendTelegramMessage(token, chatId, text) {
   try {
-    var url = `https://api.telegram.org/bot${token}/sendMessage`;
-    
-    var payload = {
+    const url = `https://api.telegram.org/bot${token}/sendMessage`;
+
+    const payload = {
       chat_id: chatId,
       text: text,
       parse_mode: 'HTML',
       disable_web_page_preview: true
     };
-    
-    var response = UrlFetchApp.fetch(url, {
+
+    const response = UrlFetchApp.fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       payload: JSON.stringify(payload),
       muteHttpExceptions: true,
       timeout: TIMEOUTS.FAST // 8 секунд для отправки текста
     });
-    
-    var responseText = response.getContentText();
-    var result = JSON.parse(responseText);
-    
+
+    const responseText = response.getContentText();
+    const result = JSON.parse(responseText);
+
     if (result.ok) {
-      logEvent("DEBUG", "telegram_message_sent", "server", 
+      logEvent('DEBUG', 'telegram_message_sent', 'server',
                `Chat: ${chatId}, Message ID: ${result.result.message_id}, Text length: ${text?.length || 0}`);
       return { success: true, message_id: result.result.message_id };
     } else {
       // Детальное логирование ошибки Telegram API
-      logApiError("TELEGRAM", "sendMessage", {
+      logApiError('TELEGRAM', 'sendMessage', {
         chat_id: chatId,
         text_length: text?.length || 0,
-        parse_mode: "Markdown"
+        parse_mode: 'Markdown'
       }, {
         status_code: response.getResponseCode(),
         error_code: result.error_code,
         description: result.description,
         response_body: responseText.substring(0, 500)
       });
-      
-      return { success: false, error: result.description || "Unknown error" };
+
+      return { success: false, error: result.description || 'Unknown error' };
     }
-    
+
   } catch (error) {
-    logEvent("ERROR", "telegram_message_exception", "server", 
+    logEvent('ERROR', 'telegram_message_exception', 'server',
              `Chat: ${chatId}, Error: ${error.message}, Text length: ${text?.length || 0}`);
     return { success: false, error: error.message };
   }
 }
 
+/**
+ *
+ * @param token
+ * @param chatId
+ * @param mediaUrls
+ * @param caption
+ */
 function sendTelegramMediaGroup(token, chatId, mediaUrls, caption) {
   try {
     if (mediaUrls.length === 0) {
       return sendTelegramMessage(token, chatId, caption);
     }
-    
-    var MAX_CAPTION_LENGTH = 1024; // Лимит Telegram для caption
-    
+
+    const MAX_CAPTION_LENGTH = 1024; // Лимит Telegram для caption
+
     // Проверяем длину caption
     if (caption && caption.length > MAX_CAPTION_LENGTH) {
-      logEvent("WARN", "caption_too_long", "server", 
+      logEvent('WARN', 'caption_too_long', 'server',
                `Caption length: ${caption.length}, splitting media and text`);
-      
+
       // Отправляем медиа БЕЗ подписи
-      var mediaResult = sendMediaGroupWithoutCaption(token, chatId, mediaUrls);
-      
+      const mediaResult = sendMediaGroupWithoutCaption(token, chatId, mediaUrls);
+
       if (mediaResult.success) {
         // Отправляем текст отдельным сообщением (или несколькими, если очень длинный)
-        var textResult = sendLongTextMessage(token, chatId, caption);
-        
+        const textResult = sendLongTextMessage(token, chatId, caption);
+
         return {
           success: textResult.success,
           message_id: mediaResult.message_id, // ID первого сообщения (медиа)
@@ -2200,33 +2407,36 @@ function sendTelegramMediaGroup(token, chatId, mediaUrls, caption) {
           split_message: true
         };
       }
-      
+
       return mediaResult;
     }
-    
+
     // Обычная отправка с подписью (если caption <= 1024)
     return sendMediaGroupWithCaption(token, chatId, mediaUrls, caption);
-    
+
   } catch (error) {
-    logEvent("ERROR", "send_media_group_error", "server", error.message);
+    logEvent('ERROR', 'send_media_group_error', 'server', error.message);
     return { success: false, error: error.message };
   }
 }
 
 /**
  * Отправляет media group БЕЗ caption
+ * @param token
+ * @param chatId
+ * @param mediaUrls
  */
 function sendMediaGroupWithoutCaption(token, chatId, mediaUrls) {
   try {
-    var url = `https://api.telegram.org/bot${token}/sendMediaGroup`;
-    
-    var media = mediaUrls.slice(0, 10).map((item) => ({
+    const url = `https://api.telegram.org/bot${token}/sendMediaGroup`;
+
+    const media = mediaUrls.slice(0, 10).map((item) => ({
       type: item.type,
       media: item.url
       // НЕ добавляем caption и parse_mode
     }));
-    
-    var response = UrlFetchApp.fetch(url, {
+
+    const response = UrlFetchApp.fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       payload: JSON.stringify({
@@ -2236,40 +2446,44 @@ function sendMediaGroupWithoutCaption(token, chatId, mediaUrls) {
       muteHttpExceptions: true,
       timeout: TIMEOUTS.MEDIUM // 15 секунд для media group
     });
-    
-    var result = JSON.parse(response.getContentText());
-    
+
+    const result = JSON.parse(response.getContentText());
+
     if (result.ok) {
-      logEvent("INFO", "media_group_sent_no_caption", "server", 
+      logEvent('INFO', 'media_group_sent_no_caption', 'server',
                `Media count: ${media.length}, Message ID: ${result.result[0].message_id}`);
       return { success: true, message_id: result.result[0].message_id };
     } else {
-      logEvent("ERROR", "media_group_failed_no_caption", "server", 
+      logEvent('ERROR', 'media_group_failed_no_caption', 'server',
                `Error: ${result.description}, Code: ${result.error_code}`);
-      return { success: false, error: result.description || "Media group send failed" };
+      return { success: false, error: result.description || 'Media group send failed' };
     }
-    
+
   } catch (error) {
-    logEvent("ERROR", "media_group_exception", "server", error.message);
+    logEvent('ERROR', 'media_group_exception', 'server', error.message);
     return { success: false, error: error.message };
   }
 }
 
 /**
  * Отправляет media group С caption (стандартный способ)
+ * @param token
+ * @param chatId
+ * @param mediaUrls
+ * @param caption
  */
 function sendMediaGroupWithCaption(token, chatId, mediaUrls, caption) {
   try {
-    var url = `https://api.telegram.org/bot${token}/sendMediaGroup`;
-    
-    var media = mediaUrls.slice(0, 10).map((item, index) => ({
+    const url = `https://api.telegram.org/bot${token}/sendMediaGroup`;
+
+    const media = mediaUrls.slice(0, 10).map((item, index) => ({
       type: item.type,
       media: item.url,
       caption: index === 0 ? caption : undefined,
       parse_mode: index === 0 ? 'HTML' : undefined
     }));
-    
-    var response = UrlFetchApp.fetch(url, {
+
+    const response = UrlFetchApp.fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       payload: JSON.stringify({
@@ -2279,92 +2493,97 @@ function sendMediaGroupWithCaption(token, chatId, mediaUrls, caption) {
       muteHttpExceptions: true,
       timeout: REQUEST_TIMEOUT
     });
-    
-    var result = JSON.parse(response.getContentText());
-    
+
+    const result = JSON.parse(response.getContentText());
+
     if (result.ok) {
-      logEvent("INFO", "media_group_sent_with_caption", "server", 
+      logEvent('INFO', 'media_group_sent_with_caption', 'server',
                `Media count: ${media.length}, Caption length: ${caption?.length || 0}, Message ID: ${result.result[0].message_id}`);
       return { success: true, message_id: result.result[0].message_id };
     } else {
-      logEvent("ERROR", "media_group_failed_with_caption", "server", 
+      logEvent('ERROR', 'media_group_failed_with_caption', 'server',
                `Error: ${result.description}, Code: ${result.error_code}, Caption length: ${caption?.length || 0}`);
-      return { success: false, error: result.description || "Media group send failed" };
+      return { success: false, error: result.description || 'Media group send failed' };
     }
-    
+
   } catch (error) {
-    logEvent("ERROR", "media_group_with_caption_exception", "server", error.message);
+    logEvent('ERROR', 'media_group_with_caption_exception', 'server', error.message);
     return { success: false, error: error.message };
   }
 }
 
 /**
  * Отправляет длинное текстовое сообщение, разбивая если нужно
+ * @param token
+ * @param chatId
+ * @param text
  */
 function sendLongTextMessage(token, chatId, text) {
   try {
-    var MAX_MESSAGE_LENGTH = 4096; // Лимит Telegram для текстовых сообщений
-    
+    const MAX_MESSAGE_LENGTH = 4096; // Лимит Telegram для текстовых сообщений
+
     if (!text || text.length === 0) {
       return { success: true, message_id: null };
     }
-    
+
     // Если текст помещается в одно сообщение
     if (text.length <= MAX_MESSAGE_LENGTH) {
       return sendTelegramMessage(token, chatId, text);
     }
-    
+
     // Разбиваем длинный текст на части
-    logEvent("WARN", "splitting_long_text", "server", 
+    logEvent('WARN', 'splitting_long_text', 'server',
              `Text length: ${text.length}, splitting into multiple messages`);
-    
-    var textParts = splitTextIntoChunks(text, MAX_MESSAGE_LENGTH);
-    var lastMessageId = null;
-    
+
+    const textParts = splitTextIntoChunks(text, MAX_MESSAGE_LENGTH);
+    let lastMessageId = null;
+
     for (let i = 0; i < textParts.length; i++) {
-      var part = textParts[i];
-      var partPrefix = textParts.length > 1 ? `📝 ${i + 1}/${textParts.length}: ` : '';
-      
-      var result = sendTelegramMessage(token, chatId, partPrefix + part);
-      
+      const part = textParts[i];
+      const partPrefix = textParts.length > 1 ? `📝 ${i + 1}/${textParts.length}: ` : '';
+
+      const result = sendTelegramMessage(token, chatId, partPrefix + part);
+
       if (!result.success) {
-        logEvent("ERROR", "text_part_send_failed", "server", 
+        logEvent('ERROR', 'text_part_send_failed', 'server',
                  `Part ${i + 1}/${textParts.length}, Error: ${result.error}`);
         return result; // Возвращаем ошибку если хотя бы одна часть не отправилась
       }
-      
+
       lastMessageId = result.message_id;
-      
+
       // Небольшая пауза между сообщениями
       if (i < textParts.length - 1) {
         Utilities.sleep(500); // 0.5 секунды
       }
     }
-    
-    logEvent("INFO", "long_text_sent_successfully", "server", 
+
+    logEvent('INFO', 'long_text_sent_successfully', 'server',
              `Sent ${textParts.length} text parts, last message ID: ${lastMessageId}`);
-    
+
     return { success: true, message_id: lastMessageId, parts_count: textParts.length };
-    
+
   } catch (error) {
-    logEvent("ERROR", "send_long_text_error", "server", error.message);
+    logEvent('ERROR', 'send_long_text_error', 'server', error.message);
     return { success: false, error: error.message };
   }
 }
 
 /**
  * Разбивает текст на части, стараясь сохранить целостность предложений
+ * @param text
+ * @param maxLength
  */
 function splitTextIntoChunks(text, maxLength) {
-  var chunks = [];
-  var currentChunk = "";
-  
+  const chunks = [];
+  let currentChunk = '';
+
   // Разбиваем текст по предложениям
-  var sentences = text.split(/([.!?]\s+)/);
-  
+  const sentences = text.split(/([.!?]\s+)/);
+
   for (let i = 0; i < sentences.length; i++) {
-    var sentence = sentences[i];
-    
+    const sentence = sentences[i];
+
     // Если добавление предложения не превысит лимит
     if ((currentChunk + sentence).length <= maxLength) {
       currentChunk += sentence;
@@ -2373,74 +2592,78 @@ function splitTextIntoChunks(text, maxLength) {
       if (currentChunk.trim().length > 0) {
         chunks.push(currentChunk.trim());
       }
-      
+
       // Если само предложение длиннее лимита - принудительно разбиваем
       if (sentence.length > maxLength) {
-        var sentenceChunks = sentence.match(new RegExp(`.{1,${maxLength}}`, 'g'));
+        const sentenceChunks = sentence.match(new RegExp(`.{1,${maxLength}}`, 'g'));
         chunks.push(...sentenceChunks);
-        currentChunk = "";
+        currentChunk = '';
       } else {
         currentChunk = sentence;
       }
     }
   }
-  
+
   // Добавляем последний chunk
   if (currentChunk.trim().length > 0) {
     chunks.push(currentChunk.trim());
   }
-  
+
   // Если ничего не получилось - принудительно разбиваем по символам
   if (chunks.length === 0 && text.length > 0) {
-    var textChunks = text.match(new RegExp(`.{1,${maxLength}}`, 'g'));
+    const textChunks = text.match(new RegExp(`.{1,${maxLength}}`, 'g'));
     chunks.push(...textChunks);
   }
-  
+
   return chunks;
 }
 
 /**
  * Отправляет видео в Telegram как файл
+ * @param token
+ * @param chatId
+ * @param videoUrl
+ * @param caption
  */
 function sendTelegramVideo(token, chatId, videoUrl, caption) {
   try {
-    var url = `https://api.telegram.org/bot${token}/sendVideo`;
-    
-    var payload = {
+    const url = `https://api.telegram.org/bot${token}/sendVideo`;
+
+    const payload = {
       chat_id: chatId,
       video: videoUrl,
       caption: caption || undefined,
       parse_mode: caption ? 'Markdown' : undefined,
       supports_streaming: true
     };
-    
+
     // Удаляем undefined поля
     if (!payload.caption) {
       delete payload.caption;
       delete payload.parse_mode;
     }
-    
-    logEvent("DEBUG", "telegram_video_send_start", "server", 
+
+    logEvent('DEBUG', 'telegram_video_send_start', 'server',
              `Chat: ${chatId}, Video URL length: ${videoUrl?.length || 0}, Caption length: ${caption?.length || 0}`);
-    
-    var response = UrlFetchApp.fetch(url, {
+
+    const response = UrlFetchApp.fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       payload: JSON.stringify(payload),
       muteHttpExceptions: true,
       timeout: TIMEOUTS.SLOW // 30 секунд для отправки видео
     });
-    
-    var responseText = response.getContentText();
-    var result = JSON.parse(responseText);
-    
+
+    const responseText = response.getContentText();
+    const result = JSON.parse(responseText);
+
     if (result.ok) {
-      logEvent("DEBUG", "telegram_video_sent", "server", 
+      logEvent('DEBUG', 'telegram_video_sent', 'server',
                `Chat: ${chatId}, Message ID: ${result.result.message_id}, Video URL length: ${videoUrl?.length || 0}`);
       return { success: true, message_id: result.result.message_id };
     } else {
       // Детальное логирование ошибки Telegram API
-      logApiError("TELEGRAM", "sendVideo", {
+      logApiError('TELEGRAM', 'sendVideo', {
         chat_id: chatId,
         video_url_length: videoUrl?.length || 0,
         caption_length: caption?.length || 0
@@ -2450,12 +2673,12 @@ function sendTelegramVideo(token, chatId, videoUrl, caption) {
         description: result.description,
         response_body: responseText.substring(0, 500)
       });
-      
-      return { success: false, error: result.description || "Video send failed" };
+
+      return { success: false, error: result.description || 'Video send failed' };
     }
-    
+
   } catch (error) {
-    logEvent("ERROR", "telegram_video_exception", "server", 
+    logEvent('ERROR', 'telegram_video_exception', 'server',
              `Chat: ${chatId}, Error: ${error.message}, Video URL length: ${videoUrl?.length || 0}`);
     return { success: false, error: error.message };
   }
@@ -2464,37 +2687,42 @@ function sendTelegramVideo(token, chatId, videoUrl, caption) {
 // ============================================
 // 5. VK API
 // ============================================
+/**
+ *
+ * @param groupId
+ * @param count
+ */
 function getVkPosts(groupId, count = 10) {
   try {
-    var userToken = PropertiesService.getScriptProperties()
-      .getProperty("VK_USER_ACCESS_TOKEN");
-    
+    const userToken = PropertiesService.getScriptProperties()
+      .getProperty('VK_USER_ACCESS_TOKEN');
+
     if (!userToken) {
-      throw new Error("VK User Access Token not configured");
+      throw new Error('VK User Access Token not configured');
     }
-    
+
     // Преобразуем group ID в owner ID
-    var ownerId = groupId.toString().startsWith("-") ? groupId : `-${groupId}`;
-    
-    var url = `https://api.vk.com/method/wall.get?owner_id=${ownerId}&count=${count}&v=${VK_API_VERSION}&access_token=${userToken}`;
-    
-    logEvent("DEBUG", "vk_posts_request", "server", 
+    const ownerId = groupId.toString().startsWith('-') ? groupId : `-${groupId}`;
+
+    const url = `https://api.vk.com/method/wall.get?owner_id=${ownerId}&count=${count}&v=${VK_API_VERSION}&access_token=${userToken}`;
+
+    logEvent('DEBUG', 'vk_posts_request', 'server',
              `Group ID: ${groupId}, Owner ID: ${ownerId}, Count: ${count}`);
-    
-    var response = UrlFetchApp.fetch(url, {
+
+    const response = UrlFetchApp.fetch(url, {
       muteHttpExceptions: true,
       timeout: TIMEOUTS.MEDIUM // 15 секунд для получения постов
     });
-    
-    var responseText = response.getContentText();
-    var data = JSON.parse(responseText);
-    
+
+    const responseText = response.getContentText();
+    const data = JSON.parse(responseText);
+
     if (data.error) {
-      var errorCode = data.error.error_code;
-      var errorMsg = data.error.error_msg;
-      
+      const errorCode = data.error.error_code;
+      let errorMsg = data.error.error_msg;
+
       // Детальное логирование ошибки VK API
-      logApiError("VK_API", "wall.get", {
+      logApiError('VK_API', 'wall.get', {
         owner_id: ownerId,
         count: count,
         v: VK_API_VERSION
@@ -2504,49 +2732,49 @@ function getVkPosts(groupId, count = 10) {
         description: errorMsg,
         response_body: responseText.substring(0, 500)
       });
-      
+
       // Более подробные ошибки для пользователей
       if (errorCode === 5) {
-        errorMsg = "Авторизация не удалась (проверьте токен)";
+        errorMsg = 'Авторизация не удалась (проверьте токен)';
       } else if (errorCode === 10) {
-        errorMsg = "Внутренняя ошибка сервера VK (повторите запрос)";
+        errorMsg = 'Внутренняя ошибка сервера VK (повторите запрос)';
       } else if (errorCode === 15) {
-        errorMsg = "Нет доступа к группе/странице (требуется разрешение)";
+        errorMsg = 'Нет доступа к группе/странице (требуется разрешение)';
       } else if (errorCode === 200) {
-        errorMsg = "Нет доступа к альбому (приватный контент)";
+        errorMsg = 'Нет доступа к альбому (приватный контент)';
       } else if (errorCode === 30) {
-        errorMsg = "Группа/страница закрыта или приватная";
+        errorMsg = 'Группа/страница закрыта или приватная';
       } else if (errorCode === 113) {
-        errorMsg = "Неверный ID группы/пользователя";
+        errorMsg = 'Неверный ID группы/пользователя';
       } else if (errorCode === 18) {
-        errorMsg = "Страница удалена или заблокирована";
+        errorMsg = 'Страница удалена или заблокирована';
       } else if (errorCode === 203) {
-        errorMsg = "Нет доступа к сообществу";
+        errorMsg = 'Нет доступа к сообществу';
       }
-      
+
       throw new Error(`VK API Error (${errorCode}): ${errorMsg}`);
     }
-    
+
     if (!data.response || !data.response.items || data.response.items.length === 0) {
-      logEvent("INFO", "vk_posts_empty", "server", 
+      logEvent('INFO', 'vk_posts_empty', 'server',
                `Group ID: ${groupId} - no posts found`);
       return [];
     }
-    
-    var posts = data.response.items.map(post => ({
+
+    const posts = data.response.items.map(post => ({
       id: post.id,
-      text: post.text || "",
+      text: post.text || '',
       date: post.date,
       attachments: post.attachments || []
     }));
-    
-    logEvent("INFO", "vk_posts_retrieved", "server", 
+
+    logEvent('INFO', 'vk_posts_retrieved', 'server',
              `Group ID: ${groupId}, Posts found: ${posts.length}`);
-    
+
     return posts;
-    
+
   } catch (error) {
-    logEvent("ERROR", "vk_api_error", "server", 
+    logEvent('ERROR', 'vk_api_error', 'server',
              `Group ID: ${groupId}, Error: ${error.message}`);
     throw error;  // Пробрасываем ошибку дальше
   }
@@ -2559,33 +2787,45 @@ function getVkPosts(groupId, count = 10) {
 /**
  * Создает строку с описанием медиа из вложений
  * @param {Array} attachments - Массив вложений VK
- * @return {string} - Описание медиа
+ * @returns {string} - Описание медиа
  */
 function createMediaSummary(attachments) {
   try {
     if (!attachments || attachments.length === 0) {
       return 'no media';
     }
-    
-    var counts = { photo: 0, video: 0, audio: 0, doc: 0, link: 0, other: 0 };
-    
-    for (var i = 0; i < attachments.length; i++) {
-      var type = attachments[i].type;
+
+    const counts = { photo: 0, video: 0, audio: 0, doc: 0, link: 0, other: 0 };
+
+    for (let i = 0; i < attachments.length; i++) {
+      const type = attachments[i].type;
       if (counts.hasOwnProperty(type)) {
         counts[type]++;
       } else {
         counts.other++;
       }
     }
-    
-    var parts = [];
-    if (counts.photo > 0) parts.push(`${counts.photo} photo${counts.photo > 1 ? 's' : ''}`);
-    if (counts.video > 0) parts.push(`${counts.video} video${counts.video > 1 ? 's' : ''}`);
-    if (counts.audio > 0) parts.push(`${counts.audio} audio${counts.audio > 1 ? 's' : ''}`);
-    if (counts.doc > 0) parts.push(`${counts.doc} doc${counts.doc > 1 ? 's' : ''}`);
-    if (counts.link > 0) parts.push(`${counts.link} link${counts.link > 1 ? 's' : ''}`);
-    if (counts.other > 0) parts.push(`${counts.other} other`);
-    
+
+    const parts = [];
+    if (counts.photo > 0) {
+parts.push(`${counts.photo} photo${counts.photo > 1 ? 's' : ''}`);
+}
+    if (counts.video > 0) {
+parts.push(`${counts.video} video${counts.video > 1 ? 's' : ''}`);
+}
+    if (counts.audio > 0) {
+parts.push(`${counts.audio} audio${counts.audio > 1 ? 's' : ''}`);
+}
+    if (counts.doc > 0) {
+parts.push(`${counts.doc} doc${counts.doc > 1 ? 's' : ''}`);
+}
+    if (counts.link > 0) {
+parts.push(`${counts.link} link${counts.link > 1 ? 's' : ''}`);
+}
+    if (counts.other > 0) {
+parts.push(`${counts.other} other`);
+}
+
     return parts.length > 0 ? parts.join(', ') : 'no media';
   } catch (error) {
     logEvent('ERROR', 'media_summary_failed', 'server', error.message);
@@ -2597,37 +2837,43 @@ function createMediaSummary(attachments) {
  * Проверяет, был ли уже отправлен пост в связку
  * @param {string} bindingName - Название связки
  * @param {string} postId - ID VK поста
- * @return {boolean} - true если пост уже отправлен
+ * @returns {boolean} - true если пост уже отправлен
  */
 function checkPostAlreadySent(bindingName, postId) {
   try {
-    if (!postId) return false;
-    
-    var sheetName = getPublishedSheetNameFromBindingName(bindingName);
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(sheetName);
-    
-    if (!sheet) return false;
-    
-    var lastRow = sheet.getLastRow();
-    if (lastRow <= 1) return false; // Только заголовок
-    
+    if (!postId) {
+return false;
+}
+
+    const sheetName = getPublishedSheetNameFromBindingName(bindingName);
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(sheetName);
+
+    if (!sheet) {
+return false;
+}
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+return false;
+} // Только заголовок
+
     // Проверяем последние 50 записей для оптимизации
-    var startRow = Math.max(2, lastRow - 49); // 50 записей максимум
-    var rowsToCheck = lastRow - startRow + 1;
-    
+    const startRow = Math.max(2, lastRow - 49); // 50 записей максимум
+    const rowsToCheck = lastRow - startRow + 1;
+
     // Получаем status (колонка B) и vkPostId (колонка D)
-    var rows = sheet.getRange(startRow, 2, rowsToCheck, 3).getValues(); // B, C, D колонки
-    
-    for (var i = 0; i < rows.length; i++) {
-      var status = rows[i][0].toString().toLowerCase(); // Колонка B (status)
-      var vkPostId = rows[i][2]; // Колонка D (vkPostId)
-      
+    const rows = sheet.getRange(startRow, 2, rowsToCheck, 3).getValues(); // B, C, D колонки
+
+    for (let i = 0; i < rows.length; i++) {
+      const status = rows[i][0].toString().toLowerCase(); // Колонка B (status)
+      const vkPostId = rows[i][2]; // Колонка D (vkPostId)
+
       if ((status === 'success' || status === 'partial') && vkPostId && vkPostId.toString() === postId.toString()) {
         return true;
       }
     }
-    
+
     return false;
   } catch (error) {
     logEvent('ERROR', 'check_post_already_sent_failed', 'server', error.message);
@@ -2641,12 +2887,19 @@ function checkPostAlreadySent(bindingName, postId) {
 // ============================================
 // 6. УТИЛИТЫ И ХЕЛПЕРЫ
 // ============================================
+/**
+ *
+ * @param text
+ * @param options
+ */
 function formatVkTextForTelegram(text, options) {
-  if (!text) return '';
-  
+  if (!text) {
+return '';
+}
+
   options = options || {};
-  var boldFirstLine = options.boldFirstLine !== false;
-  var boldUppercase = options.boldUppercase !== false;
+  const boldFirstLine = options.boldFirstLine !== false;
+  const boldUppercase = options.boldUppercase !== false;
 
   // 1. ЭКРАНИРОВАНИЕ HTML (из fix/server) — КРИТИЧНО для безопасности
   text = text.replace(/&/g, '&amp;')
@@ -2680,156 +2933,191 @@ function formatVkTextForTelegram(text, options) {
 }
 
 
+/**
+ *
+ * @param vkPost
+ * @param binding
+ */
 function formatVkPostForTelegram(vkPost, binding) {
-  if (!vkPost) return "";
-  
+  if (!vkPost) {
+return '';
+}
+
   // Получаем настройки форматирования из связки
-  var formatOptions = {
+  const formatOptions = {
     boldFirstLine: false,
     boldUppercase: false
   };
-  
+
   // Парсим formatSettings из связки
   if (binding && binding.formatSettings) {
     try {
-      var settings = typeof binding.formatSettings === 'string' 
-        ? JSON.parse(binding.formatSettings) 
+      const settings = typeof binding.formatSettings === 'string'
+        ? JSON.parse(binding.formatSettings)
         : binding.formatSettings;
-      
+
       formatOptions.boldFirstLine = settings.boldFirstLine || false;
       formatOptions.boldUppercase = settings.boldUppercase || false;
-      
-      logEvent("DEBUG", "format_settings_applied", binding.licenseKey || "unknown", 
+
+      logEvent('DEBUG', 'format_settings_applied', binding.licenseKey || 'unknown',
                `Bold first: ${formatOptions.boldFirstLine}, Bold uppercase: ${formatOptions.boldUppercase}`);
     } catch (e) {
-      logEvent("WARN", "format_settings_parse_error", binding.licenseKey || "unknown", e.message);
+      logEvent('WARN', 'format_settings_parse_error', binding.licenseKey || 'unknown', e.message);
     }
   }
-  
+
   // ✅ ВОЗВРАЩАЕМ ТОЛЬКО ОТФОРМАТИРОВАННЫЙ ТЕКСТ
   // ❌ Никаких ссылок на VK пост! Никакой инфы о медиа!
-  return vkPost.text ? formatVkTextForTelegram(vkPost.text, formatOptions) : "";
+  return vkPost.text ? formatVkTextForTelegram(vkPost.text, formatOptions) : '';
 }
 
 
+/**
+ *
+ * @param videoId
+ */
 function getVkVideoDirectUrl(videoId) {
   try {
-    var userToken = PropertiesService.getScriptProperties().getProperty("VK_USER_ACCESS_TOKEN");
-    
+    const userToken = PropertiesService.getScriptProperties().getProperty('VK_USER_ACCESS_TOKEN');
+
     if (!userToken) {
-      logEvent("WARN", "vk_user_token_missing", "server", "Cannot get video URLs without user token");
+      logEvent('WARN', 'vk_user_token_missing', 'server', 'Cannot get video URLs without user token');
       return null;
     }
-    
-    logEvent("DEBUG", "vk_video_request_start", "server", `Video ID: ${videoId}`);
-    
-    var url = `https://api.vk.com/method/video.get?videos=${encodeURIComponent(videoId)}&v=${VK_API_VERSION}&access_token=${userToken}`;
-    
-    var response = UrlFetchApp.fetch(url, {
+
+    logEvent('DEBUG', 'vk_video_request_start', 'server', `Video ID: ${videoId}`);
+
+    const url = `https://api.vk.com/method/video.get?videos=${encodeURIComponent(videoId)}&v=${VK_API_VERSION}&access_token=${userToken}`;
+
+    const response = UrlFetchApp.fetch(url, {
       muteHttpExceptions: true,
       timeout: TIMEOUTS.SLOW // 30 секунд для получения видео (медленная операция)
     });
-    
-    var responseText = response.getContentText();
-    logEvent("DEBUG", "vk_video_api_response", "server", `Status: ${response.getResponseCode()}, Body length: ${responseText.length}, First 200 chars: ${responseText.substring(0, 200)}`);
-    
-    var data = JSON.parse(responseText);
-    
+
+    const responseText = response.getContentText();
+    logEvent('DEBUG', 'vk_video_api_response', 'server', `Status: ${response.getResponseCode()}, Body length: ${responseText.length}, First 200 chars: ${responseText.substring(0, 200)}`);
+
+    const data = JSON.parse(responseText);
+
     if (data.error) {
-      logEvent("WARN", "vk_video_api_error", "server", `Video ID: ${videoId}, Error Code: ${data.error.error_code}, Message: ${data.error.error_msg}`);
+      logEvent('WARN', 'vk_video_api_error', 'server', `Video ID: ${videoId}, Error Code: ${data.error.error_code}, Message: ${data.error.error_msg}`);
       return null;
     }
-    
+
     if (!data.response || !data.response.items || data.response.items.length === 0) {
-      logEvent("DEBUG", "vk_video_not_found", "server", `Video ID: ${videoId} - no items in response`);
+      logEvent('DEBUG', 'vk_video_not_found', 'server', `Video ID: ${videoId} - no items in response`);
       return null;
     }
-    
-    var video = data.response.items[0];
-    logEvent("DEBUG", "vk_video_details", "server", `Video: "${video.title?.substring(0, 50) || 'No title'}", Duration: ${video.duration}, Owner: ${video.owner_id}`);
-    
+
+    const video = data.response.items[0];
+    logEvent('DEBUG', 'vk_video_details', 'server', `Video: "${video.title?.substring(0, 50) || 'No title'}", Duration: ${video.duration}, Owner: ${video.owner_id}`);
+
     // Ищем лучшее качество видео
-    var files = video.files;
+    const files = video.files;
     if (files) {
-      var availableQualities = Object.keys(files).filter(key => key.startsWith('mp4_'));
-      logEvent("DEBUG", "vk_video_qualities", "server", `Available: [${availableQualities.join(', ')}]`);
-      
-      var qualities = ['mp4_1080', 'mp4_720', 'mp4_480', 'mp4_360', 'mp4_240'];
-      
+      const availableQualities = Object.keys(files).filter(key => key.startsWith('mp4_'));
+      logEvent('DEBUG', 'vk_video_qualities', 'server', `Available: [${availableQualities.join(', ')}]`);
+
+      const qualities = ['mp4_1080', 'mp4_720', 'mp4_480', 'mp4_360', 'mp4_240'];
+
       for (const quality of qualities) {
         if (files[quality]) {
-          logEvent("INFO", "vk_video_url_found", "server", `Video ID: ${videoId}, Quality: ${quality}, URL length: ${files[quality].length}`);
+          logEvent('INFO', 'vk_video_url_found', 'server', `Video ID: ${videoId}, Quality: ${quality}, URL length: ${files[quality].length}`);
           return files[quality];
         }
       }
     } else {
-      logEvent("DEBUG", "vk_video_no_files", "server", `Video ID: ${videoId} - no files object in response`);
+      logEvent('DEBUG', 'vk_video_no_files', 'server', `Video ID: ${videoId} - no files object in response`);
     }
-    
+
     // Если нет прямых ссылок, возвращаем player
-    var playerUrl = video.player;
+    const playerUrl = video.player;
     if (playerUrl) {
-      logEvent("DEBUG", "vk_video_player_url", "server", `Video ID: ${videoId}, Player URL: ${playerUrl.substring(0, 100)}...`);
+      logEvent('DEBUG', 'vk_video_player_url', 'server', `Video ID: ${videoId}, Player URL: ${playerUrl.substring(0, 100)}...`);
     }
-    
+
     return playerUrl || null;
-    
+
   } catch (error) {
-    logEvent("ERROR", "vk_video_direct_url_error", "server", `Video ID: ${videoId}, Error: ${error.message}, Stack: ${error.stack?.substring(0, 200)}`);
+    logEvent('ERROR', 'vk_video_direct_url_error', 'server', `Video ID: ${videoId}, Error: ${error.message}, Stack: ${error.stack?.substring(0, 200)}`);
     return null;
   }
 }
 
+/**
+ *
+ * @param sizes
+ */
 function getBestPhotoUrl(sizes) {
-  if (!sizes || sizes.length === 0) return null;
-  
+  if (!sizes || sizes.length === 0) {
+return null;
+}
+
   // Ищем самое высокое качество
-  var preferredTypes = ['w', 'z', 'y', 'x', 'r', 'q', 'p', 'o', 'n', 'm', 's'];
-  
+  const preferredTypes = ['w', 'z', 'y', 'x', 'r', 'q', 'p', 'o', 'n', 'm', 's'];
+
   for (const type of preferredTypes) {
-    var size = sizes.find(s => s.type === type);
-    if (size) return size.url;
+    const size = sizes.find(s => s.type === type);
+    if (size) {
+return size.url;
+}
   }
-  
+
   return sizes[sizes.length - 1].url;
 }
 
+/**
+ *
+ */
 function generateBindingId() {
   return 'binding_' + new Date().getTime() + '_' + Math.random().toString(36).substr(2, 9);
 }
 
+/**
+ *
+ * @param name
+ * @param headers
+ */
 function createSheet(name, headers) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(name);
-  
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(name);
+
   if (!sheet) {
     sheet = ss.insertSheet(name);
     sheet.appendRow(headers);
-    
+
     // Форматируем заголовки
-    var headerRange = sheet.getRange(1, 1, 1, headers.length);
-    headerRange.setBackground("#667eea");
-    headerRange.setFontColor("white");
-    headerRange.setFontWeight("bold");
+    const headerRange = sheet.getRange(1, 1, 1, headers.length);
+    headerRange.setBackground('#667eea');
+    headerRange.setFontColor('white');
+    headerRange.setFontWeight('bold');
     sheet.setFrozenRows(1);
   }
-  
+
   return sheet;
 }
 
+/**
+ *
+ * @param name
+ */
 function getSheet(name) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
   if (!sheet) {
     throw new Error(`Sheet "${name}" not found. Run server initialization first.`);
   }
   return sheet;
 }
 
+/**
+ *
+ * @param licenseKey
+ */
 function findLicense(licenseKey) {
   try {
-    var sheet = getSheet("Licenses");
-    var data = sheet.getDataRange().getValues();
-    
+    const sheet = getSheet('Licenses');
+    const data = sheet.getDataRange().getValues();
+
     for (let i = 1; i < data.length; i++) {
       if (data[i][0] === licenseKey) {
         return {
@@ -2844,25 +3132,30 @@ function findLicense(licenseKey) {
         };
       }
     }
-    
+
     return null;
   } catch (error) {
-    logEvent("ERROR", "find_license_error", "system", error.message);
+    logEvent('ERROR', 'find_license_error', 'system', error.message);
     return null;
   }
 }
 
+/**
+ *
+ * @param bindingId
+ * @param licenseKey
+ */
 function findBindingRowById(bindingId, licenseKey) {
   try {
-    var sheet = getSheet("Bindings");
-    var data = sheet.getDataRange().getValues();
-    
+    const sheet = getSheet('Bindings');
+    const data = sheet.getDataRange().getValues();
+
     for (let i = 1; i < data.length; i++) {
       if (data[i][0] === bindingId && data[i][1] === licenseKey) {
         return i + 1; // возвращаем номер строки (1-based)
       }
     }
-    
+
     return null;
   } catch (error) {
     return null;
@@ -2870,42 +3163,56 @@ function findBindingRowById(bindingId, licenseKey) {
 }
 
 
+/**
+ *
+ * @param level
+ * @param event
+ * @param user
+ * @param details
+ */
 function logEvent(level, event, user, details) {
   try {
-    if (!DEV_MODE && level === "DEBUG") {
+    if (!DEV_MODE && level === 'DEBUG') {
       return; // Пропускаем DEBUG логи в продакшене
     }
-    
-    var sheet = getSheet("Logs");
+
+    const sheet = getSheet('Logs');
     sheet.appendRow([
       new Date().toISOString(),
       level,
       event,
-      user || "system",
-      details || "",
-      ""  // IP заполняется в doPost
+      user || 'system',
+      details || '',
+      ''  // IP заполняется в doPost
     ]);
-    
+
     // Также логируем в консоль
     console.log(`[${level}] ${event} (${user}): ${details}`);
-    
+
   } catch (error) {
-    console.error("Logging error:", error.message);
+    console.error('Logging error:', error.message);
   }
 }
 
+/**
+ *
+ * @param service
+ * @param endpoint
+ * @param request
+ * @param response
+ */
 function logApiError(service, endpoint, request, response) {
   try {
-    var errorDetails = {
+    const errorDetails = {
       service: service,
       endpoint: endpoint,
       timestamp: new Date().toISOString(),
       request: {
-        method: request.method || "POST",
+        method: request.method || 'POST',
         parameters: Object.keys(request).filter(key => key !== 'method').reduce((obj, key) => {
           // Маскируем конфиденциальные данные
           if (key.toLowerCase().includes('token') || key.toLowerCase().includes('key')) {
-            obj[key] = request[key] ? request[key].substring(0, 10) + "..." : null;
+            obj[key] = request[key] ? request[key].substring(0, 10) + '...' : null;
           } else {
             obj[key] = request[key];
           }
@@ -2916,25 +3223,30 @@ function logApiError(service, endpoint, request, response) {
         status_code: response.status_code,
         error_code: response.error_code,
         description: response.description,
-        body_preview: response.response_body || "No body"
+        body_preview: response.response_body || 'No body'
       }
     };
-    
-    var logMessage = `${service} API Error - ${endpoint}: ${response.description || 'Unknown error'} (Code: ${response.error_code}, HTTP: ${response.status_code})`;
-    
-    logEvent("ERROR", "api_error_detailed", "server", 
+
+    const logMessage = `${service} API Error - ${endpoint}: ${response.description || 'Unknown error'} (Code: ${response.error_code}, HTTP: ${response.status_code})`;
+
+    logEvent('ERROR', 'api_error_detailed', 'server',
              JSON.stringify(errorDetails).substring(0, 2000)); // Ограничиваем размер лога
-    
+
     // Дополнительно логируем краткую версию для удобства
-    logEvent("WARN", `${service.toLowerCase()}_api_fail`, "server", 
+    logEvent('WARN', `${service.toLowerCase()}_api_fail`, 'server',
              `${endpoint}: ${response.description} (${response.error_code})`);
-    
+
   } catch (error) {
-    logEvent("ERROR", "log_api_error_failed", "server", 
+    logEvent('ERROR', 'log_api_error_failed', 'server',
              `Failed to log API error: ${error.message}, Original service: ${service}, endpoint: ${endpoint}`);
   }
 }
 
+/**
+ *
+ * @param data
+ * @param statusCode
+ */
 function jsonResponse(data, statusCode = 200) {
   return ContentService
     .createTextOutput(JSON.stringify(data))
@@ -2945,33 +3257,39 @@ function jsonResponse(data, statusCode = 200) {
 // 7. АДМИН ПАНЕЛЬ И СТАТИСТИКА
 // ============================================
 
+/**
+ *
+ */
 function showAdminPanel() {
   try {
-    var htmlContent = getAdminPanelHtml();
+    const htmlContent = getAdminPanelHtml();
     if (!htmlContent) {
-      throw new Error("Failed to generate admin panel HTML");
+      throw new Error('Failed to generate admin panel HTML');
     }
-    
-    var html = HtmlService.createHtmlOutput(htmlContent);
+
+    const html = HtmlService.createHtmlOutput(htmlContent);
     if (!html) {
-      throw new Error("Failed to create HTML output");
+      throw new Error('Failed to create HTML output');
     }
-    
+
     html.setWidth(1200).setHeight(800);
-    
+
     SpreadsheetApp.getUi()
-      .showModelessDialog(html, "🎛️ Админ панель");
-      
+      .showModelessDialog(html, '🎛️ Админ панель');
+
   } catch (error) {
-    logEvent("ERROR", "admin_panel_error", "system", error.message);
-    SpreadsheetApp.getUi().alert("❌ Ошибка открытия админ панели: " + error.message);
+    logEvent('ERROR', 'admin_panel_error', 'system', error.message);
+    SpreadsheetApp.getUi().alert('❌ Ошибка открытия админ панели: ' + error.message);
   }
 }
 
+/**
+ *
+ */
 function getAdminPanelHtml() {
-  var stats = getSystemStats();
-  
-  var html = '';
+  const stats = getSystemStats();
+
+  let html = '';
   html += '<!DOCTYPE html>';
   html += '<html>';
   html += '<head>';
@@ -3010,7 +3328,7 @@ function getAdminPanelHtml() {
   html += '        <th>Статус</th>';
   html += '        <th>Истекает</th>';
   html += '      </tr>';
-  
+
   // Добавляем строки лицензий
   stats.recentLicenses.forEach(function(lic) {
     html += '      <tr>';
@@ -3022,7 +3340,7 @@ function getAdminPanelHtml() {
     html += '        <td>' + new Date(lic.expires).toLocaleDateString() + '</td>';
     html += '      </tr>';
   });
-  
+
   html += '    </table>';
   html += '    <hr>';
   html += '      ';
@@ -3037,18 +3355,18 @@ function getAdminPanelHtml() {
   html += '        <th>Статус</th>';
   html += '        <th>Создано</th>';
   html += '      </tr>';
-  
+
   // Добавляем строки связок
   stats.recentBindings.forEach(function(binding) {
-    var statusColor = 'red';
+    let statusColor = 'red';
     if (binding.status === 'active') {
       statusColor = 'green';
     } else if (binding.status === 'paused') {
       statusColor = 'orange';
     }
-    
-    var bindingName = binding.bindingName || 'Без названия';
-    
+
+    const bindingName = binding.bindingName || 'Без названия';
+
     html += '      <tr>';
     html += '        <td><code>' + binding.id.substring(0, 15) + '...</code></td>';
     html += '        <td><em>' + escapeHtml(bindingName) + '</em></td>';
@@ -3059,7 +3377,7 @@ function getAdminPanelHtml() {
     html += '        <td>' + new Date(binding.createdAt).toLocaleDateString() + '</td>';
     html += '      </tr>';
   });
-  
+
   html += '    </table>';
   html += '    <hr>';
   html += '    <h2>🛠️ Управление системой</h2>';
@@ -3071,7 +3389,7 @@ function getAdminPanelHtml() {
   html += '  </div>';
   html += '</body>';
   html += '</html>';
-  
+
   // Добавляем JavaScript для кнопок
   html += '<script>';
   html += 'function ensureBindingsStructure() {';
@@ -3104,14 +3422,17 @@ function getAdminPanelHtml() {
   html += '  }).testPublicationRowWrites();';
   html += '}';
   html += '</script>';
-  
+
   return html;
 }
 
+/**
+ *
+ */
 function showStatistics() {
-  var stats = getSystemStats();
-    
-  var message = '📊 Статистика сервера v' + SERVER_VERSION + '\n\n';
+  const stats = getSystemStats();
+
+  let message = '📊 Статистика сервера v' + SERVER_VERSION + '\n\n';
   message += '🔑 Лицензии:\n';
   message += '• Всего: ' + stats.totalLicenses + '\n';
   message += '• Активных: ' + stats.activeLicenses + '\n';
@@ -3124,42 +3445,45 @@ function showStatistics() {
   message += '• Постов отправлено сегодня: ' + stats.postsToday + '\n';
   message += '• Последний пост: ' + stats.lastPostTime + '\n\n';
   message += '🏆 Топ пользователь: ' + stats.topUser;
-  
+
   SpreadsheetApp.getUi().alert(message);
 }
 
+/**
+ *
+ */
 function getSystemStats() {
   try {
-    var licensesSheet = getSheet("Licenses");
-    var bindingsSheet = getSheet("Bindings");
-    var logsSheet = getSheet("Logs");
-    
-    var licensesData = licensesSheet.getDataRange().getValues().slice(1);
-    var bindingsData = bindingsSheet.getDataRange().getValues().slice(1);
-    var logsData = logsSheet.getDataRange().getValues().slice(1);
-    
-    var now = new Date();
-    var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
+    const licensesSheet = getSheet('Licenses');
+    const bindingsSheet = getSheet('Bindings');
+    const logsSheet = getSheet('Logs');
+
+    const licensesData = licensesSheet.getDataRange().getValues().slice(1);
+    const bindingsData = bindingsSheet.getDataRange().getValues().slice(1);
+    const logsData = logsSheet.getDataRange().getValues().slice(1);
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
     return {
       totalLicenses: licensesData.length,
-      activeLicenses: licensesData.filter(lic => lic[6] === "active").length,
+      activeLicenses: licensesData.filter(lic => lic[6] === 'active').length,
       expiredLicenses: licensesData.filter(lic => new Date(lic[4]) < now).length,
-      
+
       totalBindings: bindingsData.length,
-      activeBindings: bindingsData.filter(b => b[5] === "active").length,
-      pausedBindings: bindingsData.filter(b => b[5] === "paused").length,
-      
-      postsToday: logsData.filter(log => 
-        log[2] === "post_sent" && new Date(log[0]) >= today
+      activeBindings: bindingsData.filter(b => b[5] === 'active').length,
+      pausedBindings: bindingsData.filter(b => b[5] === 'paused').length,
+
+      postsToday: logsData.filter(log =>
+        log[2] === 'post_sent' && new Date(log[0]) >= today
       ).length,
-      
+
       lastPostTime: logsData
-        .filter(log => log[2] === "post_sent")
-        .sort((a, b) => new Date(b[0]) - new Date(a[0]))[0]?.[0] || "Нет данных",
-      
+        .filter(log => log[2] === 'post_sent')
+        .sort((a, b) => new Date(b[0]) - new Date(a[0]))[0]?.[0] || 'Нет данных',
+
       topUser: findTopUser(bindingsData),
-      
+
       recentLicenses: licensesData
         .map(lic => ({
           key: lic[0],
@@ -3171,10 +3495,10 @@ function getSystemStats() {
         }))
         .slice(-10)
         .reverse(),
-      
+
       recentBindings: bindingsData
         .map(function(bindingRow) {
-          var bindingObject = buildBindingObjectFromRow(bindingRow);
+          const bindingObject = buildBindingObjectFromRow(bindingRow);
           if (bindingObject) {
             return {
               id: bindingObject.id,
@@ -3187,7 +3511,7 @@ function getSystemStats() {
               bindingDescription: bindingObject.bindingDescription
             };
           }
-          var fallbackName = resolveBindingName(bindingRow[9], {
+          const fallbackName = resolveBindingName(bindingRow[9], {
             bindingId: bindingRow[0],
             vkGroupUrl: bindingRow[3],
             processedTgChatId: bindingRow[4]
@@ -3206,40 +3530,47 @@ function getSystemStats() {
         .slice(-10)
         .reverse()
     };
-    
+
   } catch (error) {
-    logEvent("ERROR", "stats_error", "system", error.message);
+    logEvent('ERROR', 'stats_error', 'system', error.message);
     return {
       totalLicenses: 0, activeLicenses: 0, expiredLicenses: 0,
       totalBindings: 0, activeBindings: 0, pausedBindings: 0,
-      postsToday: 0, lastPostTime: "Ошибка", topUser: "Ошибка",
+      postsToday: 0, lastPostTime: 'Ошибка', topUser: 'Ошибка',
       recentLicenses: [], recentBindings: []
     };
   }
 }
 
+/**
+ *
+ * @param bindingsData
+ */
 function findTopUser(bindingsData) {
-  var userCounts = {};
-  
+  const userCounts = {};
+
   bindingsData.forEach(binding => {
-    var email = binding[2];
+    const email = binding[2];
     userCounts[email] = (userCounts[email] || 0) + 1;
   });
-  
-  var topEntry = Object.entries(userCounts)
+
+  const topEntry = Object.entries(userCounts)
     .sort(([,a], [,b]) => b - a)[0];
-  
-  return topEntry ? `${topEntry[0]} (${topEntry[1]} связок)` : "Нет данных";
+
+  return topEntry ? `${topEntry[0]} (${topEntry[1]} связок)` : 'Нет данных';
 }
 
+/**
+ *
+ */
 function showLogsSheet() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var logsSheet = ss.getSheetByName("Logs");
-  
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const logsSheet = ss.getSheetByName('Logs');
+
   if (logsSheet) {
     ss.setActiveSheet(logsSheet);
   } else {
-    SpreadsheetApp.getUi().alert("❌ Лист 'Logs' не найден. Выполните инициализацию сервера.");
+    SpreadsheetApp.getUi().alert('❌ Лист \'Logs\' не найден. Выполните инициализацию сервера.');
   }
 }
 
@@ -3248,35 +3579,35 @@ function showLogsSheet() {
 // ============================================
 
 /**
- * Улучшенное извлечение ID группы ВКонтакте с поддержкой личных страниц  
+ * Улучшенное извлечение ID группы ВКонтакте с поддержкой личных страниц
  * @param {string} url - URL группы/страницы ВКонтакте
- * @return {string} - ID группы/пользователя
+ * @returns {string} - ID группы/пользователя
  */
 /**
  * Получает расширенную информацию о связке с названиями групп
- * @param {Object} binding - объект связки
- * @return {Object} - связка с добавленными названиями
+ * @param {object} binding - объект связки
+ * @returns {object} - связка с добавленными названиями
  */
 function enrichBindingWithNames(binding) {
   try {
     // Извлекаем ID из URL
-    var vkGroupId = extractVkGroupId(binding.vkGroupUrl);
-    
+    const vkGroupId = extractVkGroupId(binding.vkGroupUrl);
+
     // Получаем названия
-    var vkGroupName = getVkGroupName(vkGroupId);
-    var tgChatName = getTelegramChatName(binding.tgChatId);
-    
+    const vkGroupName = getVkGroupName(vkGroupId);
+    const tgChatName = getTelegramChatName(binding.tgChatId);
+
     return {
       ...binding,
       vkGroupName: vkGroupName,
       tgChatName: tgChatName,
       vkGroupId: vkGroupId
     };
-    
+
   } catch (error) {
-    logEvent("ERROR", "enrich_binding_error", "server", 
+    logEvent('ERROR', 'enrich_binding_error', 'server',
              `Binding ID: ${binding.id}, Error: ${error.message}`);
-    
+
     return {
       ...binding,
       vkGroupName: binding.vkGroupUrl,
@@ -3289,43 +3620,43 @@ function enrichBindingWithNames(binding) {
 /**
  * Обновленная функция получения связок пользователя с названиями
  * @param {string} licenseKey - ключ лицензии
- * @return {Array} - массив связок с названиями
+ * @returns {Array} - массив связок с названиями
  */
 /**
  * Тестирует функции извлечения ID из ссылок
  */
 function testUrlExtraction() {
   console.log('=== Тестирование извлечения ID из ссылок ===');
-  
+
   // Тесты ВК
-  var vkTests = [
+  const vkTests = [
     'https://vk.com/public123456',
-    'vk.com/club789012', 
+    'vk.com/club789012',
     'https://vk.com/durov',
     'VK.COM/PUBLIC999888'
   ];
-  
+
   vkTests.forEach(url => {
     try {
-      var id = extractVkGroupId(url);
+      const id = extractVkGroupId(url);
       console.log(`✅ VK: ${url} -> ${id}`);
     } catch (error) {
       console.log(`❌ VK: ${url} -> Error: ${error.message}`);
     }
   });
-  
+
   // Тесты Telegram
-  var tgTests = [
+  const tgTests = [
     'https://t.me/durov',
     't.me/telegram',
     '@channelname',
     'mychannel',
     '-1001234567890'
   ];
-  
+
   tgTests.forEach(input => {
     try {
-      var id = extractTelegramChatId(input);
+      const id = extractTelegramChatId(input);
       console.log(`✅ TG: ${input} -> ${id}`);
     } catch (error) {
       console.log(`❌ TG: ${input} -> Error: ${error.message}`);
@@ -3338,25 +3669,25 @@ function testUrlExtraction() {
  */
 function testNameRetrieval() {
   console.log('=== Тестирование получения названий ===');
-  
+
   // Тест VK групп (используйте реальные ID для тестирования)
-  var vkGroupIds = ['-1', '-30022666']; // Пример: Павел Дуров, ВКонтакте
-  
+  const vkGroupIds = ['-1', '-30022666']; // Пример: Павел Дуров, ВКонтакте
+
   vkGroupIds.forEach(groupId => {
     try {
-      var name = getVkGroupName(groupId);
+      const name = getVkGroupName(groupId);
       console.log(`✅ VK Group ${groupId}: ${name}`);
     } catch (error) {
       console.log(`❌ VK Group ${groupId}: Error: ${error.message}`);
     }
   });
-  
+
   // Тест Telegram каналов
-  var tgChatIds = ['@durov', '@telegram'];
-  
+  const tgChatIds = ['@durov', '@telegram'];
+
   tgChatIds.forEach(chatId => {
     try {
-      var name = getTelegramChatName(chatId);
+      const name = getTelegramChatName(chatId);
       console.log(`✅ TG Chat ${chatId}: ${name}`);
     } catch (error) {
       console.log(`❌ TG Chat ${chatId}: Error: ${error.message}`);
@@ -3368,115 +3699,117 @@ function testNameRetrieval() {
 
 /**
  * Обработчик тестовой публикации
+ * @param payload
+ * @param clientIp
  */
 function handleTestPublication(payload, clientIp) {
   try {
-    var { license_key, binding_id } = payload;
-    
+    const { license_key, binding_id } = payload;
+
     // Проверяем лицензию
-    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
-    var licenseData = JSON.parse(licenseCheck.getContent());
-    
+    const licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    const licenseData = JSON.parse(licenseCheck.getContent());
+
     if (!licenseData.success) {
       return licenseCheck;
     }
-    
+
     // Находим связку
-    var binding = findBindingById(binding_id, license_key);
+    const binding = findBindingById(binding_id, license_key);
     if (!binding) {
       return jsonResponse({
         success: false,
-        error: "Binding not found"
+        error: 'Binding not found'
       }, 404);
     }
-    
-    logEvent("INFO", "test_publication_start", license_key, 
+
+    logEvent('INFO', 'test_publication_start', license_key,
              `Binding: ${binding_id}, VK: ${binding.vkGroupUrl}, TG: ${binding.tgChatId}`);
-    
+
     // Получаем токен бота
-    var botToken = PropertiesService.getScriptProperties().getProperty("BOT_TOKEN");
+    const botToken = PropertiesService.getScriptProperties().getProperty('BOT_TOKEN');
     if (!botToken) {
       return jsonResponse({
         success: false,
-        error: "Bot token not configured"
+        error: 'Bot token not configured'
       }, 500);
     }
-    
+
     // Получаем реальный пост из VK для тестирования
-    var vkGroupId = extractVkGroupId(binding.vkGroupUrl);
-    var userToken = PropertiesService.getScriptProperties().getProperty("VK_USER_ACCESS_TOKEN");
-    
+    const vkGroupId = extractVkGroupId(binding.vkGroupUrl);
+    const userToken = PropertiesService.getScriptProperties().getProperty('VK_USER_ACCESS_TOKEN');
+
     if (!userToken) {
       return jsonResponse({
         success: false,
-        error: "VK User Access Token not configured"
+        error: 'VK User Access Token not configured'
       }, 500);
     }
-    
+
     // Запрашиваем последний пост из VK (исключая закрепленные)
-    var vkUrl = `https://api.vk.com/method/wall.get?owner_id=${encodeURIComponent(vkGroupId)}&count=10&filter=owner&v=${VK_API_VERSION}&access_token=${userToken}`;
-    
-    var vkResponse = UrlFetchApp.fetch(vkUrl, {
+    const vkUrl = `https://api.vk.com/method/wall.get?owner_id=${encodeURIComponent(vkGroupId)}&count=10&filter=owner&v=${VK_API_VERSION}&access_token=${userToken}`;
+
+    const vkResponse = UrlFetchApp.fetch(vkUrl, {
       muteHttpExceptions: true,
       timeout: 15000
     });
-    
-    var vkData = JSON.parse(vkResponse.getContentText());
-    
+
+    const vkData = JSON.parse(vkResponse.getContentText());
+
     if (vkData.error) {
-      logEvent("ERROR", "test_vk_fetch_error", license_key, 
+      logEvent('ERROR', 'test_vk_fetch_error', license_key,
                `VK Error: ${vkData.error.error_code} - ${vkData.error.error_msg}`);
       return jsonResponse({
         success: false,
         error: `VK API Error: ${vkData.error.error_msg}`
       }, 400);
     }
-    
+
     if (!vkData.response || !vkData.response.items || vkData.response.items.length === 0) {
       return jsonResponse({
         success: false,
-        error: "No posts found in VK group"
+        error: 'No posts found in VK group'
       }, 404);
     }
-    
+
     // Берем первый не закрепленный пост
-    var posts = vkData.response.items.filter(post => !post.is_pinned);
+    const posts = vkData.response.items.filter(post => !post.is_pinned);
     if (posts.length === 0) {
       return jsonResponse({
         success: false,
-        error: "No regular posts found (only pinned posts available)"
+        error: 'No regular posts found (only pinned posts available)'
       }, 404);
     }
-    
-    var testPost = posts[0];
-    
-    // Форматируем пост для отправки в Telegram  
-    var formattedText = formatVkPostForTelegram(testPost, binding);
-    
+
+    const testPost = posts[0];
+
+    // Форматируем пост для отправки в Telegram
+    const formattedText = formatVkPostForTelegram(testPost, binding);
+
     // Отправляем реальный пост как тест
-    var sendResult = sendTelegramMessage(botToken, binding.tgChatId, formattedText);
-    
+    const sendResult = sendTelegramMessage(botToken, binding.tgChatId, formattedText);
+
     if (sendResult.success) {
-      logEvent("INFO", "test_publication_success", license_key, 
+      logEvent('INFO', 'test_publication_success', license_key,
                `Binding: ${binding_id}, Message ID: ${sendResult.message_id}`);
-      
+
       return jsonResponse({
         success: true,
         message_id: sendResult.message_id,
-        message: "Тестовое сообщение отправлено успешно! Проверьте ваш Telegram канал/чат."
+        message: 'Тестовое сообщение отправлено успешно! Проверьте ваш Telegram канал/чат.'
       });
     } else {
-      logEvent("ERROR", "test_publication_failed", license_key, 
+      logEvent('ERROR', 'test_publication_failed', license_key,
                `Binding: ${binding_id}, Error: ${sendResult.error}`);
-      
+
       return jsonResponse({
         success: false,
         error: `Не удалось отправить тестовое сообщение: ${sendResult.error}`
       }, 500);
     }
-    
+
   } catch (error) {
-    logEvent("ERROR", "test_publication_error", payload.license_key || "unknown", error.message);
+    logEvent('ERROR', 'test_publication_error', payload.license_key || 'unknown', error.message);
     return jsonResponse({ success: false, error: error.message }, 500);
   }
 }
@@ -3487,25 +3820,26 @@ function handleTestPublication(payload, clientIp) {
 
 /**
  * Получает название группы ВКонтакте по ID
+ * @param groupId
  */
 function getVkGroupName(groupId) {
   try {
-    var userToken = PropertiesService.getScriptProperties()
-      .getProperty("VK_USER_ACCESS_TOKEN");
-    
+    const userToken = PropertiesService.getScriptProperties()
+      .getProperty('VK_USER_ACCESS_TOKEN');
+
     if (!userToken) {
-      logEvent("WARN", "vk_token_missing_for_name", "server", `Group ID: ${groupId}`);
+      logEvent('WARN', 'vk_token_missing_for_name', 'server', `Group ID: ${groupId}`);
       return null;
     }
-    
-    var isGroup = groupId.toString().startsWith('-');
-    var cleanId = Math.abs(parseInt(groupId));
-    
-    logEvent("DEBUG", "vk_name_request_start", "server", 
+
+    const isGroup = groupId.toString().startsWith('-');
+    const cleanId = Math.abs(parseInt(groupId));
+
+    logEvent('DEBUG', 'vk_name_request_start', 'server',
              `Group ID: ${groupId}, Clean ID: ${cleanId}, Is Group: ${isGroup}`);
-    
-    var apiMethod, apiParams;
-    
+
+    let apiMethod, apiParams;
+
     if (isGroup) {
       // Получаем название группы
       apiMethod = 'groups.getById';
@@ -3515,44 +3849,44 @@ function getVkGroupName(groupId) {
       apiMethod = 'users.get';
       apiParams = `user_ids=${cleanId}&fields=first_name,last_name,screen_name`;
     }
-    
-    var response = UrlFetchApp.fetch(
+
+    const response = UrlFetchApp.fetch(
       `https://api.vk.com/method/${apiMethod}?${apiParams}&v=${VK_API_VERSION}&access_token=${userToken}`,
       {
         muteHttpExceptions: true,
         timeout: 8000
       }
     );
-    
-    var data = JSON.parse(response.getContentText());
-    
+
+    const data = JSON.parse(response.getContentText());
+
     if (data.error) {
-      logEvent("WARN", "vk_name_api_error", "server", 
+      logEvent('WARN', 'vk_name_api_error', 'server',
                `Group ID: ${groupId}, Error: ${data.error.error_code} - ${data.error.error_msg}`);
       return null;
     }
-    
+
     if (data.response && data.response.length > 0) {
-      var obj = data.response[0];
-      var name;
-      
+      const obj = data.response[0];
+      let name;
+
       if (isGroup) {
         name = obj.name;
       } else {
         name = `${obj.first_name || ''} ${obj.last_name || ''}`.trim();
       }
-      
-      logEvent("INFO", "vk_name_retrieved", "server", 
+
+      logEvent('INFO', 'vk_name_retrieved', 'server',
                `Group ID: ${groupId} -> Name: "${name}"`);
-      
+
       return name || `Unknown ${isGroup ? 'Group' : 'User'}`;
     }
-    
-    logEvent("WARN", "vk_name_not_found", "server", `Group ID: ${groupId}`);
+
+    logEvent('WARN', 'vk_name_not_found', 'server', `Group ID: ${groupId}`);
     return null;
-    
+
   } catch (error) {
-    logEvent("ERROR", "vk_name_request_error", "server", 
+    logEvent('ERROR', 'vk_name_request_error', 'server',
              `Group ID: ${groupId}, Error: ${error.message}`);
     return null;
   }
@@ -3560,32 +3894,33 @@ function getVkGroupName(groupId) {
 
 /**
  * Получает название Telegram чата/канала по chat_id
+ * @param chatId
  */
 function getTelegramChatName(chatId) {
   try {
-    var botToken = PropertiesService.getScriptProperties().getProperty("BOT_TOKEN");
-    
+    const botToken = PropertiesService.getScriptProperties().getProperty('BOT_TOKEN');
+
     if (!botToken) {
-      logEvent("WARN", "tg_token_missing_for_name", "server", `Chat ID: ${chatId}`);
+      logEvent('WARN', 'tg_token_missing_for_name', 'server', `Chat ID: ${chatId}`);
       return null;
     }
-    
-    logEvent("DEBUG", "tg_name_request_start", "server", `Chat ID: ${chatId}`);
-    
-    var response = UrlFetchApp.fetch(`https://api.telegram.org/bot${botToken}/getChat`, {
+
+    logEvent('DEBUG', 'tg_name_request_start', 'server', `Chat ID: ${chatId}`);
+
+    const response = UrlFetchApp.fetch(`https://api.telegram.org/bot${botToken}/getChat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       payload: JSON.stringify({ chat_id: chatId }),
       muteHttpExceptions: true,
       timeout: 8000
     });
-    
-    var result = JSON.parse(response.getContentText());
-    
+
+    const result = JSON.parse(response.getContentText());
+
     if (result.ok) {
-      var chat = result.result;
-      var name;
-      
+      const chat = result.result;
+      let name;
+
       // Определяем название в зависимости от типа чата
       if (chat.title) {
         // Группа, супергруппа или канал
@@ -3599,19 +3934,19 @@ function getTelegramChatName(chatId) {
       } else {
         name = 'Unknown Chat';
       }
-      
-      logEvent("INFO", "tg_name_retrieved", "server", 
+
+      logEvent('INFO', 'tg_name_retrieved', 'server',
                `Chat ID: ${chatId} -> Name: "${name}", Type: ${chat.type}`);
-      
+
       return name;
     } else {
-      logEvent("WARN", "tg_name_api_error", "server", 
+      logEvent('WARN', 'tg_name_api_error', 'server',
                `Chat ID: ${chatId}, Error: ${result.description}`);
       return null;
     }
-    
+
   } catch (error) {
-    logEvent("ERROR", "tg_name_request_error", "server", 
+    logEvent('ERROR', 'tg_name_request_error', 'server',
              `Chat ID: ${chatId}, Error: ${error.message}`);
     return null;
   }
@@ -3619,62 +3954,64 @@ function getTelegramChatName(chatId) {
 
 /**
  * Получает кешированное название или запрашивает новое
+ * @param groupId
  */
 function getCachedVkGroupName(groupId) {
   try {
-    var cache = PropertiesService.getScriptProperties();
-    var cacheKey = `vk_name_${groupId}`;
-    
-    var cachedName = cache.getProperty(cacheKey);
-    
+    const cache = PropertiesService.getScriptProperties();
+    const cacheKey = `vk_name_${groupId}`;
+
+    const cachedName = cache.getProperty(cacheKey);
+
     if (cachedName) {
-      logEvent("DEBUG", "vk_name_from_cache", "server", 
+      logEvent('DEBUG', 'vk_name_from_cache', 'server',
                `${groupId} -> ${cachedName} (cached)`);
       return cachedName;
     }
-    
+
     // Если не в кеше - запрашиваем и кешируем
-    var freshName = getVkGroupName(groupId);
+    const freshName = getVkGroupName(groupId);
     if (freshName) {
       cache.setProperty(cacheKey, freshName);
       return freshName;
     }
-    
+
     return `VK:${groupId}`; // Fallback отображение
-    
+
   } catch (error) {
-    logEvent("ERROR", "cached_vk_name_error", "server", error.message);
+    logEvent('ERROR', 'cached_vk_name_error', 'server', error.message);
     return `VK:${groupId}`;
   }
 }
 
 /**
  * Получает кешированное название Telegram чата или запрашивает новое
+ * @param chatId
  */
 function getCachedTelegramChatName(chatId) {
   try {
-    var cache = PropertiesService.getScriptProperties();
-    var cacheKey = `tg_name_${chatId}`;
-    
-    var cachedName = cache.getProperty(cacheKey);
-    
+    const cache = PropertiesService.getScriptProperties();
+    const cacheKey = `tg_name_${chatId}`;
+
+    const cachedName = cache.getProperty(cacheKey);
+
     if (cachedName) {
-      logEvent("DEBUG", "tg_name_from_cache", "server", 
+      logEvent('DEBUG', 'tg_name_from_cache', 'server',
                `${chatId} -> ${cachedName} (cached)`);
       return cachedName;
     }
-    
+
     // Если не в кеше - запрашиваем и кешируем
-    var freshName = getTelegramChatName(chatId);
+    const freshName = getTelegramChatName(chatId);
     if (freshName) {
       cache.setProperty(cacheKey, freshName);
       return freshName;
     }
-    
+
     return chatId.toString(); // Fallback отображение
-    
+
   } catch (error) {
-    logEvent("ERROR", "cached_tg_name_error", "server", error.message);
+    logEvent('ERROR', 'cached_tg_name_error', 'server', error.message);
     return chatId.toString();
   }
 }
@@ -3688,17 +4025,18 @@ function getCachedTelegramChatName(chatId) {
 
 
 // ============================================
-// ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ И УЛУЧШЕНИЯ  
+// ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ И УЛУЧШЕНИЯ
 // ============================================
 
 // Rate limiting для Telegram API
-var RATE_LIMIT_DELAY = 100; // мс между запросами
+const RATE_LIMIT_DELAY = 100; // мс между запросами
 
 // Duplicate function removed - using version at line 4646
 
 /**
  * Резолвит screen_name в ID через VK API с улучшенной обработкой ошибок
  * Использует VK API utils.resolveScreenName с таймаутами и детальной диагностикой
+ * @param screenName
  */
 function resolveVkScreenName(screenName) {
   if (!screenName || typeof screenName !== 'string') {
@@ -3706,45 +4044,45 @@ function resolveVkScreenName(screenName) {
   }
 
   try {
-    var userToken = PropertiesService.getScriptProperties()
-      .getProperty("VK_USER_ACCESS_TOKEN");
-        
+    const userToken = PropertiesService.getScriptProperties()
+      .getProperty('VK_USER_ACCESS_TOKEN');
+
     if (!userToken) {
-      throw new Error("VK User Access Token не настроен на сервере");
+      throw new Error('VK User Access Token не настроен на сервере');
     }
 
-    var apiUrl = `https://api.vk.com/method/utils.resolveScreenName?screen_name=${encodeURIComponent(screenName)}&v=${VK_API_VERSION}&access_token=${userToken}`;
-    
-    logEvent("DEBUG", "vk_resolve_screen_name_start", "system", `Resolving screen_name: "${screenName}"`);
-    
-    var response = UrlFetchApp.fetch(apiUrl, {
+    const apiUrl = `https://api.vk.com/method/utils.resolveScreenName?screen_name=${encodeURIComponent(screenName)}&v=${VK_API_VERSION}&access_token=${userToken}`;
+
+    logEvent('DEBUG', 'vk_resolve_screen_name_start', 'system', `Resolving screen_name: "${screenName}"`);
+
+    const response = UrlFetchApp.fetch(apiUrl, {
       muteHttpExceptions: true,
       timeout: TIMEOUTS.FAST // 8 секунд для быстрой операции резолвинга
     });
-        
-    var responseCode = response.getResponseCode();
-    var responseText = response.getContentText();
-    
-    logEvent("DEBUG", "vk_resolve_screen_name_response", "system", `Screen: "${screenName}", Code: ${responseCode}, Response length: ${responseText.length}`);
-    
+
+    const responseCode = response.getResponseCode();
+    const responseText = response.getContentText();
+
+    logEvent('DEBUG', 'vk_resolve_screen_name_response', 'system', `Screen: "${screenName}", Code: ${responseCode}, Response length: ${responseText.length}`);
+
     if (responseCode !== 200) {
       throw new Error(`VK API HTTP ${responseCode}: ${responseText.substring(0, 100)}`);
     }
-    
-    var data;
+
+    let data;
     try {
       data = JSON.parse(responseText);
     } catch (parseError) {
       throw new Error(`Invalid JSON response from VK API: ${parseError.message}`);
     }
-        
+
     // Обработка ошибок VK API
     if (data.error) {
-      var errorCode = data.error.error_code;
-      var errorMsg = data.error.error_msg;
-      
-      logEvent("WARN", "vk_resolve_screen_name_api_error", "system", `Screen: "${screenName}", Error: ${errorCode} - ${errorMsg}`);
-      
+      const errorCode = data.error.error_code;
+      const errorMsg = data.error.error_msg;
+
+      logEvent('WARN', 'vk_resolve_screen_name_api_error', 'system', `Screen: "${screenName}", Error: ${errorCode} - ${errorMsg}`);
+
       // Специальная обработка распространенных ошибок
       switch (errorCode) {
         case 5: // User authorization failed
@@ -3761,40 +4099,40 @@ function resolveVkScreenName(screenName) {
           throw new Error(`VK API Error (${errorCode}): ${errorMsg}`);
       }
     }
-        
+
     if (!data.response || !data.response.object_id) {
-      logEvent("WARN", "vk_resolve_screen_name_not_found", "system", `Screen name not found: "${screenName}"`);
+      logEvent('WARN', 'vk_resolve_screen_name_not_found', 'system', `Screen name not found: "${screenName}"`);
       throw new Error(`Группа, страница или пользователь не найдены: "${screenName}"`);
     }
-        
-    var objectId = data.response.object_id;
-    var type = data.response.type;
-    
+
+    const objectId = data.response.object_id;
+    const type = data.response.type;
+
     // Валидация object_id
     if (!/^\d+$/.test(objectId.toString())) {
       throw new Error(`Получен некорректный object_id: ${objectId} для screen_name "${screenName}"`);
     }
-    
+
     // Для групп и страниц добавляем минус, для пользователей оставляем как есть
-    var result = (type === 'group' || type === 'page') ? `-${objectId}` : objectId.toString();
-    
-    logEvent("INFO", "vk_resolve_screen_name_success", "system", `Screen: "${screenName}" → Type: ${type}, ID: ${objectId} → Result: ${result}`);
-    
+    const result = (type === 'group' || type === 'page') ? `-${objectId}` : objectId.toString();
+
+    logEvent('INFO', 'vk_resolve_screen_name_success', 'system', `Screen: "${screenName}" → Type: ${type}, ID: ${objectId} → Result: ${result}`);
+
     return result;
-      
+
   } catch (error) {
     // Дополнительная обработка сетевых ошибок
     if (error.message.includes('timeout') || error.message.includes('Timed out')) {
-      logEvent("ERROR", "vk_resolve_screen_name_timeout", "system", `Timeout resolving screen_name "${screenName}"`);
+      logEvent('ERROR', 'vk_resolve_screen_name_timeout', 'system', `Timeout resolving screen_name "${screenName}"`);
       throw new Error(`Таймаут при резолвинге "${screenName}" через VK API. Попробуйте позже.`);
     }
-    
+
     if (error.message.includes('fetch') || error.message.includes('network')) {
-      logEvent("ERROR", "vk_resolve_screen_name_network", "system", `Network error resolving screen_name "${screenName}": ${error.message}`);
+      logEvent('ERROR', 'vk_resolve_screen_name_network', 'system', `Network error resolving screen_name "${screenName}": ${error.message}`);
       throw new Error(`Сетевая ошибка при резолвинге "${screenName}": ${error.message}`);
     }
-    
-    logEvent("ERROR", "vk_resolve_screen_name_failed", "system", `Failed to resolve screen_name "${screenName}": ${error.message}`);
+
+    logEvent('ERROR', 'vk_resolve_screen_name_failed', 'system', `Failed to resolve screen_name "${screenName}": ${error.message}`);
     throw new Error(`Не удалось резолвить "${screenName}": ${error.message}`);
   }
 }
@@ -3804,32 +4142,33 @@ function resolveVkScreenName(screenName) {
  * Поддерживаемые форматы:
  * - @channelname → "@channelname"
  * - https://t.me/channelname → "@channelname"
- * - t.me/username → "@username"  
+ * - t.me/username → "@username"
  * - channelname → "@channelname"
  * - -1001234567890 → "-1001234567890"
  * - 123456789 → "123456789"
+ * @param input
  */
 function extractTelegramChatId(input) {
   if (!input || typeof input !== 'string') {
     throw new Error('Telegram chat ID или username обязателен и должен быть строкой');
   }
 
-  var originalInput = input;
-  var cleanInput = input.trim().toLowerCase().split('?')[0].split('#')[0];
+  const originalInput = input;
+  const cleanInput = input.trim().toLowerCase().split('?')[0].split('#')[0];
 
-  logEvent("DEBUG", "telegram_chat_id_extraction_start", "system", `Input: "${originalInput}" → Clean: "${cleanInput}"`);
+  logEvent('DEBUG', 'telegram_chat_id_extraction_start', 'system', `Input: "${originalInput}" → Clean: "${cleanInput}"`);
 
   // Если уже chat_id (число с возможным минусом)
   if (/^-?\d+$/.test(cleanInput)) {
-    logEvent("DEBUG", "telegram_chat_id_numeric", "system", `${originalInput} → ${cleanInput}`);
+    logEvent('DEBUG', 'telegram_chat_id_numeric', 'system', `${originalInput} → ${cleanInput}`);
     return cleanInput;
   }
 
   // Извлекаем username из различных форматов
-  var username = null;
+  let username = null;
 
   // Форматы в порядке приоритета:
-  var patterns = [
+  const patterns = [
     /https?:\/\/t\.me\/([a-z0-9_]+)/i,  // https://t.me/username
     /t\.me\/([a-z0-9_]+)/i,            // t.me/username
     /@([a-z0-9_]+)/i,                  // @username
@@ -3837,7 +4176,7 @@ function extractTelegramChatId(input) {
   ];
 
   for (const pattern of patterns) {
-    var match = cleanInput.match(pattern);
+    const match = cleanInput.match(pattern);
     if (match) {
       username = match[1];
       break;
@@ -3853,9 +4192,9 @@ function extractTelegramChatId(input) {
     throw new Error(`Некорректный Telegram username "${username}" из "${originalInput}". Допустимы только буквы, цифры и подчеркивания`);
   }
 
-  var result = '@' + username;
-  logEvent("DEBUG", "telegram_chat_id_username", "system", `${originalInput} → ${result}`);
-  
+  const result = '@' + username;
+  logEvent('DEBUG', 'telegram_chat_id_username', 'system', `${originalInput} → ${result}`);
+
   return result;
 }
 
@@ -3865,231 +4204,233 @@ function extractTelegramChatId(input) {
  */
 function cleanOldLogs() {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var allSheets = ss.getSheets();
-    var logSheets = [];
-    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const allSheets = ss.getSheets();
+    const logSheets = [];
+
     // Ищем все листы с логами
-    for (var i = 0; i < allSheets.length; i++) {
-      var sheetName = allSheets[i].getName();
-      if (sheetName === "Logs" || sheetName === "Client Logs" || sheetName.toLowerCase().includes("log")) {
+    for (let i = 0; i < allSheets.length; i++) {
+      const sheetName = allSheets[i].getName();
+      if (sheetName === 'Logs' || sheetName === 'Client Logs' || sheetName.toLowerCase().includes('log')) {
         logSheets.push(allSheets[i]);
       }
     }
-    
+
     if (logSheets.length === 0) {
-      logEvent("WARN", "no_log_sheets_found", "system", "No log sheets found for cleanup");
+      logEvent('WARN', 'no_log_sheets_found', 'system', 'No log sheets found for cleanup');
       return { totalDeleted: 0, sheetResults: [] };
     }
-    
-    var thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    var totalDeleted = 0;
-    var sheetResults = [];
-    
-    logEvent("INFO", "log_cleanup_started", "system", `Starting cleanup of ${logSheets.length} log sheets older than ${thirtyDaysAgo.toISOString()}`);
-    
+
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    let totalDeleted = 0;
+    const sheetResults = [];
+
+    logEvent('INFO', 'log_cleanup_started', 'system', `Starting cleanup of ${logSheets.length} log sheets older than ${thirtyDaysAgo.toISOString()}`);
+
     // Обрабатываем каждый лог-лист
-    for (var j = 0; j < logSheets.length; j++) {
-      var sheet = logSheets[j];
-      var logSheetName = sheet.getName();
-      var sheetDeletedCount = 0;
-      
+    for (let j = 0; j < logSheets.length; j++) {
+      const sheet = logSheets[j];
+      const logSheetName = sheet.getName();
+      let sheetDeletedCount = 0;
+
       try {
         // Проверяем, есть ли у листа данные
-        var dataRange = sheet.getDataRange();
-        var data = dataRange.getValues();
-        
+        const dataRange = sheet.getDataRange();
+        const data = dataRange.getValues();
+
         if (data.length <= 1) { // Только заголовок или пустой лист
-          logEvent("DEBUG", "log_cleanup_sheet_empty", "system", `Sheet "${currentSheetName}" is empty or has only headers`);
-          sheetResults.push({ sheetName: currentSheetName, deletedCount: 0, status: "empty" });
+          logEvent('DEBUG', 'log_cleanup_sheet_empty', 'system', `Sheet "${currentSheetName}" is empty or has only headers`);
+          sheetResults.push({ sheetName: currentSheetName, deletedCount: 0, status: 'empty' });
           continue;
         }
-        
+
         // Удаляем старые записи (начиная с конца, чтобы не сбивать индексы)
         for (let i = data.length - 1; i >= 1; i--) {
           try {
-            var logDate = new Date(data[i][0]);
-            
+            const logDate = new Date(data[i][0]);
+
             // Проверяем валидность даты
             if (isNaN(logDate.getTime())) {
-              logEvent("DEBUG", "log_cleanup_invalid_date", "system", `Invalid date in sheet "${currentSheetName}" row ${i + 1}: ${data[i][0]}`);
+              logEvent('DEBUG', 'log_cleanup_invalid_date', 'system', `Invalid date in sheet "${currentSheetName}" row ${i + 1}: ${data[i][0]}`);
               continue;
             }
-            
+
             if (logDate < thirtyDaysAgo) {
               sheet.deleteRow(i + 1);
               sheetDeletedCount++;
             }
           } catch (rowError) {
-            logEvent("WARN", "log_cleanup_row_error", "system", `Error processing row ${i + 1} in sheet "${currentSheetName}": ${rowError.message}`);
+            logEvent('WARN', 'log_cleanup_row_error', 'system', `Error processing row ${i + 1} in sheet "${currentSheetName}": ${rowError.message}`);
           }
         }
-        
+
         totalDeleted += sheetDeletedCount;
-        sheetResults.push({ 
-          sheetName: currentSheetName, 
-          deletedCount: sheetDeletedCount, 
-          status: "success",
+        sheetResults.push({
+          sheetName: currentSheetName,
+          deletedCount: sheetDeletedCount,
+          status: 'success',
           totalRows: data.length
         });
-        
-        logEvent("INFO", "log_cleanup_sheet_completed", "system", `Sheet "${currentSheetName}": deleted ${sheetDeletedCount} of ${data.length - 1} entries`);
-        
+
+        logEvent('INFO', 'log_cleanup_sheet_completed', 'system', `Sheet "${currentSheetName}": deleted ${sheetDeletedCount} of ${data.length - 1} entries`);
+
       } catch (sheetError) {
-        logEvent("ERROR", "log_cleanup_sheet_error", "system", `Error processing sheet "${currentSheetName}": ${sheetError.message}`);
-        sheetResults.push({ 
-          sheetName: currentSheetName, 
-          deletedCount: 0, 
-          status: "error", 
-          error: sheetError.message 
+        logEvent('ERROR', 'log_cleanup_sheet_error', 'system', `Error processing sheet "${currentSheetName}": ${sheetError.message}`);
+        sheetResults.push({
+          sheetName: currentSheetName,
+          deletedCount: 0,
+          status: 'error',
+          error: sheetError.message
         });
       }
     }
-    
+
     // Финальная сводка
-    var summary = {
+    const summary = {
       totalDeleted: totalDeleted,
       sheetsProcessed: logSheets.length,
       cutoffDate: thirtyDaysAgo.toISOString(),
       sheetResults: sheetResults
     };
-    
-    logEvent("INFO", "log_cleanup_completed", "system", 
+
+    logEvent('INFO', 'log_cleanup_completed', 'system',
       `Cleanup completed: ${totalDeleted} entries deleted from ${logSheets.length} sheets. Summary: ${JSON.stringify(sheetResults)}`);
-    
+
     return summary;
-    
+
   } catch (error) {
-    logEvent("ERROR", "log_cleanup_critical_error", "system", `Critical error in log cleanup: ${error.message}, Stack: ${error.stack?.substring(0, 200)}`);
-    return { 
-      totalDeleted: 0, 
-      sheetsProcessed: 0, 
+    logEvent('ERROR', 'log_cleanup_critical_error', 'system', `Critical error in log cleanup: ${error.message}, Stack: ${error.stack?.substring(0, 200)}`);
+    return {
+      totalDeleted: 0,
+      sheetsProcessed: 0,
       error: error.message,
-      sheetResults: [] 
+      sheetResults: []
     };
   }
 }
 
 /**
  * Обработчик публикации последнего поста из VK группы в Telegram
+ * @param payload
+ * @param clientIp
  */
 function handlePublishLastPost(payload, clientIp) {
   try {
-    var { license_key, vk_group_id, binding_id } = payload;
-    
+    const { license_key, vk_group_id, binding_id } = payload;
+
     // Проверяем лицензию
-    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
-    var licenseData = JSON.parse(licenseCheck.getContent());
-    
+    const licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    const licenseData = JSON.parse(licenseCheck.getContent());
+
     if (!licenseData.success) {
       return licenseCheck;
     }
-    
+
     if (!vk_group_id) {
       return jsonResponse({
         success: false,
-        error: "vk_group_id required"
+        error: 'vk_group_id required'
       }, 400);
     }
-    
+
     // Валидация vk_group_id
     if (!/^-?\d+$/.test(vk_group_id)) {
       return jsonResponse({
         success: false,
-        error: "Invalid vk_group_id format"
+        error: 'Invalid vk_group_id format'
       }, 400);
     }
-    
-    logEvent("INFO", "publish_last_post_request", license_key, 
+
+    logEvent('INFO', 'publish_last_post_request', license_key,
              `Group ID: ${vk_group_id}, Binding ID: ${binding_id}, IP: ${clientIp}`);
-    
+
     // Получаем последний пост из VK
-    var postsResult = handleGetVkPosts({ 
-      license_key: license_key, 
-      vk_group_id: vk_group_id, 
-      count: 1 
+    const postsResult = handleGetVkPosts({
+      license_key: license_key,
+      vk_group_id: vk_group_id,
+      count: 1
     }, clientIp);
-    
-    var postsData = JSON.parse(postsResult.getContent());
-    
+
+    const postsData = JSON.parse(postsResult.getContent());
+
     if (!postsData.success) {
-      logEvent("ERROR", "publish_last_post_get_posts_failed", license_key, 
+      logEvent('ERROR', 'publish_last_post_get_posts_failed', license_key,
                `Error getting posts: ${postsData.error}`);
       return jsonResponse({
         success: false,
         error: `Failed to get VK posts: ${postsData.error}`
       }, 500);
     }
-    
+
     if (!postsData.posts || postsData.posts.length === 0) {
-      logEvent("WARN", "publish_last_post_no_posts", license_key, 
+      logEvent('WARN', 'publish_last_post_no_posts', license_key,
                `No posts found in VK group: ${vk_group_id}`);
       return jsonResponse({
         success: false,
-        error: "No posts found in VK group"
+        error: 'No posts found in VK group'
       }, 404);
     }
-    
-    var lastPost = postsData.posts[0];
-    
+
+    const lastPost = postsData.posts[0];
+
     // Получаем настройки связки для форматирования
-    var binding = null;
+    let binding = null;
     if (binding_id) {
       try {
-        var bindingsSheet = getSheet("Bindings");
-        var data = bindingsSheet.getDataRange().getValues();
-        
-        for (var i = 1; i < data.length; i++) {
+        const bindingsSheet = getSheet('Bindings');
+        const data = bindingsSheet.getDataRange().getValues();
+
+        for (let i = 1; i < data.length; i++) {
           if (data[i][0] === binding_id && data[i][1] === license_key) {
             binding = buildBindingObjectFromRow(data[i]);
             if (binding) {
-              binding.formatSettings = binding.formatSettings || "";
+              binding.formatSettings = binding.formatSettings || '';
             }
             break;
           }
         }
       } catch (error) {
-        logEvent("WARN", "publish_last_post_binding_lookup_failed", license_key, 
+        logEvent('WARN', 'publish_last_post_binding_lookup_failed', license_key,
                  `Binding ID: ${binding_id}, Error: ${error.message}`);
       }
     }
-    
+
     if (!binding) {
       return jsonResponse({
         success: false,
-        error: "Binding not found or no telegram chat specified"
+        error: 'Binding not found or no telegram chat specified'
       }, 404);
     }
-    
+
     // Парсим настройки форматирования
-    var formatSettings = {};
+    let formatSettings = {};
     try {
-      if (binding.formatSettings && binding.formatSettings !== "") {
+      if (binding.formatSettings && binding.formatSettings !== '') {
         formatSettings = JSON.parse(binding.formatSettings);
       }
     } catch (error) {
-      logEvent("WARN", "publish_last_post_format_settings_parse_error", license_key, 
+      logEvent('WARN', 'publish_last_post_format_settings_parse_error', license_key,
                `Error parsing format settings: ${error.message}`);
     }
-    
+
     // Отправляем пост в Telegram
-    var sendResult = handleSendPost({
+    const sendResult = handleSendPost({
       license_key: license_key,
       post: lastPost,
       tg_chat_id: binding.tgChatId,
       format_settings: formatSettings,
       vk_group_id: vk_group_id
     }, clientIp);
-    
-    var sendData = JSON.parse(sendResult.getContent());
-    
+
+    const sendData = JSON.parse(sendResult.getContent());
+
     if (sendData.success) {
-      logEvent("INFO", "publish_last_post_success", license_key, 
+      logEvent('INFO', 'publish_last_post_success', license_key,
                `Post published successfully: VK ${vk_group_id}_${lastPost.id} -> TG ${binding.tgChatId}`);
-      
+
       return jsonResponse({
         success: true,
-        message: "Last post published successfully",
+        message: 'Last post published successfully',
         published_post: {
           vk_post_id: lastPost.id,
           vk_group_id: vk_group_id,
@@ -4098,21 +4439,21 @@ function handlePublishLastPost(payload, clientIp) {
         }
       });
     } else {
-      logEvent("ERROR", "publish_last_post_send_failed", license_key, 
+      logEvent('ERROR', 'publish_last_post_send_failed', license_key,
                `Send error: ${sendData.error}`);
-      
+
       return jsonResponse({
         success: false,
         error: `Failed to send post to Telegram: ${sendData.error}`
       }, 500);
     }
-    
+
   } catch (error) {
-    logEvent("ERROR", "publish_last_post_error", payload.license_key || "unknown", 
+    logEvent('ERROR', 'publish_last_post_error', payload.license_key || 'unknown',
              `Error: ${error.message}`);
-    return jsonResponse({ 
-      success: false, 
-      error: "Failed to publish last post: " + error.message 
+    return jsonResponse({
+      success: false,
+      error: 'Failed to publish last post: ' + error.message
     }, 500);
   }
 }
@@ -4123,19 +4464,19 @@ function handlePublishLastPost(payload, clientIp) {
  */
 function ensureBindingsSheetStructure() {
   try {
-    var sheet = getSheet("Bindings");
-    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    
-    var expectedHeaders = [
-      "Binding ID", "License Key", "User Email", "VK Group URL", "TG Chat ID", 
-      "Status", "Created At", "Last Check", "Format Settings", "Binding Name", "Binding Description"
+    const sheet = getSheet('Bindings');
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+    const expectedHeaders = [
+      'Binding ID', 'License Key', 'User Email', 'VK Group URL', 'TG Chat ID',
+      'Status', 'Created At', 'Last Check', 'Format Settings', 'Binding Name', 'Binding Description'
     ];
-    
-    var missingColumns = [];
-    var currentColumnCount = headers.length;
-    
+
+    const missingColumns = [];
+    const currentColumnCount = headers.length;
+
     // Проверяем какие колонки отсутствуют
-    for (var i = 0; i < expectedHeaders.length; i++) {
+    for (let i = 0; i < expectedHeaders.length; i++) {
       if (i >= headers.length || headers[i] !== expectedHeaders[i]) {
         missingColumns.push({
           name: expectedHeaders[i],
@@ -4143,14 +4484,14 @@ function ensureBindingsSheetStructure() {
         });
       }
     }
-    
+
     // Добавляем недостающие колонки
     if (missingColumns.length > 0) {
-      var targetColumn = Math.max(currentColumnCount + 1, 1);
-      
-      for (var j = 0; j < missingColumns.length; j++) {
-        var missing = missingColumns[j];
-        
+      let targetColumn = Math.max(currentColumnCount + 1, 1);
+
+      for (let j = 0; j < missingColumns.length; j++) {
+        const missing = missingColumns[j];
+
         // Если колонка полностью отсутствует (выходит за текущие границы)
         if (missing.index > currentColumnCount) {
           sheet.getRange(1, targetColumn).setValue(missing.name);
@@ -4160,35 +4501,35 @@ function ensureBindingsSheetStructure() {
           sheet.getRange(1, missing.index).setValue(missing.name);
         }
       }
-      
+
       // Форматируем новые заголовки
-      var headerRange = sheet.getRange(1, 1, 1, expectedHeaders.length);
-      headerRange.setBackground("#667eea");
-      headerRange.setFontColor("white");
-      headerRange.setFontWeight("bold");
-      
-      logEvent("INFO", "bindings_structure_ensured", "system", 
-               `Added/updated columns: ${missingColumns.map(c => c.name).join(", ")}`);
-      
+      const headerRange = sheet.getRange(1, 1, 1, expectedHeaders.length);
+      headerRange.setBackground('#667eea');
+      headerRange.setFontColor('white');
+      headerRange.setFontWeight('bold');
+
+      logEvent('INFO', 'bindings_structure_ensured', 'system',
+               `Added/updated columns: ${missingColumns.map(c => c.name).join(', ')}`);
+
       return {
         success: true,
         added_columns: missingColumns.map(c => c.name),
         total_columns: expectedHeaders.length
       };
     } else {
-      logEvent("DEBUG", "bindings_structure_already_valid", "system", 
-               "All required columns exist with correct names");
-      
+      logEvent('DEBUG', 'bindings_structure_already_valid', 'system',
+               'All required columns exist with correct names');
+
       return {
         success: true,
         added_columns: [],
         total_columns: expectedHeaders.length,
-        message: "Bindings sheet structure is already correct"
+        message: 'Bindings sheet structure is already correct'
       };
     }
-    
+
   } catch (error) {
-    logEvent("ERROR", "ensure_bindings_structure_error", "system", error.message);
+    logEvent('ERROR', 'ensure_bindings_structure_error', 'system', error.message);
     return {
       success: false,
       error: error.message
@@ -4201,51 +4542,51 @@ function ensureBindingsSheetStructure() {
  */
 function migrateBindingsSheet() {
   try {
-    var sheet = getSheet("Bindings");
-    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    
-    var expectedHeaders = [
-      "Binding ID", "License Key", "User Email", "VK Group URL", "TG Chat ID", 
-      "Status", "Created At", "Last Check", "Format Settings", "Binding Name", "Binding Description"
+    const sheet = getSheet('Bindings');
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+    const expectedHeaders = [
+      'Binding ID', 'License Key', 'User Email', 'VK Group URL', 'TG Chat ID',
+      'Status', 'Created At', 'Last Check', 'Format Settings', 'Binding Name', 'Binding Description'
     ];
-    
-    var missingColumns = [];
-    
+
+    const missingColumns = [];
+
     // Проверяем какие колонки отсутствуют
-    for (var i = 0; i < expectedHeaders.length; i++) {
+    for (let i = 0; i < expectedHeaders.length; i++) {
       if (i >= headers.length || headers[i] !== expectedHeaders[i]) {
         missingColumns.push(expectedHeaders[i]);
       }
     }
-    
+
     // Добавляем недостающие колонки
     if (missingColumns.length > 0) {
-      var currentColumn = headers.length + 1;
-      
-      for (var j = 0; j < missingColumns.length; j++) {
+      let currentColumn = headers.length + 1;
+
+      for (let j = 0; j < missingColumns.length; j++) {
         sheet.getRange(1, currentColumn).setValue(missingColumns[j]);
         currentColumn++;
       }
-      
-      logEvent("INFO", "bindings_migration_completed", "system", 
-               `Added columns: ${missingColumns.join(", ")}`);
-      
+
+      logEvent('INFO', 'bindings_migration_completed', 'system',
+               `Added columns: ${missingColumns.join(', ')}`);
+
       return {
         success: true,
         added_columns: missingColumns
       };
     } else {
-      logEvent("DEBUG", "bindings_migration_not_needed", "system", 
-               "All required columns already exist");
-      
+      logEvent('DEBUG', 'bindings_migration_not_needed', 'system',
+               'All required columns already exist');
+
       return {
         success: true,
         added_columns: []
       };
     }
-    
+
   } catch (error) {
-    logEvent("ERROR", "bindings_migration_error", "system", error.message);
+    logEvent('ERROR', 'bindings_migration_error', 'system', error.message);
     return {
       success: false,
       error: error.message
@@ -4255,56 +4596,57 @@ function migrateBindingsSheet() {
 
 /**
  * Получает медиа URL из VK вложений с поддержкой прямых ссылок на видео
+ * @param attachments
  */
 function getVkMediaUrls(attachments) {
-  var result = {
+  const result = {
     photos: [],
     videos: [],      // Прямые URL через video.get
     docLinks: [],
     audioLinks: []
   };
-  
+
   if (!attachments || attachments.length === 0) {
     return result;
   }
-  
+
   for (const attachment of attachments) {
     try {
       switch (attachment.type) {
-        case "photo": {
+        case 'photo': {
           const photoUrl = getBestPhotoUrl(attachment.photo.sizes);
           if (photoUrl) {
-            result.photos.push({ type: "photo", url: photoUrl });
+            result.photos.push({ type: 'photo', url: photoUrl });
           }
           break;
         }
-          
-        case "video": {
+
+        case 'video': {
           const videoId = `${attachment.video.owner_id}_${attachment.video.id}`;
           const directUrl = getVkVideoDirectUrl(videoId);
-          
+
           if (directUrl) {
-            result.videos.push({ type: "video", url: directUrl, id: videoId });
+            result.videos.push({ type: 'video', url: directUrl, id: videoId });
           } else {
             // Fallback на embed если direct URL недоступен
             result.docLinks.push(`🎥 [Видео](https://vk.com/video${videoId})`);
           }
           break;
         }
-          
-        case "audio":
+
+        case 'audio':
           if (attachment.audio.artist && attachment.audio.title) {
             result.audioLinks.push(`🎵 ${attachment.audio.artist} - ${attachment.audio.title}`);
           }
           break;
-          
-        case "doc":
+
+        case 'doc':
           if (attachment.doc.url && attachment.doc.title) {
             result.docLinks.push(`📎 [${attachment.doc.title}](${attachment.doc.url})`);
           }
           break;
-          
-        case "link":
+
+        case 'link':
           if (attachment.link.url) {
             const title = attachment.link.title || attachment.link.url;
             result.docLinks.push(`🔗 [${title}](${attachment.link.url})`);
@@ -4312,24 +4654,23 @@ function getVkMediaUrls(attachments) {
           break;
       }
     } catch (attachError) {
-      logEvent("WARN", "attachment_processing_error", "server", 
+      logEvent('WARN', 'attachment_processing_error', 'server',
                `Type: ${attachment.type}, Error: ${attachError.message}`);
     }
   }
-  
+
   return result;
 }
 
 /**
  * Оптимизированная отправка смешанных медиа (фото + видео + документы)
  * Группирует фото в MediaGroup (до 10 штук), остальное отправляет отдельно
- * 
  * @param {string} botToken - Telegram Bot Token
  * @param {string} chatId - ID чата/канала
- * @param {Array<Object>} mediaUrls - Массив медиа [{type: 'photo'|'video'|'doc', url: '...'}]
+ * @param {Array<object>} mediaUrls - Массив медиа [{type: 'photo'|'video'|'doc', url: '...'}]
  * @param {string} caption - Текст для первого медиа
- * @param {Object} options - Дополнительные настройки (parse_mode и т.д.)
- * @return {Object} Результат отправки
+ * @param {object} options - Дополнительные настройки (parse_mode и т.д.)
+ * @returns {object} Результат отправки
  */
 function sendMixedMediaOptimized(botToken, chatId, mediaUrls, caption, options) {
   try {
@@ -4339,28 +4680,34 @@ function sendMixedMediaOptimized(botToken, chatId, mediaUrls, caption, options) 
     }
 
     // Группируем медиа по типам
-    var photos = mediaUrls.filter(function(m) { return m.type === 'photo'; });
-    var videos = mediaUrls.filter(function(m) { return m.type === 'video'; });
-    var documents = mediaUrls.filter(function(m) { return m.type === 'document' || m.type === 'doc'; });
+    const photos = mediaUrls.filter(function(m) {
+ return m.type === 'photo';
+});
+    const videos = mediaUrls.filter(function(m) {
+ return m.type === 'video';
+});
+    const documents = mediaUrls.filter(function(m) {
+ return m.type === 'document' || m.type === 'doc';
+});
 
-    var results = [];
-    var apiCallsSaved = 0;
+    const results = [];
+    let apiCallsSaved = 0;
 
     // Оптимизация: группируем фото по MAX_MEDIA_GROUP_SIZE (10)
     if (photos.length > 0) {
-      var photoGroups = [];
-      for (var i = 0; i < photos.length; i += MAX_MEDIA_GROUP_SIZE) {
+      const photoGroups = [];
+      for (let i = 0; i < photos.length; i += MAX_MEDIA_GROUP_SIZE) {
         photoGroups.push(photos.slice(i, i + MAX_MEDIA_GROUP_SIZE));
       }
 
       // Отправляем каждую группу ОДНИМ запросом
       photoGroups.forEach(function(group, index) {
-        var groupCaption = (index === 0) ? caption : null;
-        var groupResult = sendTelegramMediaGroup(botToken, chatId, group, groupCaption, options);
+        const groupCaption = (index === 0) ? caption : null;
+        const groupResult = sendTelegramMediaGroup(botToken, chatId, group, groupCaption, options);
         results.push(groupResult);
 
         if (!groupResult.success) {
-          logEvent("WARN", "photo_group_send_failed", "server", 
+          logEvent('WARN', 'photo_group_send_failed', 'server',
                    `Group ${index + 1}, Error: ${groupResult.error}`);
         }
       });
@@ -4371,12 +4718,12 @@ function sendMixedMediaOptimized(botToken, chatId, mediaUrls, caption, options) 
 
     // Видео отправляем отдельно (Telegram API ограничение)
     videos.forEach(function(video, index) {
-      var videoCaption = (photos.length === 0 && index === 0) ? caption : null;
-      var videoResult = sendTelegramVideo(botToken, chatId, video.url, videoCaption);
+      const videoCaption = (photos.length === 0 && index === 0) ? caption : null;
+      const videoResult = sendTelegramVideo(botToken, chatId, video.url, videoCaption);
       results.push(videoResult);
 
       if (!videoResult.success) {
-        logEvent("WARN", "video_send_failed", "server", 
+        logEvent('WARN', 'video_send_failed', 'server',
                  `Video ${video.id || index}: ${videoResult.error}`);
       }
 
@@ -4388,18 +4735,18 @@ function sendMixedMediaOptimized(botToken, chatId, mediaUrls, caption, options) 
 
     // Документы отправляем отдельно
     documents.forEach(function(doc, index) {
-      var docCaption = (photos.length === 0 && videos.length === 0 && index === 0) ? caption : null;
-      var docResult = sendTelegramDocument(botToken, chatId, doc.url, docCaption);
+      const docCaption = (photos.length === 0 && videos.length === 0 && index === 0) ? caption : null;
+      const docResult = sendTelegramDocument(botToken, chatId, doc.url, docCaption);
       results.push(docResult);
 
       if (!docResult.success) {
-        logEvent("WARN", "document_send_failed", "server", 
+        logEvent('WARN', 'document_send_failed', 'server',
                  `Document ${index}: ${docResult.error}`);
       }
     });
 
     // Логируем оптимизацию
-    logEvent("INFO", "MEDIA_OPTIMIZATION", "server", {
+    logEvent('INFO', 'MEDIA_OPTIMIZATION', 'server', {
       total_media: mediaUrls.length,
       photos: photos.length,
       videos: videos.length,
@@ -4410,15 +4757,19 @@ function sendMixedMediaOptimized(botToken, chatId, mediaUrls, caption, options) 
     });
 
     // Определяем общий результат
-    var successCount = results.filter(function(r) { return r.success; }).length;
-    var totalCount = results.length;
+    const successCount = results.filter(function(r) {
+ return r.success;
+}).length;
+    const totalCount = results.length;
 
     if (successCount === 0) {
-      return { success: false, error: "All media parts failed to send" };
+      return { success: false, error: 'All media parts failed to send' };
     } else if (successCount < totalCount) {
-      return { 
-        success: true, 
-        message_id: results.find(function(r) { return r.success; }).message_id,
+      return {
+        success: true,
+        message_id: results.find(function(r) {
+ return r.success;
+}).message_id,
         warning: `Partial success: ${successCount}/${totalCount} parts sent`,
         results: results,
         optimization_stats: {
@@ -4427,9 +4778,11 @@ function sendMixedMediaOptimized(botToken, chatId, mediaUrls, caption, options) 
         }
       };
     } else {
-      return { 
-        success: true, 
-        message_id: results.find(function(r) { return r.success; }).message_id,
+      return {
+        success: true,
+        message_id: results.find(function(r) {
+ return r.success;
+}).message_id,
         results: results,
         optimization_stats: {
           api_calls_saved: apiCallsSaved,
@@ -4439,50 +4792,54 @@ function sendMixedMediaOptimized(botToken, chatId, mediaUrls, caption, options) 
     }
 
   } catch (error) {
-    logEvent("ERROR", "send_mixed_media_optimized_error", "server", error.message);
+    logEvent('ERROR', 'send_mixed_media_optimized_error', 'server', error.message);
     return { success: false, error: error.message };
   }
 }
 
 /**
  * Отправляет документ в Telegram
+ * @param botToken
+ * @param chatId
+ * @param documentUrl
+ * @param caption
  */
 function sendTelegramDocument(botToken, chatId, documentUrl, caption) {
   try {
-    var url = `https://api.telegram.org/bot${botToken}/sendDocument`;
-    
-    var payload = {
+    const url = `https://api.telegram.org/bot${botToken}/sendDocument`;
+
+    const payload = {
       chat_id: chatId,
       document: documentUrl
     };
-    
+
     if (caption) {
       payload.caption = caption;
       payload.parse_mode = 'HTML';
     }
-    
-    var response = UrlFetchApp.fetch(url, {
+
+    const response = UrlFetchApp.fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       payload: JSON.stringify(payload),
       muteHttpExceptions: true,
       timeout: TIMEOUTS.MEDIUM
     });
-    
-    var result = JSON.parse(response.getContentText());
-    
+
+    const result = JSON.parse(response.getContentText());
+
     if (result.ok) {
-      logEvent("INFO", "document_sent", "server", 
+      logEvent('INFO', 'document_sent', 'server',
                `Chat: ${chatId}, Document URL: ${documentUrl.substring(0, 100)}..., Message ID: ${result.result.message_id}`);
       return { success: true, message_id: result.result.message_id };
     } else {
-      logEvent("ERROR", "document_send_failed", "server", 
+      logEvent('ERROR', 'document_send_failed', 'server',
                `Error: ${result.description}, Code: ${result.error_code}`);
-      return { success: false, error: result.description || "Document send failed" };
+      return { success: false, error: result.description || 'Document send failed' };
     }
-    
+
   } catch (error) {
-    logEvent("ERROR", "document_send_exception", "server", error.message);
+    logEvent('ERROR', 'document_send_exception', 'server', error.message);
     return { success: false, error: error.message };
   }
 }
@@ -4492,102 +4849,104 @@ function sendTelegramDocument(botToken, chatId, documentUrl, caption) {
  */
 function testSendMixedMediaOptimized() {
   try {
-    logEvent("INFO", "test_send_mixed_media_optimized_start", "server", "Starting optimization test");
-    
+    logEvent('INFO', 'test_send_mixed_media_optimized_start', 'server', 'Starting optimization test');
+
     // Тестовые данные
-    var botToken = PropertiesService.getScriptProperties().getProperty("BOT_TOKEN");
-    var testChatId = PropertiesService.getScriptProperties().getProperty("TEST_CHAT_ID") || "@test_channel";
-    
+    const botToken = PropertiesService.getScriptProperties().getProperty('BOT_TOKEN');
+    const testChatId = PropertiesService.getScriptProperties().getProperty('TEST_CHAT_ID') || '@test_channel';
+
     if (!botToken) {
-      logEvent("ERROR", "test_no_bot_token", "server", "Bot token not configured for testing");
-      return { success: false, error: "Bot token not configured" };
+      logEvent('ERROR', 'test_no_bot_token', 'server', 'Bot token not configured for testing');
+      return { success: false, error: 'Bot token not configured' };
     }
-    
+
     // Тест 1: 5 фото (должно быть 1 MediaGroup)
-    var testPhotos = [];
-    for (var i = 1; i <= 5; i++) {
+    const testPhotos = [];
+    for (let i = 1; i <= 5; i++) {
       testPhotos.push({
         type: 'photo',
         url: `https://picsum.photos/800/600?random=${i}`
       });
     }
-    
-    var result1 = sendMixedMediaOptimized(
+
+    const result1 = sendMixedMediaOptimized(
       botToken,
       testChatId,
       testPhotos,
-      "🧪 Тест 1: 5 фото в одной группе",
+      '🧪 Тест 1: 5 фото в одной группе',
       { parse_mode: 'HTML' }
     );
-    
-    logEvent("INFO", "test_1_result", "server", {
+
+    logEvent('INFO', 'test_1_result', 'server', {
       photos_count: testPhotos.length,
       success: result1.success,
       api_calls_saved: (result1.optimization_stats && result1.optimization_stats.api_calls_saved) || 0
     });
-    
+
     // Тест 2: 12 фото (должно быть 2 MediaGroup)
-    var testPhotos2 = [];
-    for (var j = 1; j <= 12; j++) {
+    const testPhotos2 = [];
+    for (let j = 1; j <= 12; j++) {
       testPhotos2.push({
         type: 'photo',
         url: `https://picsum.photos/800/600?random=${j + 100}`
       });
     }
-    
-    var result2 = sendMixedMediaOptimized(
+
+    const result2 = sendMixedMediaOptimized(
       botToken,
       testChatId,
       testPhotos2,
-      "🧪 Тест 2: 12 фото в двух группах",
+      '🧪 Тест 2: 12 фото в двух группах',
       { parse_mode: 'HTML' }
     );
-    
-    logEvent("INFO", "test_2_result", "server", {
+
+    logEvent('INFO', 'test_2_result', 'server', {
       photos_count: testPhotos2.length,
       success: result2.success,
       api_calls_saved: (result2.optimization_stats && result2.optimization_stats.api_calls_saved) || 0,
       photo_groups: (result2.optimization_stats && result2.optimization_stats.photo_groups) || 0
     });
-    
+
     // Тест 3: Смешанные медиа (фото + видео)
-    var mixedMedia = [
+    const mixedMedia = [
       { type: 'photo', url: 'https://picsum.photos/800/600?random=200' },
       { type: 'photo', url: 'https://picsum.photos/800/600?random=201' },
       { type: 'video', url: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4' }
     ];
-    
-    var result3 = sendMixedMediaOptimized(
+
+    const result3 = sendMixedMediaOptimized(
       botToken,
       testChatId,
       mixedMedia,
-      "🧪 Тест 3: Фото + видео",
+      '🧪 Тест 3: Фото + видео',
       { parse_mode: 'HTML' }
     );
-    
-    logEvent("INFO", "test_3_result", "server", {
+
+    logEvent('INFO', 'test_3_result', 'server', {
       total_media: mixedMedia.length,
       success: result3.success,
       optimization_stats: result3.optimization_stats
     });
-    
-    var summary = {
+
+    const summary = {
       success: true,
-      tests_passed: [result1.success, result2.success, result3.success].filter(function(s) { return s; }).length,
+      tests_passed: [result1.success, result2.success, result3.success].filter(function(s) {
+ return s;
+}).length,
       total_tests: 3,
       results: {
         test_1_photos_5: result1,
-        test_2_photos_12: result2,  
+        test_2_photos_12: result2,
         test_3_mixed: result3
       }
     };
-    
-    logEvent("INFO", "test_send_mixed_media_optimized_complete", "server", summary);
-    
+
+    logEvent('INFO', 'test_send_mixed_media_optimized_complete', 'server', summary);
+
     return summary;
-    
+
   } catch (error) {
-    logEvent("ERROR", "test_send_mixed_media_optimized_error", "server", error.message);
+    logEvent('ERROR', 'test_send_mixed_media_optimized_error', 'server', error.message);
     return { success: false, error: error.message };
   }
 }
@@ -4599,7 +4958,7 @@ function testSendMixedMediaOptimized() {
 /**
  * Извлекает ID группы VK из URL с поддержкой всех форматов из ARCHITECTURE.md
  * @param {string} url - URL группы VK
- * @return {string} - ID группы с префиксом - для групп
+ * @returns {string} - ID группы с префиксом - для групп
  */
 function extractVkGroupId(url) {
   try {
@@ -4607,19 +4966,19 @@ function extractVkGroupId(url) {
       logEvent('WARN', 'vk_url_invalid_type', 'server', `URL type: ${typeof url}`);
       throw new Error('Invalid URL type');
     }
-    
+
     const originalInput = url;
     const cleanInput = url.trim().toLowerCase().split('?')[0].split('#')[0];
-    
+
     logEvent('DEBUG', 'vk_group_id_extraction_start', 'server', `Input: "${originalInput}" → Clean: "${cleanInput}"`);
-    
+
     // Если уже ID (число или -число)
     if (/^-?\d+$/.test(cleanInput)) {
       const normalizedId = cleanInput.startsWith('-') ? cleanInput : '-' + cleanInput;
       logEvent('DEBUG', 'vk_group_id_numeric', 'server', `${originalInput} → ${normalizedId}`);
       return normalizedId;
     }
-    
+
     // Форматы: vk.com/public123, vk.com/club123
     const publicClubMatch = cleanInput.match(/vk\.com\/(public|club)(\d+)/i);
     if (publicClubMatch) {
@@ -4627,7 +4986,7 @@ function extractVkGroupId(url) {
       logEvent('DEBUG', 'vk_group_id_public_club', 'server', `${originalInput} → ${result}`);
       return result;
     }
-    
+
     // Форматы: vk.com/username
     const nameMatch = cleanInput.match(/vk\.com\/([a-z0-9_]+)/i);
     if (nameMatch) {
@@ -4638,9 +4997,9 @@ function extractVkGroupId(url) {
         return resolvedId;
       }
     }
-    
+
     throw new Error('Invalid VK URL format: ' + originalInput);
-    
+
   } catch (error) {
     logEvent('ERROR', 'vk_url_extraction_failed', 'server', `URL: ${url}, Error: ${error.message}`);
     throw error;
@@ -4655,48 +5014,50 @@ function extractVkGroupId(url) {
  */
 function buildVkPostUrl(vkGroupId, postId) {
   if (!vkGroupId || !postId) {
-    logEvent("WARN", "vk_url_missing_params", "server", 
-             "VK Group ID: " + vkGroupId + ", Post ID: " + postId);
-    return "";
+    logEvent('WARN', 'vk_url_missing_params', 'server',
+             'VK Group ID: ' + vkGroupId + ', Post ID: ' + postId);
+    return '';
   }
-  
+
   // Приводим к строке и убираем пробелы
-  var cleanGroupId = String(vkGroupId).trim();
-  var cleanPostId = String(postId).trim();
-  
+  const cleanGroupId = String(vkGroupId).trim();
+  const cleanPostId = String(postId).trim();
+
   // Валидация формата
   if (!/^-?\d+$/.test(cleanGroupId)) {
-    logEvent("ERROR", "invalid_vk_group_id", "server", 
-             "Invalid format: " + cleanGroupId);
-    return "";
+    logEvent('ERROR', 'invalid_vk_group_id', 'server',
+             'Invalid format: ' + cleanGroupId);
+    return '';
   }
-  
+
   if (!/^\d+$/.test(cleanPostId)) {
-    logEvent("ERROR", "invalid_vk_post_id", "server", 
-             "Invalid format: " + cleanPostId);
-    return "";
+    logEvent('ERROR', 'invalid_vk_post_id', 'server',
+             'Invalid format: ' + cleanPostId);
+    return '';
   }
-  
+
   // Правильный формат: https://vk.com/wall{owner_id}_{post_id}
-  return "https://vk.com/wall" + cleanGroupId + "_" + cleanPostId;
+  return 'https://vk.com/wall' + cleanGroupId + '_' + cleanPostId;
 }
 
 /**
  * Извлекает безопасное имя листа из URL VK группы
  * @param {string} url - URL группы VK
- * @return {string} - безопасное имя для листа Google Sheets
+ * @returns {string} - безопасное имя для листа Google Sheets
  */
 function extractSheetNameFromVkUrl(url) {
-  if (!url) return null;
-  
+  if (!url) {
+return null;
+}
+
   const cleanUrl = url.trim().toLowerCase().split('?')[0].split('#')[0];
-  
+
   // public123456, club789012
   const idMatch = cleanUrl.match(/(?:public|club)(\d+)/);
   if (idMatch) {
     return `${idMatch[0]}`.substring(0, 27); // Ограничение 30 символов для имени листа
   }
-  
+
   // durov, varsmana, apiclub
   const nameMatch = cleanUrl.match(/vk\.com\/([a-z0-9_]+)/);
   if (nameMatch) {
@@ -4705,7 +5066,7 @@ function extractSheetNameFromVkUrl(url) {
       .replace(/\s+/g, '_')
       .substring(0, 27);
   }
-  
+
   return null;
 }
 
@@ -4716,13 +5077,13 @@ function extractSheetNameFromVkUrl(url) {
 /**
  * Ensures the binding-specific publication sheet exists (uses bindingName as the sheet name)
  * @param {string} bindingName - название связки
- * @return {Sheet} - лист с заголовками публикаций
+ * @returns {Sheet} - лист с заголовками публикаций
  */
 function createPublishedSheet(bindingName) {
   try {
     return getOrCreateBindingSheet(bindingName);
   } catch (error) {
-    logEvent('ERROR', 'binding_sheet_creation_failed', 'server', 
+    logEvent('ERROR', 'binding_sheet_creation_failed', 'server',
       `Binding: ${bindingName}, Error: ${error.message}`);
     throw error;
   }
@@ -4732,34 +5093,34 @@ function createPublishedSheet(bindingName) {
  * Получает последний успешно отправленный ID поста из листа связки
  * @param {string} bindingName - название связки
  * @param {string} vkGroupId - ID группы VK (необязателен, для совместимости)
- * @return {string|null} - последний ID поста или null
+ * @returns {string|null} - последний ID поста или null
  */
 function getLastPostIdFromSheet(bindingName, vkGroupId) {
   try {
-    var sheetName = getPublishedSheetNameFromBindingName(bindingName);
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(sheetName);
-    
+    const sheetName = getPublishedSheetNameFromBindingName(bindingName);
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(sheetName);
+
     if (!sheet) {
       return null;
     }
-    
-    var lastRow = sheet.getLastRow();
+
+    const lastRow = sheet.getLastRow();
     if (lastRow <= 1) {
       return null;
     }
-    
-    var rows = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
-    for (var i = 0; i < rows.length; i++) {
-      var status = (rows[i][1] || '').toString().toLowerCase();
-      var postId = rows[i][3];
+
+    const rows = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+    for (let i = 0; i < rows.length; i++) {
+      const status = (rows[i][1] || '').toString().toLowerCase();
+      const postId = rows[i][3];
       if ((status === 'success' || status === 'partial') && postId) {
         return postId.toString();
       }
     }
-    
+
     return null;
-    
+
   } catch (error) {
     logEvent('ERROR', 'get_last_post_failed', 'server', error.message);
     return null;
@@ -4769,10 +5130,14 @@ function getLastPostIdFromSheet(bindingName, vkGroupId) {
 /**
  * Совместимая функция сохранения поста (используется старыми вызовами)
  * Делегирует запись в универсальную систему bindingName листов
+ * @param bindingName
+ * @param vkGroupId
+ * @param postId
+ * @param postData
  */
 function saveLastPostIdToSheet(bindingName, vkGroupId, postId, postData) {
   try {
-    var publicationData = {
+    const publicationData = {
       status: 'success',
       vkGroupId: vkGroupId || '',
       vkPostId: postId,
@@ -4786,13 +5151,13 @@ function saveLastPostIdToSheet(bindingName, vkGroupId, postId, postData) {
       tgMessageUrls: Array.isArray(postData?.tgMessageUrls) ? postData.tgMessageUrls.join(', ') : (postData?.tgMessageUrls || ''),
       notes: postData?.notes || (postData?.preview ? `Legacy entry: ${postData.preview}` : 'Legacy saveLastPostIdToSheet call')
     };
-    
-    var targetBindingName = sanitizeBindingSheetSuffix(bindingName);
+
+    const targetBindingName = sanitizeBindingSheetSuffix(bindingName);
     writePublicationRowToBindingSheet(targetBindingName, publicationData);
-    
-    logEvent('INFO', 'post_saved_to_binding_sheet', 'server', 
+
+    logEvent('INFO', 'post_saved_to_binding_sheet', 'server',
       `Post ${postId} saved to binding sheet ${targetBindingName} via legacy helper`);
-    
+
   } catch (error) {
     logEvent('ERROR', 'save_post_failed', 'server', error.message);
     throw error;
@@ -4801,98 +5166,98 @@ function saveLastPostIdToSheet(bindingName, vkGroupId, postId, postData) {
 
 /**
  * Тестирует критические исправления
- * @return {Object} - результат тестирования
+ * @returns {object} - результат тестирования
  */
 function testCriticalFixes() {
   try {
-    logEvent("INFO", "test_critical_fixes_start", "system", "Starting critical fixes validation");
-    
+    logEvent('INFO', 'test_critical_fixes_start', 'system', 'Starting critical fixes validation');
+
     const results = {
       success: true,
       tests: []
     };
-    
+
     // Test 1: checkPostAlreadySent() functionality
     try {
-      const testPostId = "12345";
-      const testBindingName = "TestBinding";
-      
+      const testPostId = '12345';
+      const testBindingName = 'TestBinding';
+
       // First call should return false (not sent yet)
       const firstCall = checkPostAlreadySent(testBindingName, testPostId);
-      
+
       // Second call should still return false (no actual sheet data)
       const secondCall = checkPostAlreadySent(testBindingName, testPostId);
-      
+
       results.tests.push({
-        name: "checkPostAlreadySent",
+        name: 'checkPostAlreadySent',
         success: firstCall === false && secondCall === false,
         details: `First call: ${firstCall}, Second call: ${secondCall}`,
-        expected: "Both calls should return false (no sheet data)"
+        expected: 'Both calls should return false (no sheet data)'
       });
-      
+
     } catch (error) {
       results.tests.push({
-        name: "checkPostAlreadySent",
+        name: 'checkPostAlreadySent',
         success: false,
         error: error.message
       });
     }
-    
+
     // Test 2: formatVkTextForTelegram() HTML formatting
     try {
-      const testText = "Hello [id123|John] and [club456|MyGroup]!\n\nThis is UPPERCASE and multiline.";
+      const testText = 'Hello [id123|John] and [club456|MyGroup]!\n\nThis is UPPERCASE and multiline.';
       const formatted = formatVkTextForTelegram(testText, { boldFirstLine: true, boldUppercase: true });
-      
+
       const hasHtmlLinks = formatted.includes('<a href="https://vk.com/id123">John</a>') &&
                         formatted.includes('<a href="https://vk.com/club456">MyGroup</a>');
       const hasBoldFirst = formatted.includes('<b>Hello');
       const hasBoldUppercase = formatted.includes('<b>UPPERCASE</b>');
       const hasNewlines = formatted.includes('\n');
       const hasHtmlEscaping = formatted.includes('&lt;') || formatted.includes('&gt;');
-      
+
       results.tests.push({
-        name: "formatVkTextForTelegram HTML",
+        name: 'formatVkTextForTelegram HTML',
         success: hasHtmlLinks && hasBoldFirst && hasBoldUppercase && hasNewlines,
         details: `HTML links: ${hasHtmlLinks}, Bold first: ${hasBoldFirst}, Bold uppercase: ${hasBoldUppercase}, Newlines: ${hasNewlines}, HTML escaping: ${hasHtmlEscaping}`,
-        expected: "Should create HTML links, preserve newlines, and apply bold formatting",
-        sample: formatted.substring(0, 200) + (formatted.length > 200 ? "..." : "")
+        expected: 'Should create HTML links, preserve newlines, and apply bold formatting',
+        sample: formatted.substring(0, 200) + (formatted.length > 200 ? '...' : '')
       });
-      
+
     } catch (error) {
       results.tests.push({
-        name: "formatVkTextForTelegram HTML",
+        name: 'formatVkTextForTelegram HTML',
         success: false,
         error: error.message
       });
     }
-    
+
     // Test 3: Filtering logic (simulated)
     try {
       // This tests the simplified filtering logic
       const testPayload = {
-        license_key: "test",
-        vk_group_id: "-123456",
-        binding_id: "test_binding_123",
+        license_key: 'test',
+        vk_group_id: '-123456',
+        binding_id: 'test_binding_123',
         count: 5
       };
-      
+
       // We can't easily test the actual filtering without setting up full mock data,
       // but we can verify the logic structure is correct
       results.tests.push({
-        name: "handleGetVkPosts filtering",
+        name: 'handleGetVkPosts filtering',
         success: true, // Structure test only
-        details: "Simplified filtering logic implemented - filters only for current binding when binding_id provided",
-        expected: "Should filter posts only for specified binding_id"
+        details: 'Simplified filtering logic implemented - filters only for current binding when binding_id provided',
+        expected: 'Should filter posts only for specified binding_id'
       });
-      
+
     } catch (error) {
       results.tests.push({
-        name: "handleGetVkPosts filtering",
+        name: 'handleGetVkPosts filtering',
         success: false,
         error: error.message
       });
     }
-    
+
     // Test 4: Partial success flag
     try {
       // This tests that the partial success flag is properly included
@@ -4901,43 +5266,43 @@ function testCriticalFixes() {
         partial: true,
         successCount: 2,
         totalCount: 3,
-        warning: "Partial success: 2/3 parts sent"
+        warning: 'Partial success: 2/3 parts sent'
       };
-      
+
       const hasPartialFlag = partialResult.partial === true;
       const hasCounts = partialResult.successCount === 2 && partialResult.totalCount === 3;
-      
+
       results.tests.push({
-        name: "Partial success flag",
+        name: 'Partial success flag',
         success: hasPartialFlag && hasCounts,
         details: `Partial flag: ${hasPartialFlag}, Counts correct: ${hasCounts}`,
-        expected: "Should include partial: true and successCount/totalCount fields"
+        expected: 'Should include partial: true and successCount/totalCount fields'
       });
-      
+
     } catch (error) {
       results.tests.push({
-        name: "Partial success flag",
+        name: 'Partial success flag',
         success: false,
         error: error.message
       });
     }
-    
+
     // Overall result
     const passedTests = results.tests.filter(t => t.success).length;
     const totalTests = results.tests.length;
     results.success = passedTests === totalTests;
     results.summary = `Passed ${passedTests}/${totalTests} tests`;
-    
-    logEvent("INFO", "test_critical_fixes_complete", "system", results.summary);
-    
+
+    logEvent('INFO', 'test_critical_fixes_complete', 'system', results.summary);
+
     return results;
-    
+
   } catch (error) {
-    logEvent("ERROR", "test_critical_fixes_error", "system", error.message);
+    logEvent('ERROR', 'test_critical_fixes_error', 'system', error.message);
     return {
       success: false,
       error: error.message,
-      summary: "Test execution failed"
+      summary: 'Test execution failed'
     };
   }
 }
@@ -4954,7 +5319,7 @@ function testCriticalFixes() {
 // - Inserts at row 2 using sheet.insertRowAfter(1) for top-insert behavior
 // - Tracks status: success | partial | error for each send attempt
 // - Columns: timestamp, status, vkGroupId, vkPostId, vkPostUrl, vkPostDate,
-//           mediaSummary, captionChars, captionParts, tgChat, tgMessageIds, 
+//           mediaSummary, captionChars, captionParts, tgChat, tgMessageIds,
 //           tgMessageUrls, notes
 // - Generates TG links preferring https://t.me/username/messageId format
 // - Auto-creates sheets with correct headers if missing
@@ -4965,13 +5330,13 @@ function testCriticalFixes() {
 /**
  * Validates binding name according to requirements: letters (Latin/Cyrillic) and digits only
  * @param {string} bindingName - binding name to validate
- * @return {boolean} - true if valid
+ * @returns {boolean} - true if valid
  */
 function validateBindingName(bindingName) {
   if (!bindingName || typeof bindingName !== 'string') {
     return false;
   }
-  
+
   // Allow Latin letters, Cyrillic letters, and digits only
   const validPattern = /^[a-zA-Zа-яА-ЯёЁ0-9]+$/;
   return validPattern.test(bindingName.trim());
@@ -4980,20 +5345,20 @@ function validateBindingName(bindingName) {
 /**
  * Creates or gets a binding sheet for publication logging
  * @param {string} bindingName - validated binding name (used as sheet name)
- * @return {Sheet} - the sheet object
+ * @returns {Sheet} - the sheet object
  */
 function getOrCreateBindingSheet(bindingName) {
   try {
-    var sanitizedName = sanitizeBindingSheetSuffix(bindingName);
+    const sanitizedName = sanitizeBindingSheetSuffix(bindingName);
     if (!validateBindingName(sanitizedName)) {
       throw new Error(`Invalid binding name: "${bindingName}". Only letters and digits allowed.`);
     }
-    
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(sanitizedName);
-    
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName(sanitizedName);
+
     if (!sheet) {
-      var legacySheet = ss.getSheetByName('Published_' + sanitizedName);
+      const legacySheet = ss.getSheetByName('Published_' + sanitizedName);
       if (legacySheet) {
         legacySheet.setName(sanitizedName);
         logEvent('INFO', 'binding_sheet_promoted', 'server',
@@ -5001,37 +5366,37 @@ function getOrCreateBindingSheet(bindingName) {
         sheet = legacySheet;
       }
     }
-    
+
     if (sheet) {
       logEvent('DEBUG', 'binding_sheet_exists', 'server', `Sheet "${sanitizedName}" already exists`);
       return sheet;
     }
-    
+
     // Create new sheet with bindingName as exact sheet name
     sheet = ss.insertSheet(sanitizedName);
-    
+
     // Define headers according to ticket requirements
-    var headers = [
-      "timestamp", "status", "vkGroupId", "vkPostId", "vkPostUrl", 
-      "vkPostDate", "mediaSummary", "captionChars", "captionParts", 
-      "tgChat", "tgMessageIds", "tgMessageUrls", "notes"
+    const headers = [
+      'timestamp', 'status', 'vkGroupId', 'vkPostId', 'vkPostUrl',
+      'vkPostDate', 'mediaSummary', 'captionChars', 'captionParts',
+      'tgChat', 'tgMessageIds', 'tgMessageUrls', 'notes'
     ];
-    
+
     sheet.appendRow(headers);
-    
+
     // Format headers
-    var headerRange = sheet.getRange(1, 1, 1, headers.length);
-    headerRange.setBackground("#4285f4");
-    headerRange.setFontColor("white");
-    headerRange.setFontWeight("bold");
+    const headerRange = sheet.getRange(1, 1, 1, headers.length);
+    headerRange.setBackground('#4285f4');
+    headerRange.setFontColor('white');
+    headerRange.setFontWeight('bold');
     sheet.setFrozenRows(1);
-    
+
     logEvent('INFO', 'binding_sheet_created', 'server', `Created binding sheet: "${sanitizedName}"`);
-    
+
     return sheet;
-    
+
   } catch (error) {
-    logEvent('ERROR', 'binding_sheet_creation_failed', 'server', 
+    logEvent('ERROR', 'binding_sheet_creation_failed', 'server',
       `Binding: "${bindingName}", Error: ${error.message}`);
     throw error;
   }
@@ -5040,21 +5405,21 @@ function getOrCreateBindingSheet(bindingName) {
 /**
  * Writes a publication row to binding sheet with top-insert behavior
  * @param {string} bindingName - validated binding name
- * @param {Object} publicationData - publication data
+ * @param {object} publicationData - publication data
  */
 function writePublicationRowToBindingSheet(bindingName, publicationData) {
   try {
-    var sanitizedName = sanitizeBindingSheetSuffix(bindingName);
+    const sanitizedName = sanitizeBindingSheetSuffix(bindingName);
     if (!validateBindingName(sanitizedName)) {
-      logEvent('WARN', 'invalid_binding_name_skip', 'server', 
+      logEvent('WARN', 'invalid_binding_name_skip', 'server',
         `Skipping publication row for invalid binding name: "${bindingName}"`);
       return;
     }
-    
-    var sheet = getOrCreateBindingSheet(sanitizedName);
-    
+
+    const sheet = getOrCreateBindingSheet(sanitizedName);
+
     // Prepare row data according to column order
-    var rowData = [
+    const rowData = [
       publicationData.timestamp || new Date().toISOString(),
       publicationData.status || 'unknown',
       publicationData.vkGroupId || '',
@@ -5069,16 +5434,16 @@ function writePublicationRowToBindingSheet(bindingName, publicationData) {
       publicationData.tgMessageUrls || '',
       publicationData.notes || ''
     ];
-    
+
     // Insert at row 2 (top-insert behavior)
     sheet.insertRowAfter(1);
     sheet.getRange(2, 1, 1, rowData.length).setValues([rowData]);
-    
-    logEvent('INFO', 'publication_row_written', 'server', 
+
+    logEvent('INFO', 'publication_row_written', 'server',
       `Binding: "${sanitizedName}", Status: ${publicationData.status}, VK Post: ${publicationData.vkPostId}`);
-    
+
   } catch (error) {
-    logEvent('ERROR', 'publication_row_write_failed', 'server', 
+    logEvent('ERROR', 'publication_row_write_failed', 'server',
       `Binding: "${bindingName}", Error: ${error.message}`);
     // Don't throw - publication logging failure shouldn't break the main flow
   }
@@ -5088,30 +5453,30 @@ function writePublicationRowToBindingSheet(bindingName, publicationData) {
  * Generates Telegram message URLs from message IDs and chat info
  * @param {string} chatId - Telegram chat ID
  * @param {Array} messageIds - array of message IDs
- * @return {string} - comma-separated URLs
+ * @returns {string} - comma-separated URLs
  */
 function generateTelegramMessageUrls(chatId, messageIds) {
   try {
     if (!messageIds || messageIds.length === 0) {
       return '';
     }
-    
-    var urls = [];
-    
+
+    const urls = [];
+
     // Try to get chat info to determine if we have username
-    var chatInfo = null;
+    let chatInfo = null;
     try {
-      var botToken = PropertiesService.getScriptProperties().getProperty("BOT_TOKEN");
+      const botToken = PropertiesService.getScriptProperties().getProperty('BOT_TOKEN');
       if (botToken) {
-        var response = UrlFetchApp.fetch(`https://api.telegram.org/bot${botToken}/getChat`, {
+        const response = UrlFetchApp.fetch(`https://api.telegram.org/bot${botToken}/getChat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           payload: JSON.stringify({ chat_id: chatId }),
           muteHttpExceptions: true,
           timeout: TIMEOUTS.FAST
         });
-        
-        var result = JSON.parse(response.getContentText());
+
+        const result = JSON.parse(response.getContentText());
         if (result.ok) {
           chatInfo = result.result;
         }
@@ -5119,27 +5484,27 @@ function generateTelegramMessageUrls(chatId, messageIds) {
     } catch (chatError) {
       logEvent('DEBUG', 'tg_chat_info_failed', 'server', `Chat: ${chatId}, Error: ${chatError.message}`);
     }
-    
+
     // Generate URLs
-    for (var i = 0; i < messageIds.length; i++) {
-      var messageId = messageIds[i];
-      
+    for (let i = 0; i < messageIds.length; i++) {
+      const messageId = messageIds[i];
+
       if (chatInfo && chatInfo.username) {
         // Prefer username format: https://t.me/username/messageId
         urls.push(`https://t.me/${chatInfo.username}/${messageId}`);
       } else {
         // Fallback to internal format: https://t.me/c/chatId/messageId
         // Remove @ if present and handle negative chat IDs
-        var cleanChatId = chatId.toString().replace('@', '');
+        let cleanChatId = chatId.toString().replace('@', '');
         if (cleanChatId.startsWith('-100')) {
           cleanChatId = cleanChatId.substring(4); // Remove -100 prefix for /c/ format
         }
         urls.push(`https://t.me/c/${cleanChatId}/${messageId}`);
       }
     }
-    
+
     return urls.join(', ');
-    
+
   } catch (error) {
     logEvent('ERROR', 'tg_url_generation_failed', 'server', error.message);
     return '';
@@ -5153,12 +5518,12 @@ function generateTelegramMessageUrls(chatId, messageIds) {
 function testPublicationRowWrites() {
   try {
     logEvent('INFO', 'test_publication_row_writes_start', 'server', 'Starting publication row write tests');
-    
-    var testBindingName = 'TestBinding123';
-    var testVkGroupId = '-123456789';
-    var testVkPostId = '98765';
-    var testChatId = '@testchannel';
-    
+
+    const testBindingName = 'TestBinding123';
+    const testVkGroupId = '-123456789';
+    const testVkPostId = '98765';
+    const testChatId = '@testchannel';
+
     // Test 1: Success case
     logEvent('INFO', 'test_success_case', 'server', 'Testing success case');
     writePublicationRowToBindingSheet(testBindingName, {
@@ -5175,7 +5540,7 @@ function testPublicationRowWrites() {
       tgMessageUrls: 'https://t.me/testchannel/12345',
       notes: 'Successfully sent all media'
     });
-    
+
     // Test 2: Partial case
     logEvent('INFO', 'test_partial_case', 'server', 'Testing partial case');
     writePublicationRowToBindingSheet(testBindingName, {
@@ -5192,7 +5557,7 @@ function testPublicationRowWrites() {
       tgMessageUrls: 'https://t.me/testchannel/12346, https://t.me/testchannel/12347',
       notes: 'Some media failed to send'
     });
-    
+
     // Test 3: Error case
     logEvent('INFO', 'test_error_case', 'server', 'Testing error case');
     writePublicationRowToBindingSheet(testBindingName, {
@@ -5209,7 +5574,7 @@ function testPublicationRowWrites() {
       tgMessageUrls: '',
       notes: 'Failed to send: Network timeout'
     });
-    
+
     // Test 4: Invalid binding name (should be skipped)
     logEvent('INFO', 'test_invalid_binding', 'server', 'Testing invalid binding name');
     writePublicationRowToBindingSheet('Invalid@Binding#Name', {
@@ -5218,17 +5583,17 @@ function testPublicationRowWrites() {
       vkPostId: '98768',
       notes: 'This should be skipped due to invalid name'
     });
-    
-    logEvent('INFO', 'test_publication_row_writes_complete', 'server', 
+
+    logEvent('INFO', 'test_publication_row_writes_complete', 'server',
       'Publication row write tests completed successfully');
-    
+
     return {
       success: true,
       message: 'Publication row write tests completed',
       testBindingName: testBindingName,
       testsRun: ['success', 'partial', 'error', 'invalid_name']
     };
-    
+
   } catch (error) {
     logEvent('ERROR', 'test_publication_row_writes_failed', 'server', error.message);
     return {
@@ -5240,40 +5605,40 @@ function testPublicationRowWrites() {
 
 /**
  * Тестирует создание листов для постов
- * @return {Object} - результат тестирования
+ * @returns {object} - результат тестирования
  */
 function testBindingSheetCreation() {
   try {
-    logEvent("INFO", "test_binding_sheet_creation_start", "system", "Starting binding sheet creation tests");
-    
+    logEvent('INFO', 'test_binding_sheet_creation_start', 'system', 'Starting binding sheet creation tests');
+
     const results = {
       success: true,
       tests: []
     };
-    
+
     // Test 1: Создание листа для новой связки
     try {
-      const testBindingName = "TestBinding123";
+      const testBindingName = 'TestBinding123';
       const sheet = getOrCreateBindingSheet(testBindingName);
-      
+
       results.tests.push({
-        name: "create_binding_sheet",
+        name: 'create_binding_sheet',
         success: sheet && sheet.getName() === testBindingName,
         details: `Sheet created: ${sheet ? sheet.getName() : 'null'}`,
         expected: `Should create sheet named "${testBindingName}"`
       });
-      
+
     } catch (error) {
       results.tests.push({
-        name: "create_binding_sheet",
+        name: 'create_binding_sheet',
         success: false,
         error: error.message
       });
     }
-    
+
     // Test 2: Запись публикации в лист
     try {
-      const testBindingName = "TestBinding123";
+      const testBindingName = 'TestBinding123';
       const testData = {
         status: 'success',
         vkGroupId: '-12345',
@@ -5288,67 +5653,67 @@ function testBindingSheetCreation() {
         tgMessageUrls: 'https://t.me/testchannel/12345',
         notes: 'Test entry'
       };
-      
+
       writePublicationRowToBindingSheet(testBindingName, testData);
-      
+
       results.tests.push({
-        name: "write_publication_row",
+        name: 'write_publication_row',
         success: true,
         details: `Publication row written to ${testBindingName}`,
-        expected: "Should write publication data to binding sheet"
+        expected: 'Should write publication data to binding sheet'
       });
-      
+
     } catch (error) {
       results.tests.push({
-        name: "write_publication_row",
+        name: 'write_publication_row',
         success: false,
         error: error.message
       });
     }
-    
+
     // Test 3: Проверка формата текста
     try {
-      const testText = "Hello [id123|John] and [club456|MyGroup]!\n\nThis is UPPERCASE and multiline.";
+      const testText = 'Hello [id123|John] and [club456|MyGroup]!\n\nThis is UPPERCASE and multiline.';
       const formatted = formatVkTextForTelegram(testText, { boldFirstLine: true, boldUppercase: true });
-      
+
       const hasMarkdownLinks = formatted.includes('[John](https://vk.com/id123)') &&
                               formatted.includes('[MyGroup](https://vk.com/club456)');
       const hasBoldFirst = formatted.includes('**Hello');
       const hasBoldUppercase = formatted.includes('**UPPERCASE**');
       const hasNewlines = formatted.includes('\n');
-      
+
       results.tests.push({
-        name: "format_vk_text",
+        name: 'format_vk_text',
         success: hasMarkdownLinks && hasBoldFirst && hasBoldUppercase && hasNewlines,
         details: `Markdown links: ${hasMarkdownLinks}, Bold first: ${hasBoldFirst}, Bold uppercase: ${hasBoldUppercase}, Newlines: ${hasNewlines}`,
-        expected: "Should create Markdown links, preserve newlines, and apply bold formatting",
-        sample: formatted.substring(0, 200) + (formatted.length > 200 ? "..." : "")
+        expected: 'Should create Markdown links, preserve newlines, and apply bold formatting',
+        sample: formatted.substring(0, 200) + (formatted.length > 200 ? '...' : '')
       });
-      
+
     } catch (error) {
       results.tests.push({
-        name: "format_vk_text",
+        name: 'format_vk_text',
         success: false,
         error: error.message
       });
     }
-    
+
     // Overall result
     const passedTests = results.tests.filter(t => t.success).length;
     const totalTests = results.tests.length;
     results.success = passedTests === totalTests;
     results.summary = `Passed ${passedTests}/${totalTests} tests`;
-    
-    logEvent("INFO", "test_binding_sheet_creation_complete", "system", results.summary);
-    
+
+    logEvent('INFO', 'test_binding_sheet_creation_complete', 'system', results.summary);
+
     return results;
-    
+
   } catch (error) {
-    logEvent("ERROR", "test_binding_sheet_creation_error", "system", error.message);
+    logEvent('ERROR', 'test_binding_sheet_creation_error', 'system', error.message);
     return {
       success: false,
       error: error.message,
-      summary: "Test execution failed"
+      summary: 'Test execution failed'
     };
   }
 }

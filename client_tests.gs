@@ -3,7 +3,7 @@
  * TEST: Дублирование контента из vk.com/varsmana в TG -1001857442326
  * Использует существующие серверные endpoints get_vk_posts и send_post
  * с fallback на имеющийся license_key из PropertiesService.
- * 
+ *
  * Важно:
  * - Функция работает из любого контекста (триггер/UI/ручной вызов)
  * - Не использует SpreadsheetApp.getUi() - только Logger.log + logEvent
@@ -45,7 +45,7 @@ function testDuplicateVarsmanaToTG() {
     };
 
     logEvent('DEBUG', 'test_varsmana_get_posts', 'client', `Requesting posts with payload: ${JSON.stringify(postsPayload)}`);
-    Logger.log(`[TEST] Запрашиваем посты с сервера...`);
+    Logger.log('[TEST] Запрашиваем посты с сервера...');
 
     const postsResp = callServer(postsPayload, { timeout: 30000 });
 
@@ -58,7 +58,7 @@ function testDuplicateVarsmanaToTG() {
     }
 
     const post = postsResp.posts[0];
-    logEvent('INFO', 'test_varsmana_got_post', 'client', 
+    logEvent('INFO', 'test_varsmana_got_post', 'client',
              `Post ID: ${post.id}, Text length: ${post.text ? post.text.length : 0}, Attachments: ${post.attachments?.length || 0}`);
     Logger.log(`[TEST] Получен пост ID: ${post.id}, текст: ${post.text ? post.text.substring(0, 100) + '...' : 'без текста'}, медиа: ${post.attachments?.length || 0}`);
 
@@ -81,9 +81,9 @@ function testDuplicateVarsmanaToTG() {
       }
     };
 
-    logEvent('DEBUG', 'test_varsmana_send_post', 'client', 
+    logEvent('DEBUG', 'test_varsmana_send_post', 'client',
              `Sending post to TG with payload keys: [${Object.keys(sendPayload).join(', ')}]`);
-    Logger.log(`[TEST] Отправляем пост в Telegram...`);
+    Logger.log('[TEST] Отправляем пост в Telegram...');
 
     const sendResp = callServer(sendPayload, { timeout: 60000 });
 
@@ -96,8 +96,8 @@ function testDuplicateVarsmanaToTG() {
     logEvent('INFO', 'test_varsmana_success', 'client', successMsg);
     Logger.log(`[TEST SUCCESS] ${successMsg}`);
 
-    return { 
-      success: true, 
+    return {
+      success: true,
       message_id: sendResp.message_id,
       post_id: post.id,
       text_preview: post.text ? post.text.substring(0, 150) : null
@@ -120,7 +120,7 @@ function testDuplicateVarsmanaToTG() {
 function testDuplicateVarsmanaToTGDirect() {
   try {
     logEvent('INFO', 'test_varsmana_direct_start', 'client', 'Starting direct test without bindings');
-    Logger.log(`[TEST DIRECT] Прямой тест дублирования varsmana → TG`);
+    Logger.log('[TEST DIRECT] Прямой тест дублирования varsmana → TG');
 
     // Проверяем license_key
     const license = getLicense();
@@ -151,7 +151,7 @@ function testDuplicateVarsmanaToTGDirect() {
     const vkGroupId = extractVkGroupId(testBinding.vkGroupUrl);
     if (!vkGroupId) {
       // varsmana это screen_name, а не числовой ID - передаём как есть
-      Logger.log(`[TEST DIRECT] varsmana - это screen_name, сервер резолвит`);
+      Logger.log('[TEST DIRECT] varsmana - это screen_name, сервер резолвит');
     }
 
     // Получаем посты
@@ -211,29 +211,29 @@ function runVarsmanaTest() {
 
   // Пробуем основную версию
   const result1 = testDuplicateVarsmanaToTG();
-  
+
   if (result1.success) {
     Logger.log(`[TEST RUNNER] ✅ Основной тест успешен: ${JSON.stringify(result1)}`);
     return result1;
   }
 
-  Logger.log(`[TEST RUNNER] ⚠️ Основной тест провален, пробуем прямую версию...`);
-  
+  Logger.log('[TEST RUNNER] ⚠️ Основной тест провален, пробуем прямую версию...');
+
   // Если не получилось - пробуем прямую версию
   const result2 = testDuplicateVarsmanaToTGDirect();
-  
+
   if (result2.success) {
     Logger.log(`[TEST RUNNER] ✅ Прямой тест успешен: ${JSON.stringify(result2)}`);
     return result2;
   }
 
-  Logger.log(`[TEST RUNNER] ❌ Оба теста провалились:`);
+  Logger.log('[TEST RUNNER] ❌ Оба теста провалились:');
   Logger.log(`  Основной: ${result1.error}`);
   Logger.log(`  Прямой: ${result2.error}`);
 
-  return { 
-    success: false, 
-    error: 'Оба теста провалились', 
+  return {
+    success: false,
+    error: 'Оба теста провалились',
     details: { main: result1.error, direct: result2.error }
   };
 }
