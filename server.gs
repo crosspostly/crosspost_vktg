@@ -2071,7 +2071,7 @@ function sendTelegramMessage(token, chatId, text) {
     var payload = {
       chat_id: chatId,
       text: text,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       disable_web_page_preview: true
     };
     
@@ -2095,7 +2095,7 @@ function sendTelegramMessage(token, chatId, text) {
       logApiError("TELEGRAM", "sendMessage", {
         chat_id: chatId,
         text_length: text?.length || 0,
-        parse_mode: "Markdown"
+        parse_mode: "HTML"
       }, {
         status_code: response.getResponseCode(),
         error_code: result.error_code,

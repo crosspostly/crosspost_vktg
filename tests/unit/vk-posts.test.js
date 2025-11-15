@@ -31,8 +31,8 @@ describe('vk-posts.gs', () => {
 
     const formatted = formatVkPostForTelegram(fixtures.vkPosts.sampleTextPost, binding);
 
-    expect(formatted.startsWith('**')).toBe(true);
-    expect(formatted).toContain('**VK**');
+    expect(formatted.startsWith('<b>')).toBe(true);
+    expect(formatted).toContain('<b>VK</b>');
     expect(global.logEvent).toHaveBeenCalledWith(
       'DEBUG',
       'format_settings_applied',
@@ -163,5 +163,38 @@ describe('vk-posts.gs', () => {
       'server',
       expect.stringContaining('Range error')
     );
+  });
+
+  test('formatVkTextForTelegram converts VK hyperlinks to HTML format', () => {
+    const textWithLinks = 'Check out this link: [https://example.com|Example Site] and this user: [id12345|John Doe]';
+    const formatted = formatVkTextForTelegram(textWithLinks, {
+      boldFirstLine: false,
+      boldUppercase: false,
+    });
+
+    expect(formatted).toContain('<a href="https://example.com">Example Site</a>');
+    expect(formatted).toContain('<a href="https://vk.com/id12345">John Doe</a>');
+  });
+
+  test('formatVkTextForTelegram preserves line breaks', () => {
+    const textWithBreaks = 'First line\n\nSecond line\n\n\nThird line';
+    const formatted = formatVkTextForTelegram(textWithBreaks, {
+      boldFirstLine: false,
+      boldUppercase: false,
+    });
+
+    // Should preserve original line breaks
+    expect(formatted).toBe('First line\n\nSecond line\n\n\nThird line');
+  });
+
+  test('formatVkTextForTelegram handles VK club/group links', () => {
+    const textWithGroups = 'Check out this club: [club12345|My Club] and public page: [public67890|Public Page]';
+    const formatted = formatVkTextForTelegram(textWithGroups, {
+      boldFirstLine: false,
+      boldUppercase: false,
+    });
+
+    expect(formatted).toContain('<a href="https://vk.com/club12345">My Club</a>');
+    expect(formatted).toContain('<a href="https://vk.com/public67890">Public Page</a>');
   });
 });
