@@ -370,18 +370,18 @@ function validateTokens(botToken, vkUserToken, adminChatId) {
         }
       } else if (vkUserData.error) {
         // Детализированная обработка ошибок VK API
-        var errorMessage = vkUserData.error.error_msg;
+        var vkErrorMessage = vkUserData.error.error_msg;
         if (vkUserData.error.error_code === 4) {
-          errorMessage = 'Неверный или истёкший User Access Token. Получите новый токен с правами wall, offline';
+          vkErrorMessage = 'Неверный или истёкший User Access Token. Получите новый токен с правами wall, offline';
         } else if (vkUserData.error.error_code === 5) {
-          errorMessage = 'User Access Token не имеет необходимых прав. Нужны права: wall, offline';
+          vkErrorMessage = 'User Access Token не имеет необходимых прав. Нужны права: wall, offline';
         }
         
         results.vkUser = { 
           status: '❌', 
-          message: `VK API: ${errorMessage} (код ${vkUserData.error.error_code})` 
+          message: `VK API: ${vkErrorMessage} (код ${vkUserData.error.error_code})` 
         };
-        logEvent("WARN", "vk_user_token_invalid", "admin", `Error code ${vkUserData.error.error_code}: ${errorMessage}`);
+        logEvent("WARN", "vk_user_token_invalid", "admin", `Error code ${vkUserData.error.error_code}: ${vkErrorMessage}`);
       }
     } catch (vkUserError) {
       results.vkUser = { 
@@ -2061,7 +2061,7 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
       }
 
       // Complete failure case - log to binding sheet
-      var errorPublicationData = {
+      var completeFailureData = {
         status: 'error',
         vkGroupId: binding.vkGroupId || '',
         vkPostId: vkPost.id || '',
@@ -2078,13 +2078,13 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
 
       // Write to binding sheet (regardless of binding name validation)
       if (binding && binding.bindingName) {
-        writePublicationRowToBindingSheet(binding.bindingName, catchPublicationData);
+        writePublicationRowToBindingSheet(binding.bindingName, completeFailureData);
       }
 
       return { 
         success: false, 
         error: mediaError.message,
-        publication: errorPublicationData
+        publication: completeFailureData
       };
     }
     
@@ -2384,8 +2384,8 @@ function splitTextIntoChunks(text, maxLength) {
       
       // Если само предложение длиннее лимита - принудительно разбиваем
       if (sentence.length > maxLength) {
-        var forcedChunks = sentence.match(new RegExp(`.{1,${maxLength}}`, 'g'));
-        chunks.push(...forcedChunks);
+        var sentenceChunks = sentence.match(new RegExp(`.{1,${maxLength}}`, 'g'));
+        chunks.push(...sentenceChunks);
         currentChunk = "";
       } else {
         currentChunk = sentence;
@@ -2400,8 +2400,8 @@ function splitTextIntoChunks(text, maxLength) {
   
   // Если ничего не получилось - принудительно разбиваем по символам
   if (chunks.length === 0 && text.length > 0) {
-    var fallbackChunks = text.match(new RegExp(`.{1,${maxLength}}`, 'g'));
-    chunks.push(...fallbackChunks);
+    var textChunks = text.match(new RegExp(`.{1,${maxLength}}`, 'g'));
+    chunks.push(...textChunks);
   }
   
   return chunks;
@@ -3936,8 +3936,8 @@ function cleanOldLogs() {
         var data = dataRange.getValues();
         
         if (data.length <= 1) { // Только заголовок или пустой лист
-          logEvent("DEBUG", "log_cleanup_sheet_empty", "system", `Sheet "${sheetName}" is empty or has only headers`);
-          sheetResults.push({ sheetName: sheetName, deletedCount: 0, status: "empty" });
+          logEvent("DEBUG", "log_cleanup_sheet_empty", "system", `Sheet "${currentSheetName}" is empty or has only headers`);
+          sheetResults.push({ sheetName: currentSheetName, deletedCount: 0, status: "empty" });
           continue;
         }
         
@@ -3948,7 +3948,7 @@ function cleanOldLogs() {
             
             // Проверяем валидность даты
             if (isNaN(logDate.getTime())) {
-              logEvent("DEBUG", "log_cleanup_invalid_date", "system", `Invalid date in sheet "${sheetName}" row ${i + 1}: ${data[i][0]}`);
+              logEvent("DEBUG", "log_cleanup_invalid_date", "system", `Invalid date in sheet "${currentSheetName}" row ${i + 1}: ${data[i][0]}`);
               continue;
             }
             
@@ -3957,24 +3957,24 @@ function cleanOldLogs() {
               sheetDeletedCount++;
             }
           } catch (rowError) {
-            logEvent("WARN", "log_cleanup_row_error", "system", `Error processing row ${i + 1} in sheet "${sheetName}": ${rowError.message}`);
+            logEvent("WARN", "log_cleanup_row_error", "system", `Error processing row ${i + 1} in sheet "${currentSheetName}": ${rowError.message}`);
           }
         }
         
         totalDeleted += sheetDeletedCount;
         sheetResults.push({ 
-          sheetName: sheetName, 
+          sheetName: currentSheetName, 
           deletedCount: sheetDeletedCount, 
           status: "success",
           totalRows: data.length
         });
         
-        logEvent("INFO", "log_cleanup_sheet_completed", "system", `Sheet "${sheetName}": deleted ${sheetDeletedCount} of ${data.length - 1} entries`);
+        logEvent("INFO", "log_cleanup_sheet_completed", "system", `Sheet "${currentSheetName}": deleted ${sheetDeletedCount} of ${data.length - 1} entries`);
         
       } catch (sheetError) {
-        logEvent("ERROR", "log_cleanup_sheet_error", "system", `Error processing sheet "${sheetName}": ${sheetError.message}`);
+        logEvent("ERROR", "log_cleanup_sheet_error", "system", `Error processing sheet "${currentSheetName}": ${sheetError.message}`);
         sheetResults.push({ 
-          sheetName: sheetName, 
+          sheetName: currentSheetName, 
           deletedCount: 0, 
           status: "error", 
           error: sheetError.message 
