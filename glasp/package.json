@@ -6,8 +6,8 @@
     "build:server": "echo 'Server build skipped - server folder not needed'",
     "build:client": "node deploy-client.js",
     "build": "npm run build:client",
-    "lint": "eslint ../*.gs ../server/**/*.gs --quiet --config .eslintrc.js",
-    "lint:fix": "eslint ../*.gs ../server/**/*.gs --fix --config .eslintrc.js",
+    "lint": "eslint ../*.gs --quiet --config .eslintrc.js",
+    "lint:fix": "eslint ../*.gs --fix --config .eslintrc.js",
     "test": "npm run lint && npm run module-check",
     "module-check": "node ../tools/module-check.js",
     "prepare": "npm run build:client"
