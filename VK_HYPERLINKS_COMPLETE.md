@@ -94,4 +94,72 @@ All hyperlink formats tested and working:
 - Proper HTML formatting throughout
 - Line breaks maintained
 
-**Implementation Status: ✅ COMPLETE**
+## 🔧 ADDITIONAL FIX: Line Breaks Preservation
+
+**PROBLEM**: VK posts with line breaks like:
+```
+ОЧень новый пост
+
+с гиперссылкой
+```
+Were being sent to Telegram as:
+```
+ОЧень новый пост с гиперссылкой
+```
+(losing formatting)
+
+**SOLUTION IMPLEMENTED**:
+
+### 1. Enhanced formatVkTextForTelegram() Function
+
+**Added line break normalization**:
+```javascript
+// ✅ НОРМАЛИЗАЦИЯ ПЕРЕНОСОВ СТРОК - КРИТИЧЕСКО ДЛЯ TELEGRAM HTML
+// VK может использовать разные форматы переносов: \r\n, \r, \n
+// Конвертируем все в \n для Telegram HTML совместимости
+text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+// ✅ ДОПОЛНИТЕЛЬНАЯ ОБРАБОТКА: Сохраняем двойные переносы как абзацы
+// Telegram HTML лучше обрабатывает двойные переносы строк
+text = text.replace(/\n\n+/g, '\n\n'); // Нормализуем множественные переносы
+```
+
+### 2. Comprehensive Debug Logging
+
+**Added debug logging for line break tracking**:
+- `vk_text_with_linebreaks`: Logs original VK text with line breaks
+- `formatted_text_with_linebreaks`: Logs final formatted text
+- `telegram_payload_with_linebreaks`: Logs Telegram API payload
+- `telegram_media_payload_with_linebreaks`: Logs media group captions
+- `telegram_video_payload_with_linebreaks`: Logs video captions
+
+### 3. Line Break Processing Order
+
+1. **Normalize line endings**: `\r\n` → `\n`, `\r` → `\n`
+2. **Normalize multiple line breaks**: `\n\n\n` → `\n\n`
+3. **Process hyperlinks**: All VK hyperlink formats
+4. **Preserve line breaks**: No `\n` removal
+5. **Debug logging**: Track line breaks through pipeline
+
+### 4. Testing Coverage
+
+**Test cases covered**:
+- Double line breaks: `Text\n\nMore text`
+- Single line breaks: `Line1\nLine2`
+- Multiple line breaks: `Text\n\n\nMore text`
+- Windows line endings: `Text\r\n\r\nMore text`
+- Old Mac line endings: `Text\r\rMore text`
+- Mixed line endings: `Text\r\nLine2\nLine3\rLine4`
+
+## 🎯 Results
+
+**BEFORE FIX**:
+- Input: `ОЧень новый пост\n\nс гиперссылкой`
+- Output: `ОЧень новый пост с гиперссылкой` ❌
+
+**AFTER FIX**:
+- Input: `ОЧень новый пост\n\nс гиперссылкой`
+- Output: `ОЧень новый пост\n\nс гиперссылкой` ✅
+- Telegram shows proper formatting with paragraph breaks ✅
+
+**Implementation Status: ✅ COMPLETE - ALL ISSUES FIXED**

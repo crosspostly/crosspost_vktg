@@ -2075,6 +2075,12 @@ function sendTelegramMessage(token, chatId, text) {
       disable_web_page_preview: true
     };
     
+    // 🔍 DEBUG: Логируем payload для отладки проблем с переносами строк
+    if (text && text.indexOf('\n') !== -1) {
+      logEvent("DEBUG", "telegram_payload_with_linebreaks", "server", 
+               `Text length: ${text.length}, Line breaks: ${(text.match(/\n/g) || []).length}, Payload preview: ${JSON.stringify(payload).substring(0, 200)}`);
+    }
+    
     var response = UrlFetchApp.fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2208,6 +2214,12 @@ function sendMediaGroupWithCaption(token, chatId, mediaUrls, caption) {
       caption: index === 0 ? caption : undefined,
       parse_mode: index === 0 ? 'HTML' : undefined
     }));
+    
+    // 🔍 DEBUG: Логируем media payload для отладки проблем с переносами строк
+    if (caption && caption.indexOf('\n') !== -1) {
+      logEvent("DEBUG", "telegram_media_payload_with_linebreaks", "server", 
+               `Caption length: ${caption.length}, Line breaks: ${(caption.match(/\n/g) || []).length}, First media caption: ${media[0]?.caption?.substring(0, 100) || 'no caption'}`);
+    }
     
     var response = UrlFetchApp.fetch(url, {
       method: 'POST',
@@ -2360,6 +2372,12 @@ function sendTelegramVideo(token, chatId, videoUrl, caption) {
       delete payload.parse_mode;
     }
     
+    // 🔍 DEBUG: Логируем video payload для отладки проблем с переносами строк
+    if (caption && caption.indexOf('\n') !== -1) {
+      logEvent("DEBUG", "telegram_video_payload_with_linebreaks", "server", 
+               `Caption length: ${caption.length}, Line breaks: ${(caption.match(/\n/g) || []).length}, Caption preview: ${caption.substring(0, 100).replace(/\n/g, '\\n')}`);
+    }
+    
     logEvent("DEBUG", "telegram_video_send_start", "server", 
              `Chat: ${chatId}, Video URL length: ${videoUrl?.length || 0}, Caption length: ${caption?.length || 0}`);
     
@@ -2506,8 +2524,23 @@ function formatVkTextForTelegram(text, options) {
   var boldFirstLine = options.boldFirstLine !== false; // по умолчанию true
   var boldUppercase = options.boldUppercase !== false; // по умолчанию true
   
-  // Сохраняем оригинальные переносы строк - НЕ удаляем их!
-  // VK использует \n для переносов строк, сохраняем их как есть
+  // ✅ НОРМАЛИЗАЦИЯ ПЕРЕНОСОВ СТРОК - КРИТИЧЕСКО ДЛЯ TELEGRAM HTML
+  // VK может использовать разные форматы переносов: \r\n, \r, \n
+  // Конвертируем все в \n для Telegram HTML совместимости
+  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  
+  // ✅ ДОПОЛНИТЕЛЬНАЯ ОБРАБОТКА: Сохраняем двойные переносы как абзацы
+  // Telegram HTML лучше обрабатывает двойные переносы строк
+  text = text.replace(/\n\n+/g, '\n\n'); // Нормализуем множественные переносы
+  
+  // 🔍 DEBUG: Логируем оригинальный текст для отладки проблем с переносами
+  if (text.indexOf('\n') !== -1) {
+    logEvent("DEBUG", "vk_text_with_linebreaks", "server", 
+             `Text length: ${text.length}, Line breaks: ${(text.match(/\n/g) || []).length}, First 100 chars: ${text.substring(0, 100).replace(/\n/g, '\\n')}`);
+  }
+  
+  // Сохраняем переносы строк - НЕ удаляем их!
+  // Telegram HTML поддерживает \n для переносов строк
   
   // Делаем жирным первое предложение (если включено) - HTML формат
   if (boldFirstLine) {
@@ -2540,6 +2573,12 @@ function formatVkTextForTelegram(text, options) {
   
   // НЕ удаляем переносы строк и НЕ сокращаем множественные пробелы
   // Сохраняем оригинальное форматирование VK поста
+  
+  // 🔍 DEBUG: Логируем финальный результат
+  if (text.indexOf('\n') !== -1) {
+    logEvent("DEBUG", "formatted_text_with_linebreaks", "server", 
+             `Final text length: ${text.length}, Line breaks: ${(text.match(/\n/g) || []).length}, First 100 chars: ${text.substring(0, 100).replace(/\n/g, '\\n')}`);
+  }
   
   return text;
 }
