@@ -2162,44 +2162,123 @@ function sendTelegramMediaGroup(token, chatId, mediaUrls, caption) {
 /**
  * Отправляет media group БЕЗ caption
  */
-function sendMediaGroupWithoutCaption(token, chatId, mediaUrls) {
+function sendMixedMediaOptimized(botToken, chatId, mediaUrls, caption, options) {
   try {
-    var url = `https://api.telegram.org/bot${token}/sendMediaGroup`;
+    // ✅ КРИТИЧНО: Форматировать caption СРАЗУ В НАЧАЛЕ!
+    var formattedCaption = caption ? formatVkTextForTelegram(caption) : '';
     
-    var media = mediaUrls.slice(0, 10).map((item) => ({
-      type: item.type,
-      media: item.url
-      // НЕ добавляем caption и parse_mode
-    }));
-    
-    var response = UrlFetchApp.fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      payload: JSON.stringify({
-        chat_id: chatId,
-        media: media
-      }),
-      muteHttpExceptions: true,
-      timeout: TIMEOUTS.MEDIUM // 15 секунд для media group
-    });
-    
-    var result = JSON.parse(response.getContentText());
-    
-    if (result.ok) {
-      logEvent("INFO", "media_group_sent_no_caption", "server", 
-               `Media count: ${media.length}, Message ID: ${result.result[0].message_id}`);
-      return { success: true, message_id: result.result[0].message_id };
-    } else {
-      logEvent("ERROR", "media_group_failed_no_caption", "server", 
-               `Error: ${result.description}, Code: ${result.error_code}`);
-      return { success: false, error: result.description || "Media group send failed" };
+    // 🔍 DEBUG: Логируем форматирование
+    if (caption && caption.indexOf('\n') !== -1) {
+      logEvent("DEBUG", "sendMixedMediaOptimized_formatting", "server", 
+               `Original length: ${caption.length}, Formatted length: ${formattedCaption.length}, Has <a href: ${formattedCaption.indexOf('<a href') !== -1}`);
     }
     
+    if (!mediaUrls || mediaUrls.length === 0) {
+      return sendTelegramMessage(botToken, chatId, formattedCaption);  // ✅ formattedCaption!
+    }
+
+    var photos = mediaUrls.filter(function(m) { return m.type === 'photo'; });
+    var videos = mediaUrls.filter(function(m) { return m.type === 'video'; });
+    var documents = mediaUrls.filter(function(m) { return m.type === 'document' || m.type === 'doc'; });
+
+    var results = [];
+    var apiCallsSaved = 0;
+
+    // Оптимизация: группируем фото по MAX_MEDIA_GROUP_SIZE (10)
+    if (photos.length > 0) {
+      var photoGroups = [];
+      for (var i = 0; i < photos.length; i += MAX_MEDIA_GROUP_SIZE) {
+        photoGroups.push(photos.slice(i, i + MAX_MEDIA_GROUP_SIZE));
+      }
+
+      photoGroups.forEach(function(group, index) {
+        var groupCaption = (index === 0) ? formattedCaption : null;  // ✅ ФОРМАТИРОВАННЫЙ!
+        var groupResult = sendTelegramMediaGroup(botToken, chatId, group, groupCaption, options);
+        results.push(groupResult);
+        
+        if (!groupResult.success) {
+          logEvent("WARN", "photo_group_send_failed", "server", 
+                   `Group ${index + 1}, Error: ${groupResult.error}`);
+        }
+      });
+
+      apiCallsSaved = photos.length - photoGroups.length;
+    }
+
+    // Видео отправляем отдельно
+    videos.forEach(function(video, index) {
+      var videoCaption = (photos.length === 0 && index === 0) ? formattedCaption : null;  // ✅ ФОРМАТИРОВАННЫЙ!
+      var videoResult = sendTelegramVideo(botToken, chatId, video.url, videoCaption);
+      results.push(videoResult);
+
+      if (!videoResult.success) {
+        logEvent("WARN", "video_send_failed", "server", 
+                 `Video ${video.id || index}: ${videoResult.error}`);
+      }
+
+      if (index < videos.length - 1) {
+        Utilities.sleep(1000);
+      }
+    });
+
+    // Документы отправляем отдельно
+    documents.forEach(function(doc, index) {
+      var docCaption = (photos.length === 0 && videos.length === 0 && index === 0) ? formattedCaption : null;  // ✅ ФОРМАТИРОВАННЫЙ!
+      var docResult = sendTelegramDocument(botToken, chatId, doc.url, docCaption);
+      results.push(docResult);
+
+      if (!docResult.success) {
+        logEvent("WARN", "document_send_failed", "server", 
+                 `Document ${index}: ${docResult.error}`);
+      }
+    });
+
+    // Логируем оптимизацию
+    logEvent("INFO", "MEDIA_OPTIMIZATION", "server", {
+      total_media: mediaUrls.length,
+      photos: photos.length,
+      videos: videos.length,
+      documents: documents.length,
+      photo_groups: photos.length > 0 ? Math.ceil(photos.length / MAX_MEDIA_GROUP_SIZE) : 0,
+      api_calls_saved: apiCallsSaved,
+      total_api_calls: results.length
+    });
+
+    // Определяем общий результат
+    var successCount = results.filter(function(r) { return r.success; }).length;
+    var totalCount = results.length;
+
+    if (successCount === 0) {
+      return { success: false, error: "All media parts failed to send" };
+    } else if (successCount < totalCount) {
+      return { 
+        success: true, 
+        message_id: results.find(function(r) { return r.success; }).message_id,
+        warning: `Partial success: ${successCount}/${totalCount} parts sent`,
+        results: results,
+        optimization_stats: {
+          api_calls_saved: apiCallsSaved,
+          photo_groups: photos.length > 0 ? Math.ceil(photos.length / MAX_MEDIA_GROUP_SIZE) : 0
+        }
+      };
+    } else {
+      return { 
+        success: true, 
+        message_id: results.find(function(r) { return r.success; }).message_id,
+        results: results,
+        optimization_stats: {
+          api_calls_saved: apiCallsSaved,
+          photo_groups: photos.length > 0 ? Math.ceil(photos.length / MAX_MEDIA_GROUP_SIZE) : 0
+        }
+      };
+    }
+
   } catch (error) {
-    logEvent("ERROR", "media_group_exception", "server", error.message);
+    logEvent("ERROR", "send_mixed_media_optimized_error", "server", error.message);
     return { success: false, error: error.message };
   }
 }
+
 
 /**
  * Отправляет media group С caption (стандартный способ)
@@ -2519,164 +2598,70 @@ function getVkPosts(groupId, count = 10) {
 
 function formatVkTextForTelegram(text, options) {
   if (!text) return "";
+  
   options = options || {};
-  var boldFirstLine = options.boldFirstLine !== false; // по умолчанию true
-  var boldUppercase = options.boldUppercase !== false; // по умолчанию true
-  // ✅ НОРМАЛИЗАЦИЯ ПЕРЕНОСОВ СТРОК - КРИТИЧЕСКО ДЛЯ TELEGRAM HTML
-  // VK может использовать разные форматы переносов: \r\n, \r, \n
-  // Конвертируем все в \n для Telegram HTML совместимости
+  var boldFirstLine = options.boldFirstLine !== false;
+  var boldUppercase = options.boldUppercase !== false;
+  
+  // ✅ НОРМАЛИЗАЦИЯ ПЕРЕНОСОВ СТРОК - КРИТИЧНО ДЛЯ TELEGRAM HTML
+  // VK может использовать разные форматы: \r\n, \r, \n
+  // Конвертируем все в \n для Telegram HTML
   text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  // ✅ ДОПОЛНИТЕЛЬНАЯ ОБРАБОТКА: Сохраняем двойные переносы как абзацы
-  // Telegram HTML лучше обрабатывает двойные переносы строк
-  text = text.replace(/\n\n+/g, '\n\n'); // Нормализуем множественные переносы
-  // 🔍 DEBUG: Логируем оригинальный текст для отладки проблем с переносами
+  
+  // ✅ Нормализуем множественные переносы (3+ → 2)
+  text = text.replace(/\n\n+/g, '\n\n');
+  
+  // 🔍 DEBUG: Логируем оригинальный текст
   if (text.indexOf('\n') !== -1) {
     logEvent("DEBUG", "vk_text_with_linebreaks", "server",
-             `Text length: ${text.length}, Line breaks: ${(text.match(/\n/g) || []).length}, First 100 chars: ${text.substring(0, 100).replace(/\n/g, '\\n')}`);
+             `Text length: ${text.length}, Line breaks: ${(text.match(/\n/g) || []).length}`);
   }
-  // Сохраняем переносы строк - НЕ удаляем их!
-  // Telegram HTML поддерживает \n для переносов строк
-  // ✅ КРИТИЧЕСКИ ВАЖНЫЙ ПОРЯДОК ОБРАБОТКИ - ГИПЕРССЫЛКИ ПЕРВЫЕ, ЗАТЕМ ФОРМАТИРОВАНИЕ
-  // 1. Пользователи [id123|Имя] - САМЫЙ ВЫСОКИЙ ПРИОРИТЕТ
+  
+  // ✅ ГИПЕРССЫЛКИ (ПРИОРИТЕТ: специфичные → общие)
+  
+  // 1. Пользователи [id123|Имя]
   text = text.replace(/\[id(\d+)\|([^\]]+)\]/g, '<a href="https://vk.com/id$1">$2</a>');
-  // 2. Группы [club123|Группа] и [public123|Паблик] - ВЫСОКИЙ ПРИОРИТЕТ
+  
+  // 2. Группы [club123|Группа] и [public123|Паблик]
   text = text.replace(/\[(club|public)(\d+)\|([^\]]+)\]/g, function(match, type, id, title) {
-    return `<a href="https://vk.com/${type}${id}">${title}</a>`;
+    return '<a href="https://vk.com/' + type + id + '">' + title + '</a>';
   });
-  // 3. ✅ КРИТИЧЕСКИЙ: VK ссылки БЕЗ протокола [vk.com/...|текст] - СРЕДНИЙ ПРИОРИТЕТ
-  text = text.replace(/\[vk\.com\/([^\]|]+)\|([^\]]+)\]/g, '<a href="https://vk.com/$1">$2</a>');
-  // 4. VK ссылки С протоколом [https://vk.com/...|text] - СРЕДНИЙ ПРИОРИТЕТ
-  text = text.replace(/\[(https?:\/\/vk\.com\/[^\]|]+)\|([^\]]+)\]/g, '<a href="$1">$2</a>');
-  // 5. ✅ НОВЫЙ: Общие внешние ссылки [https://...|text] и [http://...|text] - НИЗКИЙ ПРИОРИТЕТ
-  text = text.replace(/\[(https?:\/\/[^\]|]+)\|([^\]]+)\]/g, '<a href="$1">$2</a>');
-  // 6. ✅ НОВЫЙ: Общие ссылки без протокола [example.com|text] - САМЫЙ НИЗКИЙ ПРИОРИТЕТ
-  text = text.replace(/\[([^\]|]+\.[a-zA-Z]{2,}[^\|]*)\|([^\]]+)\]/g, '<a href="https://$1">$2</a>');
-  // 7. Делаем жирным первое предложение (если включено) - ПОСЛЕ обработки гиперссылок!
-  if (boldFirstLine) {
-    text = text.replace(/^([^.!?]*[.!?])/, '<b>$1</b>');
-  }
-  // 8. Делаем жирными слова в ВЕРХНЕМ РЕГИСТРЕ (если включено) - ПОСЛЕ обработки гиперссылок!
-  if (boldUppercase) {
-
   
-  // 3. ✅ КРИТИЧЕСКИЙ: VK ссылки БЕЗ протокола [vk.com/...|текст] - СРЕДНИЙ ПРИОРИТЕТ
+  // 3. ✅ КРИТИЧЕСКИЙ: VK ссылки БЕЗ протокола [vk.com/...|текст]
   text = text.replace(/\[vk\.com\/([^\]|]+)\|([^\]]+)\]/g, '<a href="https://vk.com/$1">$2</a>');
   
-  // 4. VK ссылки С протоколом [https://vk.com/...|text] - СРЕДНИЙ ПРИОРИТЕТ
+  // 4. VK ссылки С протоколом [https://vk.com/...|text](https://vk.com/...|text)
   text = text.replace(/\[(https?:\/\/vk\.com\/[^\]|]+)\|([^\]]+)\]/g, '<a href="$1">$2</a>');
   
-  // 5. ✅ НОВЫЙ: Общие внешние ссылки [https://...|text] и [http://...|text] - НИЗКИЙ ПРИОРИТЕТ
+  // 5. Общие внешние ссылки [https://...|text](https://...|text)
   text = text.replace(/\[(https?:\/\/[^\]|]+)\|([^\]]+)\]/g, '<a href="$1">$2</a>');
   
-  // 6. ✅ НОВЫЙ: Общие ссылки без протокола [example.com|text] - САМЫЙ НИЗКИЙ ПРИОРИТЕТ
+  // 6. Общие ссылки без протокола [example.com|text]
   text = text.replace(/\[([^\]|]+\.[a-zA-Z]{2,}[^\|]*)\|([^\]]+)\]/g, '<a href="https://$1">$2</a>');
   
-  // 7. Делаем жирным первое предложение (если включено) - ПОСЛЕ обработки гиперссылок!
+  // 7. Делаем жирным первое предложение (если включено)
   if (boldFirstLine) {
     text = text.replace(/^([^.!?]*[.!?])/, '<b>$1</b>');
   }
   
-  // 8. Делаем жирными слова в ВЕРХНЕМ РЕГИСТРЕ (если включено) - ПОСЛЕ обработки гиперссылок!
-  if (boldUppercase) {
-   text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '<b>   text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '<b>   text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '<b>  // 8. Делаем жирными слова в ВЕРХНЕМ РЕГИСТРЕ (если включено) - ПОСЛЕ обработки гиперссылок!</b>');
-  if (boldUppercase) {
-   text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '<b>  // 8. Делаем жирными слова в ВЕРХНЕМ РЕГИСТРЕ (если включено) - ПОСЛЕ обработки гиперссылок!
-  if (boldUppercase) {
-   text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '<b>  // 8. Делаем жирными слова в ВЕРХНЕМ РЕГИСТРЕ (если включено) - ПОСЛЕ обработки гиперссылок!
-  if (boldUppercase) {
-    text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '<b>    text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '<b>  // Делаем жирным первое предложение (если включено) - HTML формат</b>');
-  if (boldFirstLine) {
-    text = text.replace(/^([^.!?]*[.!?])/, '<b>$1</b>');
-  }</b>');
-   }
-
-   // НЕ удаляем переносы строк и НЕ сокращаем множественные пробелы
-   // Сохраняем оригинальное форматирование VK поста
-
-   // 🔍 DEBUG: Логируем финальный результат
-   if (text.indexOf('\n') !== -1) {
-   logEvent("DEBUG", "formatted_text_with_linebreaks", "server",
-            `Final text length: ${text.length}, Line breaks: ${(text.match(/\n/g) || []).length}, First 100 chars: ${text.substring(0, 100).replace(/\n/g, '\\n')}`);
-   }
-
-   return text;
-   }
-  
-  // Делаем жирными слова в ВЕРХНЕМ РЕГИСТРЕ (если включено) - HTML формат
+  // 8. Делаем жирными слова в ВЕРХНЕМ РЕГИСТРЕ (если включено)
   if (boldUppercase) {
     text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '<b>$&</b>');
   }
   
-  // ✅ КРИТИЧЕСКИ ВАЖНЫЙ ПОРЯДОК REGEX - СПЕЦИФИЧНЫЕ → ОБЩИЕ
+  // ✅ НЕ УДАЛЯЕМ переносы строк!
+  // ✅ НЕ УДАЛЯЕМ множественные пробелы!
+  // ✅ СОХРАНЯЕМ оригинальное форматирование VK поста!
   
-  // 1. Пользователи [id123|Имя] - САМЫЙ ВЫСОКИЙ ПРИОРИТЕТ</b>');
-  }
-
-  // НЕ удаляем переносы строк и НЕ сокращаем множественные пробелы
-  // Сохраняем оригинальное форматирование VK поста
-
-  // 🔍 DEBUG: Логируем финальный результат
-  if (text.indexOf('\n') !== -1) {
-   logEvent("DEBUG", "formatted_text_with_linebreaks", "server",
-            `Final text length: ${text.length}, Line breaks: ${(text.match(/\n/g) || []).length}, First 100 chars: ${text.substring(0, 100).replace(/\n/g, '\\n')}`);
-  }
-
-  return text;
-  text = text.replace(/\[id(\d+)\|([^\]]+)\]/g, '<a href="https://vk.com/id$1">$2</a>');
-  
-  // 2. Группы [club123|Группа] и [public123|Паблик] - ВЫСОКИЙ ПРИОРИТЕТ
-  text = text.replace(/\[(club|public)(\d+)\|([^\]]+)\]/g, function(match, type, id, title) {
-    return `<a href="https://vk.com/${type}${id}">${title}</a>`;
-  });
-  
-  // 3. ✅ КРИТИЧЕСКИЙ: VK ссылки БЕЗ протокола [vk.com/...|текст] - СРЕДНИЙ ПРИОРИТЕТ
-  text = text.replace(/\[vk\.com\/([^\]|]+)\|([^\]]+)\]/g, '<a href="https://vk.com/$1">$2</a>');
-  
-  // 4. VK ссылки С протоколом [https://vk.com/...|text] - СРЕДНИЙ ПРИОРИТЕТ
-  text = text.replace(/\[(https?:\/\/vk\.com\/[^\]|]+)\|([^\]]+)\]/g, '<a href="$1">$2</a>');
-  
-    // НЕ удаляем переносы строк и НЕ сокращаем множественные пробелы</b>');
-  }
-
-  // НЕ удаляем переносы строк и НЕ сокращаем множественные пробелы
-  // Сохраняем оригинальное форматирование VK поста
-  // Сохраняем оригинальное форматирование VK поста</b>');
-  }
-  
-  // 🔍 DEBUG: Логируем финальный результат
-  if (text.indexOf('\n') !== -1) {
-    logEvent("DEBUG", "formatted_text_with_linebreaks", "server", 
-             `Final text length: ${text.length}, Line breaks: ${(text.match(/\n/g) || []).length}, First 100 chars: ${text.substring(0, 100).replace(/\n/g, '\\n')}`);
-  }
-  
-  return text;</b>');
-  }
-
-  // НЕ удаляем переносы строк и НЕ сокращаем множественные пробелы
-  // Сохраняем оригинальное форматирование VK поста
-
-  // 🔍 DEBUG: Логируем финальный результат
-  if (text.indexOf('\n') !== -1) {
-   logEvent("DEBUG", "formatted_text_with_linebreaks", "server",
-            `Final text length: ${text.length}, Line breaks: ${(text.match(/\n/g) || []).length}, First 100 chars: ${text.substring(0, 100).replace(/\n/g, '\\n')}`);
-  }
-
-  return text;
-  }
-}</b>');
-  }
-
-  // НЕ удаляем переносы строк и НЕ сокращаем множественные пробелы
-  // Сохраняем оригинальное форматирование VK поста
-
   // 🔍 DEBUG: Логируем финальный результат
   if (text.indexOf('\n') !== -1) {
     logEvent("DEBUG", "formatted_text_with_linebreaks", "server",
-             `Final text length: ${text.length}, Line breaks: ${(text.match(/\n/g) || []).length}, First 100 chars: ${text.substring(0, 100).replace(/\n/g, '\\n')}`);
+             `Final length: ${text.length}, Line breaks: ${(text.match(/\n/g) || []).length}`);
   }
-
+  
   return text;
 }
+
 /**
  * Форматирует полный VK пост для отправки в Telegram с учетом настроек связки
  */
@@ -4517,6 +4502,7 @@ function getVkMediaUrls(attachments) {
  */
 function sendMixedMediaOptimized(botToken, chatId, mediaUrls, caption, options) {
   try {
+    var formattedCaption = caption ? formatVkTextForTelegram(caption) : '';
     if (!mediaUrls || mediaUrls.length === 0) {
       // Нет медиа - отправляем только текст
       return sendTelegramMessage(botToken, chatId, caption || '');
@@ -4539,7 +4525,7 @@ function sendMixedMediaOptimized(botToken, chatId, mediaUrls, caption, options) 
 
       // Отправляем каждую группу ОДНИМ запросом
       photoGroups.forEach(function(group, index) {
-        var groupCaption = (index === 0) ? caption : null;
+        var groupCaption = (index === 0) ? formattedCaption : null;
         var groupResult = sendTelegramMediaGroup(botToken, chatId, group, groupCaption, options);
         results.push(groupResult);
 
@@ -4555,7 +4541,7 @@ function sendMixedMediaOptimized(botToken, chatId, mediaUrls, caption, options) 
 
     // Видео отправляем отдельно (Telegram API ограничение)
     videos.forEach(function(video, index) {
-      var videoCaption = (photos.length === 0 && index === 0) ? caption : null;
+      var videoCaption = (photos.length === 0 && index === 0) ? formattedCaption  : null;
       var videoResult = sendTelegramVideo(botToken, chatId, video.url, videoCaption);
       results.push(videoResult);
 
@@ -4572,7 +4558,7 @@ function sendMixedMediaOptimized(botToken, chatId, mediaUrls, caption, options) 
 
     // Документы отправляем отдельно
     documents.forEach(function(doc, index) {
-      var docCaption = (photos.length === 0 && videos.length === 0 && index === 0) ? caption : null;
+      var docCaption = (photos.length === 0 && videos.length === 0 && index === 0) ? formattedCaption : null;
       var docResult = sendTelegramDocument(botToken, chatId, doc.url, docCaption);
       results.push(docResult);
 
