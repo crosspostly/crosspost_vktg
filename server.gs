@@ -550,6 +550,79 @@ function getServerHealthData() {
   };
 }
 
+function findBindingById(bindingId, licenseKey) {
+  try {
+    var sheet = getSheet("Bindings");
+    var data = sheet.getDataRange().getValues();
+    
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0] === bindingId && data[i][1] === licenseKey) {
+        var bindingObject = buildBindingObjectFromRow(data[i]);
+        if (bindingObject) {
+          return bindingObject;
+        }
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    logEvent("ERROR", "find_binding_error", "system", error.message);
+    return null;
+  }
+}
+
+function buildBindingObjectFromRow(row) {
+  if (!row) {
+    return null;
+  }
+  
+  var bindingId = row[0];
+  var vkGroupUrl = row[3];
+  var tgChatId = row[4];
+  var fallbackContext = {
+    bindingId: bindingId,
+    vkGroupUrl: vkGroupUrl,
+    processedTgChatId: tgChatId
+  };
+  
+  try {
+    fallbackContext.processedVkGroupId = extractVkGroupId(vkGroupUrl);
+  } catch (vkError) {
+    fallbackContext.processedVkGroupId = "";
+  }
+  
+  var storedBindingNameCell = row[9];
+  var rawBindingName = resolveBindingName(storedBindingNameCell, fallbackContext);
+  var sanitizedBindingName = sanitizeBindingSheetSuffix(rawBindingName);
+  migrateLegacyBindingSheets(storedBindingNameCell, sanitizedBindingName);
+  var bindingDescription = sanitizeBindingText(row[10]);
+  var vkGroupId = row[11] || fallbackContext.processedVkGroupId; // Используем сохраненный VK Group ID или извлекаем
+  var sheetName = getPublishedSheetNameFromBindingName(sanitizedBindingName);
+  
+  return {
+    id: bindingId,
+    licenseKey: row[1],
+    userEmail: row[2],
+    vkGroupUrl: vkGroupUrl,
+    tgChatId: tgChatId,
+    status: row[5],
+    createdAt: row[6],
+    lastCheck: row[7],
+    formatSettings: row[8] || "",
+    bindingName: sanitizedBindingName,
+    binding_name: sanitizedBindingName,
+    bindingDescription: bindingDescription,
+    binding_description: bindingDescription,
+    bindingSheetSuffix: sanitizedBindingName,
+    binding_sheet_suffix: sanitizedBindingName,
+    bindingSheetName: sheetName,
+    vkGroupId: vkGroupId, // ← ДОБАВЛЯЕМ VK GROUP ID!
+    binding_sheet_name: sheetName,
+    bindingOriginalName: rawBindingName,
+    binding_original_name: rawBindingName
+  };
+}
+
 function checkSheetExists(sheetName) {
   try {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
@@ -1611,6 +1684,67 @@ function handleCleanLogs(payload, clientIp) {
 
 // Дополнительные обработчики для отправки постов и публикации
 
+function handleSendPost(payload, clientIp) {
+  try {
+    var { license_key, binding_id, vk_post } = payload;
+    
+    // Проверяем лицензию
+    var licenseCheck = handleCheckLicense({ license_key }, clientIp);
+    var licenseData = JSON.parse(licenseCheck.getContent());
+    
+    if (!licenseData.success) {
+      return licenseCheck;
+    }
+    
+    // Проверяем глобальную настройку "disable_all_stores"
+    var props = PropertiesService.getScriptProperties();
+    var disableAllStores = props.getProperty("global_disable_all_stores");
+    
+    if (disableAllStores === "true") {
+      logEvent("INFO", "post_blocked_by_global_setting", license_key, 
+               `Post sending blocked by global disable_all_stores setting`);
+      return jsonResponse({
+        success: false,
+        error: "All stores are globally disabled",
+        blocked_by_global_setting: true
+      }, 403);
+    }
+
+    // Находим связку
+    var binding = findBindingById(binding_id, license_key);
+    if (!binding) {
+      return jsonResponse({
+        success: false,
+        error: "Binding not found"
+      }, 404);
+    }
+    
+    if (binding.status !== "active") {
+      return jsonResponse({
+        success: false,
+        error: "Binding is not active"
+      }, 403);
+    }
+    
+    // Отправляем пост в Telegram с учетом настроек связки
+    var sendResult = sendVkPostToTelegram(binding.tgChatId, vk_post, binding);
+    
+    if (sendResult.success) {
+      logEvent("INFO", "post_sent_successfully", license_key, 
+               `Binding ID: ${binding_id}, Post ID: ${vk_post.id}, Message ID: ${sendResult.message_id}, IP: ${clientIp}`);
+    } else {
+      logEvent("ERROR", "post_send_failed", license_key, 
+               `Binding ID: ${binding_id}, Post ID: ${vk_post.id}, Error: ${sendResult.error}, IP: ${clientIp}`);
+    }
+    
+    return jsonResponse(sendResult);
+    
+  } catch (error) {
+    logEvent("ERROR", "send_post_error", payload.license_key, error.message);
+    return jsonResponse({ success: false, error: error.message }, 500);
+  }
+}
+
 function handleGetVkPosts(payload, clientIp) {
   try {
     var { license_key, vk_group_id, screen_name, count = 50 } = payload;
@@ -2415,6 +2549,89 @@ function getVkPosts(groupId, count = 10) {
     logEvent("ERROR", "vk_api_error", "server", 
              `Group ID: ${groupId}, Error: ${error.message}`);
     throw error;  // Пробрасываем ошибку дальше
+  }
+}
+
+// ============================================
+// ФУНКЦИИ ИЗ VK-SERVICE (ВОССТАНОВЛЕНЫ)
+// ============================================
+
+/**
+ * Создает строку с описанием медиа из вложений
+ * @param {Array} attachments - Массив вложений VK
+ * @return {string} - Описание медиа
+ */
+function createMediaSummary(attachments) {
+  try {
+    if (!attachments || attachments.length === 0) {
+      return 'no media';
+    }
+    
+    var counts = { photo: 0, video: 0, audio: 0, doc: 0, link: 0, other: 0 };
+    
+    for (var i = 0; i < attachments.length; i++) {
+      var type = attachments[i].type;
+      if (counts.hasOwnProperty(type)) {
+        counts[type]++;
+      } else {
+        counts.other++;
+      }
+    }
+    
+    var parts = [];
+    if (counts.photo > 0) parts.push(`${counts.photo} photo${counts.photo > 1 ? 's' : ''}`);
+    if (counts.video > 0) parts.push(`${counts.video} video${counts.video > 1 ? 's' : ''}`);
+    if (counts.audio > 0) parts.push(`${counts.audio} audio${counts.audio > 1 ? 's' : ''}`);
+    if (counts.doc > 0) parts.push(`${counts.doc} doc${counts.doc > 1 ? 's' : ''}`);
+    if (counts.link > 0) parts.push(`${counts.link} link${counts.link > 1 ? 's' : ''}`);
+    if (counts.other > 0) parts.push(`${counts.other} other`);
+    
+    return parts.length > 0 ? parts.join(', ') : 'no media';
+  } catch (error) {
+    logEvent('ERROR', 'media_summary_failed', 'server', error.message);
+    return 'error counting media';
+  }
+}
+
+/**
+ * Проверяет, был ли уже отправлен пост в связку
+ * @param {string} bindingName - Название связки
+ * @param {string} postId - ID VK поста
+ * @return {boolean} - true если пост уже отправлен
+ */
+function checkPostAlreadySent(bindingName, postId) {
+  try {
+    if (!postId) return false;
+    
+    var sheetName = getPublishedSheetNameFromBindingName(bindingName);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(sheetName);
+    
+    if (!sheet) return false;
+    
+    var lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return false; // Только заголовок
+    
+    // Проверяем последние 50 записей для оптимизации
+    var startRow = Math.max(2, lastRow - 49); // 50 записей максимум
+    var rowsToCheck = lastRow - startRow + 1;
+    
+    // Получаем status (колонка B) и vkPostId (колонка D)
+    var rows = sheet.getRange(startRow, 2, rowsToCheck, 3).getValues(); // B, C, D колонки
+    
+    for (var i = 0; i < rows.length; i++) {
+      var status = rows[i][0].toString().toLowerCase(); // Колонка B (status)
+      var vkPostId = rows[i][2]; // Колонка D (vkPostId)
+      
+      if ((status === 'success' || status === 'partial') && vkPostId && vkPostId.toString() === postId.toString()) {
+        return true;
+      }
+    }
+    
+    return false;
+  } catch (error) {
+    logEvent('ERROR', 'check_post_already_sent_failed', 'server', error.message);
+    return false; // При ошибке считаем, что пост не отправлен
   }
 }
 
