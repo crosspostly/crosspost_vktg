@@ -486,11 +486,11 @@ function getInitialData() {
   }
 }
 
-function saveLicenseWithCheck(licenseKey) {
+function checkLicenseFromServer(licenseKey) {
   try {
     logEvent("INFO", "license_check_start", "client", `License key: ${licenseKey.substring(0, 20)}...`);
     
-    if (!SERVER_URL || SERVER_URL.includes("YOURSERVERURL")) {
+    if (!SERVER_URL || SERVER_URL.includes("YOUR-SERVER-URL")) {
       logEvent("ERROR", "license_config_error", "client", "Server URL not configured");
       return {
         success: false,
@@ -538,6 +538,11 @@ function saveLicenseWithCheck(licenseKey) {
     logEvent("ERROR", "license_check_exception", "client", error.message);
     return { success: false, error: `❌ Ошибка проверки лицензии: ${error.message}` };
   }
+}
+
+function saveLicenseWithCheck(licenseKey) {
+  // Для обратной совместимости - delegируем к новой функции
+  return checkLicenseFromServer(licenseKey);
 }
 
 function callServer(payload, options) {
@@ -2301,6 +2306,7 @@ function getMainPanelHtml() {
         showMessage("license", "loading", "🔄 Проверка лицензии...");
         showLoader(true);
 
+        // Вызываем функцию для проверки лицензии на сервере
         google.script.run
           .withSuccessHandler(function(result) {
             logMessageToConsole("Success handler called with result: " + JSON.stringify(result).substring(0, 200));
@@ -2330,7 +2336,7 @@ function getMainPanelHtml() {
             showMessage("license", "error", "❌ Ошибка: " + error.message);
           })
           .withUserObject({timestamp: new Date().toISOString()})
-          .saveLicenseWithCheck(keyValue);
+          .checkLicenseFromServer(keyValue);
 
       } catch (error) {
         logMessageToConsole("Exception caught in checkAndSaveLicense: " + error.message);
