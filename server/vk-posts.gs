@@ -23,31 +23,31 @@ function formatVkTextForTelegram(text, options) {
   var boldFirstLine = options.boldFirstLine !== false; // true по умолчанию
   var boldUppercase = options.boldUppercase !== false; // true по умолчанию
 
-  // Выделяем первую строку жирным
+  // Сохраняем оригинальные переносы строк - НЕ удаляем их!
+  // VK использует \n для переносов строк, сохраняем их как есть
+  
+  // Выделяем первую строку жирным (HTML формат)
   if (boldFirstLine) {
-    text = text.replace(/(^.+?)([\r\n]|$)/, '**$1**$2');
+    text = text.replace(/(^.+?)([\r\n]|$)/, '<b>$1</b>$2');
   }
   
-  // Выделяем слова из заглавных букв (2+ символа)
+  // Выделяем слова из заглавных букв (2+ символа) в HTML формате
   if (boldUppercase) {
-    text = text.replace(/\b[A-ZА-Я]{2,}\b/g, '**$&**');
+    text = text.replace(/\b[A-ZА-Я]{2,}\b/g, '<b>$&</b>');
   }
   
-  // Преобразуем VK ссылки в Telegram формат
-  text = text.replace(/\[id(\d+)\|(.+?)\]/g, '[$2](https://vk.com/id$1)');
+  // Сначала обрабатываем специфичные VK упоминания пользователей и групп
+  text = text.replace(/\[id(\d+)\|(.+?)\]/g, '<a href="https://vk.com/id$1">$2</a>');
   text = text.replace(/\[(club|public)(\d+)\|(.+?)\]/g, function(match, type, id, title) {
-    // Преобразуем ID в отрицательный
-    if (id.startsWith('id')) {
-      return `[${title}](https://vk.com/${id})`;
-    } else if (id.startsWith('club') || id.startsWith('public')) {
-      return `[${title}](https://vk.com/${id})`;
-    } else {
-      return `[${title}](https://vk.com/club${id})`;
-    }
+    // Для club и public используем правильные URL
+    return `<a href="https://vk.com/${type}${id}">${title}</a>`;
   });
   
-  // Убираем лишние пробелы
-  text = text.replace(/\n{3,}/g, '\n\n').trim();
+  // Затем преобразуем общие VK гиперссылки [URL|Текст] в HTML <a href="URL">Текст</a>
+  text = text.replace(/\[([^\]|]+)\|([^\]]+)\]/g, '<a href="$1">$2</a>');
+  
+  // НЕ удаляем переносы строк и НЕ сокращаем множественные пробелы
+  // Сохраняем оригинальное форматирование VK поста
   
   return text;
 }

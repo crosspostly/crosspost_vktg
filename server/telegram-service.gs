@@ -38,7 +38,7 @@ function sendMediaGroupWithoutCaption(token, chatId, mediaUrls) {
 function sendMediaGroupWithCaption(token, chatId, mediaUrls, caption) {
   try {
     var url = `https://api.telegram.org/bot${token}/sendMediaGroup`;
-    var media = mediaUrls.slice(0, 10).map((item, i) => ({ type: item.type, media: item.url, caption: i === 0 ? caption : undefined, parse_mode: i === 0 ? 'Markdown' : undefined }));
+    var media = mediaUrls.slice(0, 10).map((item, i) => ({ type: item.type, media: item.url, caption: i === 0 ? caption : undefined, parse_mode: i === 0 ? 'HTML' : undefined }));
     var response = UrlFetchApp.fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, payload: JSON.stringify({ chat_id: chatId, media }), muteHttpExceptions: true, timeout: REQUEST_TIMEOUT });
     var result = JSON.parse(response.getContentText());
     if (result.ok) { return { success: true, message_id: result.result[0].message_id }; }
@@ -90,7 +90,7 @@ function sendTelegramVideo(token, chatId, videoUrl, caption) {
   try {
     var url = `https://api.telegram.org/bot${token}/sendVideo`;
     var payload = { chat_id: chatId, video: videoUrl };
-    if (caption) { payload.caption = caption; payload.parse_mode = 'Markdown'; }
+    if (caption) { payload.caption = caption; payload.parse_mode = 'HTML'; }
     var response = UrlFetchApp.fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, payload: JSON.stringify(payload), muteHttpExceptions: true, timeout: TIMEOUTS.SLOW });
     var result = JSON.parse(response.getContentText());
     if (result.ok) { return { success: true, message_id: result.result.message_id }; }
