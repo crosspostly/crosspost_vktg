@@ -2111,7 +2111,7 @@ function getMainPanelHtml() {
       
       google.script.run
         .withSuccessHandler(function(data) {
-          logMessageToConsole("Initial data received: License=" + !!data.license + ", Bindings=" + (data.bindings?.length || 0));
+          logMessageToConsole("Initial data received: License=" + !!data.license + ", Bindings=" + (data.bindings && data.bindings.length ? data.bindings.length : 0));
           showLoader(false);
           
           if (data.success) {
@@ -2189,8 +2189,8 @@ function getMainPanelHtml() {
       if (!appState.license) return;
 
       const bindings = appState.bindings;
-      const activeBindings = bindings.filter(b => b.status === "active").length;
-      const pausedBindings = bindings.filter(b => b.status === "paused").length;
+      const activeBindings = bindings.filter(function(b) { return b.status === "active"; }).length;
+      const pausedBindings = bindings.filter(function(b) { return b.status === "paused"; }).length;
 
       appState.stats = { active: activeBindings, paused: pausedBindings, total: bindings.length };
 
@@ -2209,7 +2209,7 @@ function getMainPanelHtml() {
       if (bindings.length === 0) {
         bindingsList.innerHTML = '<div class="empty-state">Нет связок<br><br>Добавьте первую связку для начала кросспостинга</div>';
       } else {
-        bindingsList.innerHTML = bindings.map(binding => {
+        bindingsList.innerHTML = bindings.map(function(binding) {
           const isPaused = binding.status === "paused";
           
           // Получаем название связки и описание
@@ -2220,32 +2220,27 @@ function getMainPanelHtml() {
           const vkUrl = binding.vkGroupUrl || binding.vk_group_url || 'N/A';
           const tgChat = binding.tgChatId || binding.tg_chat_id || 'N/A';
           
-          return \`
-            <div class="binding-item \${isPaused ? 'paused' : ''}" style="margin-bottom: 12px;">
-              <div class="binding-header">
-                <div class="binding-info">
-                  <!-- Показываем название связки крупно -->
-                  \${bindingName ? \`<div class="binding-vk" style="font-size: 16px; color: #667eea; margin-bottom: 6px;">📌 \${bindingName}</div>\` : ''}
-                  \${bindingDesc ? \`<div style="font-size: 12px; color: #666; margin-bottom: 6px; font-style: italic;">\${bindingDesc}</div>\` : ''}
-                  
-                  <!-- VK и TG мельче -->
-                  <div style="font-size: 12px; color: #888; margin-top: 4px;">
-                    📰 VK: \${vkUrl}<br>
-                    📱 TG: \${tgChat}
-                  </div>
-                </div>
-                <div class="binding-actions">
-                  <button class="btn-small btn-success" onclick="publishBinding('\${binding.id}')" title="▶️ Опубликовать последний пост">▶️</button>
-                  <button class="btn-small btn-warning" onclick="toggleBinding('\${binding.id}')" title="\${binding.status === 'active' ? 'Пауза' : 'Включить'}">\${binding.status === 'active' ? '⏸️' : '▶️'}</button>
-                  <button class="btn-small btn-secondary" onclick="editBinding('\${binding.id}')" title="Редактировать">✏️</button>
-                  <button class="btn-small btn-danger" onclick="deleteBinding('\${binding.id}')" title="Удалить">🗑️</button>
-                </div>
-              </div>
-              <div style="margin-top: 8px;">
-                <span class="binding-status status-\${binding.status}">\${binding.status === 'active' ? 'АКТИВНА' : 'ПАУЗА'}</span>
-              </div>
-            </div>
-          \`;
+          return '<div class="binding-item ' + (isPaused ? 'paused' : '') + '" style="margin-bottom: 12px;">' +
+            '<div class="binding-header">' +
+              '<div class="binding-info">' +
+                (bindingName ? '<div class="binding-vk" style="font-size: 16px; color: #667eea; margin-bottom: 6px;">📌 ' + bindingName + '</div>' : '') +
+                (bindingDesc ? '<div style="font-size: 12px; color: #666; margin-bottom: 6px; font-style: italic;">' + bindingDesc + '</div>' : '') +
+                '<div style="font-size: 12px; color: #888; margin-top: 4px;">' +
+                  '📰 VK: ' + vkUrl + '<br>' +
+                  '📱 TG: ' + tgChat +
+                '</div>' +
+              '</div>' +
+              '<div class="binding-actions">' +
+                '<button class="btn-small btn-success" onclick="publishBinding(\'' + binding.id + '\')" title="▶️ Опубликовать последний пост">▶️</button>' +
+                '<button class="btn-small btn-warning" onclick="toggleBinding(\'' + binding.id + '\')" title="' + (binding.status === 'active' ? 'Пауза' : 'Включить') + '">' + (binding.status === 'active' ? '⏸️' : '▶️') + '</button>' +
+                '<button class="btn-small btn-secondary" onclick="editBinding(\'' + binding.id + '\')" title="Редактировать">✏️</button>' +
+                '<button class="btn-small btn-danger" onclick="deleteBinding(\'' + binding.id + '\')" title="Удалить">🗑️</button>' +
+              '</div>' +
+            '</div>' +
+            '<div style="margin-top: 8px;">' +
+              '<span class="binding-status status-' + binding.status + '">' + (binding.status === 'active' ? 'АКТИВНА' : 'ПАУЗА') + '</span>' +
+            '</div>' +
+          '</div>';
         }).join("");
       }
 
@@ -2265,18 +2260,16 @@ function getMainPanelHtml() {
       const statusContent = document.getElementById("status-content");
       const serverStatus = SERVER_URL ? "✅ Подключен" : "❌ Ошибка подключения";
 
-      statusContent.innerHTML = \`
-        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 20px;">
-          <div><strong>🌐 Сервер:</strong> \${serverStatus}</div>
-          <div><strong>⏱️ Авто-проверка:</strong> ⚙️ Настраивается</div>
-          <div><strong>📊 Статистика:</strong> \${appState.stats.total} связок (\${appState.stats.active} активных)</div>
-          <div><strong>🔑 Лицензия:</strong> \${appState.license.type}</div>
-        </div>
-
-        <div style="margin-top: 16px; padding: 12px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
-          <strong>💡 Подсказка:</strong> Используйте "🔄 Проверить посты" для тестирования или "⏱️ Авто-проверка" для настройки автоматической проверки каждые 30 минут.
-        </div>
-      \`;
+      statusContent.innerHTML = 
+        '<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 20px;">' +
+          '<div><strong>🌐 Сервер:</strong> ' + serverStatus + '</div>' +
+          '<div><strong>⏱️ Авто-проверка:</strong> ⚙️ Настраивается</div>' +
+          '<div><strong>📊 Статистика:</strong> ' + appState.stats.total + ' связок (' + appState.stats.active + ' активных)</div>' +
+          '<div><strong>🔑 Лицензия:</strong> ' + appState.license.type + '</div>' +
+        '</div>' +
+        '<div style="margin-top: 16px; padding: 12px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">' +
+          '<strong>💡 Подсказка:</strong> Используйте "🔄 Проверить посты" для тестирования или "⏱️ Авто-проверка" для настройки автоматической проверки каждые 30 минут.' +
+        '</div>';
     }
 
     // ============================================
@@ -2318,14 +2311,14 @@ function getMainPanelHtml() {
               updateUI();
               showMessage("license", "success", "✅ Лицензия активирована!");
 
-              setTimeout(() => {
+              setTimeout(function() {
                 const licenseMessage = document.getElementById("license-message");
                 if (licenseMessage) {
                   licenseMessage.style.display = "none";
                 }
               }, 3000);
             } else {
-              const errorMsg = result?.error || "Неизвестная ошибка";
+              const errorMsg = result && result.error ? result.error : "Неизвестная ошибка";
               logMessageToConsole("License check failed: " + errorMsg);
               showMessage("license", "error", errorMsg);
             }
@@ -2372,7 +2365,7 @@ function getMainPanelHtml() {
             showMessage("license", "success", "✅ Статус лицензии обновлен!");
             logMessageToConsole("License status check completed successfully");
           } else {
-            const errorMsg = result?.error || "Ошибка проверки лицензии";
+            const errorMsg = result && result.error ? result.error : "Ошибка проверки лицензии";
             showMessage("license", "error", "❌ " + errorMsg);
             logMessageToConsole("License status check failed: " + errorMsg);
           }
@@ -2411,7 +2404,7 @@ function getMainPanelHtml() {
     }
 
     function editBinding(bindingId) {
-  const binding = appState.bindings.find(b => b.id === bindingId);
+  const binding = appState.bindings.find(function(b) { return b.id === bindingId; });
   if (!binding) {
     showMessage("bindings", "error", "❌ Связка не найдена");
     return;
@@ -2428,9 +2421,9 @@ function getMainPanelHtml() {
   document.getElementById("modal-tg-chat").value = binding.tgChatId || binding.tg_chat_id || "";
   
   // Загружаем настройки форматирования (с значениями по умолчанию если не заданы)
-  document.getElementById("modal-bold-first-line").checked = binding.formatSettings?.boldFirstLine !== false;
-  document.getElementById("modal-bold-uppercase").checked = binding.formatSettings?.boldUppercase !== false;
-  document.getElementById("modal-sync-posts").value = binding.formatSettings?.syncPostsCount || "1";
+  document.getElementById("modal-bold-first-line").checked = binding.formatSettings && binding.formatSettings.boldFirstLine !== false;
+  document.getElementById("modal-bold-uppercase").checked = binding.formatSettings && binding.formatSettings.boldUppercase !== false;
+  document.getElementById("modal-sync-posts").value = binding.formatSettings && binding.formatSettings.syncPostsCount ? binding.formatSettings.syncPostsCount : "1";
   
   document.getElementById("submit-binding-btn").textContent = "✅ Сохранить изменения";
   clearModalMessage();
@@ -2482,7 +2475,7 @@ function getMainPanelHtml() {
             showMessage("bindings", "success", message);
             logEvent("INFO", "binding_operation_success", "client", "Action: " + action + ", Name: " + bindingName);
           } else {
-            const errorMsg = result?.error || "Неизвестная ошибка";
+            const errorMsg = result && result.error ? result.error : "Неизвестная ошибка";
             showModalMessage("error", errorMsg);
             logEvent("ERROR", "binding_operation_failed", "client", "Action: " + action + ", Error: " + errorMsg);
           }
@@ -2510,7 +2503,7 @@ function getMainPanelHtml() {
             showMessage("bindings", "success", "✅ Пост опубликован в Telegram!");
             logMessageToConsole("Publish binding successful for ID: " + bindingId);
           } else {
-            const errorMsg = result?.error || "Ошибка публикации";
+            const errorMsg = result && result.error ? result.error : "Ошибка публикации";
             showMessage("bindings", "error", "❌ " + errorMsg);
             logMessageToConsole("Publish binding failed: " + errorMsg);
           }
@@ -2528,17 +2521,17 @@ function getMainPanelHtml() {
     }
 
     function toggleBinding(bindingId) {
-      const binding = appState.bindings.find(b => b.id === bindingId);
+      const binding = appState.bindings.find(function(b) { return b.id === bindingId; });
       if (!binding) return;
 
       const newStatus = binding.status === "active" ? "paused" : "active";
       const action = newStatus === "active" ? "включить" : "поставить на паузу";
       
-      if (!confirm(\`\${action === "включить" ? "Включить" : "Поставить на паузу"} связку?\\n\\n📰 \${binding.vkGroupUrl || binding.vk_group_url}\\n📱 \${binding.tgChatId || binding.tg_chat_id}\`)) {
+      if (!confirm((action === "включить" ? "Включить" : "Поставить на паузу") + " связку?\n\n📰 " + (binding.vkGroupUrl || binding.vk_group_url) + "\n📱 " + (binding.tgChatId || binding.tg_chat_id))) {
         return;
       }
 
-      showMessage("bindings", "loading", \`🔄 \${action === "включить" ? "Включение" : "Постановка на паузу"}...\`);
+      showMessage("bindings", "loading", "🔄 " + (action === "включить" ? "Включение" : "Постановка на паузу") + "...");
       logMessageToConsole("Toggling binding status: " + bindingId + " to " + newStatus);
 
       google.script.run
@@ -2549,7 +2542,7 @@ function getMainPanelHtml() {
             showMessage("bindings", "success", message);
             logMessageToConsole("Binding status toggled successfully");
           } else {
-            const errorMsg = result?.error || "Ошибка изменения статуса";
+            const errorMsg = result && result.error ? result.error : "Ошибка изменения статуса";
             showMessage("bindings", "error", "❌ " + errorMsg);
             logMessageToConsole("Toggle binding failed: " + errorMsg);
           }
@@ -2562,10 +2555,10 @@ function getMainPanelHtml() {
     }
 
     function deleteBinding(bindingId) {
-      const binding = appState.bindings.find(b => b.id === bindingId);
+      const binding = appState.bindings.find(function(b) { return b.id === bindingId; });
       if (!binding) return;
 
-      if (!confirm(\`Удалить связку?\\n\\n📰 \${binding.vkGroupUrl || binding.vk_group_url}\\n📱 \${binding.tgChatId || binding.tg_chat_id}\\n\\n⚠️ Это действие нельзя отменить!\`)) {
+      if (!confirm("Удалить связку?\n\n📰 " + (binding.vkGroupUrl || binding.vk_group_url) + "\n📱 " + (binding.tgChatId || binding.tg_chat_id) + "\n\n⚠️ Это действие нельзя отменить!")) {
         return;
       }
 
@@ -2579,7 +2572,7 @@ function getMainPanelHtml() {
             showMessage("bindings", "success", "🗑️ Связка удалена!");
             logMessageToConsole("Binding deleted successfully");
           } else {
-            const errorMsg = result?.error || "Ошибка удаления";
+            const errorMsg = result && result.error ? result.error : "Ошибка удаления";
             showMessage("bindings", "error", "❌ " + errorMsg);
             logMessageToConsole("Delete binding failed: " + errorMsg);
           }
@@ -2621,12 +2614,12 @@ function getMainPanelHtml() {
       google.script.run
         .withSuccessHandler(function(result) {
           if (result && result.success) {
-            const message = \`✅ Проверка завершена!\\n\\n📋 Проверено связок: \${result.bindingsChecked}\\n🆕 Найдено новых постов: \${result.newPostsFound}\\n✉️ Отправлено в TG: \${result.postsSent}\`;
+            const message = "✅ Проверка завершена!\n\n📋 Проверено связок: " + result.bindingsChecked + "\n🆕 Найдено новых постов: " + result.newPostsFound + "\n✉️ Отправлено в TG: " + result.postsSent;
             showMessage("status", "success", message);
             logMessageToConsole("Manual check completed successfully");
           } else {
-            showMessage("status", "error", "❌ " + (result?.error || "Ошибка проверки"));
-            logMessageToConsole("Manual check failed: " + (result?.error || "Unknown error"));
+            showMessage("status", "error", "❌ " + (result && result.error ? result.error : "Ошибка проверки"));
+            logMessageToConsole("Manual check failed: " + (result && result.error ? result.error : "Unknown error"));
           }
         })
         .withFailureHandler(function(error) {
@@ -2704,7 +2697,7 @@ function getMainPanelHtml() {
       logMessageToConsole("Message shown: [" + type + "] " + text);
 
       if (type !== "loading") {
-        setTimeout(() => {
+        setTimeout(function() {
           messageEl.style.display = "none";
         }, 5000);
       }
@@ -2953,7 +2946,7 @@ function getMainPanelHtml() {
     }
 
     function clearOldLogs() {
-      if (!confirm("🧹 Очистить логи старше 30 дней?\n\nЭто действие удалит все записи из листа 'Logs', которые старше 30 дней.")) {
+      if (!confirm("🧹 Очистить логи старше 30 дней?\n\nЭто действие удалит все записи из листа \'Logs\', которые старше 30 дней.")) {
         return;
       }
 
@@ -2965,7 +2958,7 @@ function getMainPanelHtml() {
             showMessage("logs", "success", "✅ " + result.message);
             loadLogs(); // Перезагружаем логи
           } else {
-            showMessage("logs", "error", "❌ " + (result?.error || "Ошибка очистки логов"));
+            showMessage("logs", "error", "❌ " + (result && result.error ? result.error : "Ошибка очистки логов"));
           }
         })
         .withFailureHandler(function(error) {
