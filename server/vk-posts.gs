@@ -43,7 +43,15 @@ function formatVkTextForTelegram(text, options) {
     return `<a href="https://vk.com/${type}${id}">${title}</a>`;
   });
   
-  // Затем преобразуем общие VK гиперссылки [URL|Текст] в HTML <a href="URL">Текст</a>
+  // КРИТИЧЕСКИ ВАЖНО: Обрабатываем VK ссылки БЕЗ протокола ПЕРЕД общими
+  // [vk.com/...|текст] → https://vk.com/...
+  text = text.replace(/\[vk\.com\/([^\]|]+)\|([^\]]+)\]/g, '<a href="https://vk.com/$1">$2</a>');
+  
+  // Затем обрабатываем VK ссылки С протоколом
+  // [https://vk.com/...|текст] → https://vk.com/...
+  text = text.replace(/\[(https?:\/\/vk\.com\/[^\]|]+)\|([^\]]+)\]/g, '<a href="$1">$2</a>');
+  
+  // Затем преобразуем общие гиперссылки [URL|Текст] в HTML <a href="URL">Текст</a>
   text = text.replace(/\[([^\]|]+)\|([^\]]+)\]/g, '<a href="$1">$2</a>');
   
   // НЕ удаляем переносы строк и НЕ сокращаем множественные пробелы

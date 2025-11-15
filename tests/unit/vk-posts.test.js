@@ -197,4 +197,74 @@ describe('vk-posts.gs', () => {
     expect(formatted).toContain('<a href="https://vk.com/club12345">My Club</a>');
     expect(formatted).toContain('<a href="https://vk.com/public67890">Public Page</a>');
   });
+
+  test('formatVkTextForTelegram handles VK URLs without protocol (CRITICAL)', () => {
+    const textWithVkLinks = 'Check this vk.com link: [vk.com/daoqub|DAOQUB] and wall post: [vk.com/wall-123_456|Wall Post]';
+    const formatted = formatVkTextForTelegram(textWithVkLinks, {
+      boldFirstLine: false,
+      boldUppercase: false,
+    });
+
+    expect(formatted).toContain('<a href="https://vk.com/daoqub">DAOQUB</a>');
+    expect(formatted).toContain('<a href="https://vk.com/wall-123_456">Wall Post</a>');
+  });
+
+  test('formatVkTextForTelegram handles VK URLs with protocol', () => {
+    const textWithVkLinks = 'Check this https vk.com link: [https://vk.com/daoqub|DAOQUB] and http: [http://vk.com/wall-123_456|Wall Post]';
+    const formatted = formatVkTextForTelegram(textWithVkLinks, {
+      boldFirstLine: false,
+      boldUppercase: false,
+    });
+
+    expect(formatted).toContain('<a href="https://vk.com/daoqub">DAOQUB</a>');
+    expect(formatted).toContain('<a href="http://vk.com/wall-123_456">Wall Post</a>');
+  });
+
+  test('formatVkTextForTelegram handles mixed hyperlink formats with correct priority', () => {
+    const mixedText = 'User: [id12345|John] | Group: [club67890|Group] | VK no protocol: [vk.com/test|Test] | VK with protocol: [https://vk.com/test2|Test2] | General: [https://example.com|Example]';
+    const formatted = formatVkTextForTelegram(mixedText, {
+      boldFirstLine: false,
+      boldUppercase: false,
+    });
+
+    // Check all formats are converted correctly
+    expect(formatted).toContain('<a href="https://vk.com/id12345">John</a>');
+    expect(formatted).toContain('<a href="https://vk.com/club67890">Group</a>');
+    expect(formatted).toContain('<a href="https://vk.com/test">Test</a>');
+    expect(formatted).toContain('<a href="https://vk.com/test2">Test2</a>');
+    expect(formatted).toContain('<a href="https://example.com">Example</a>');
+  });
+
+  test('formatVkTextForTelegram critical example from requirements', () => {
+    const criticalText = 'Очень новый пост [vk.com/daoqub|с гиперссылкой]';
+    const formatted = formatVkTextForTelegram(criticalText, {
+      boldFirstLine: false,
+      boldUppercase: false,
+    });
+
+    expect(formatted).toBe('Очень новый пост <a href="https://vk.com/daoqub">с гиперссылкой</a>');
+  });
+
+  test('formatVkTextForTelegram complex VK URL formats', () => {
+    const complexText = 'Various VK formats: [vk.com/wall-123_456|Post], [vk.com/club123|Club], [vk.com/public456|Public], [vk.com/id789|User]';
+    const formatted = formatVkTextForTelegram(complexText, {
+      boldFirstLine: false,
+      boldUppercase: false,
+    });
+
+    expect(formatted).toContain('<a href="https://vk.com/wall-123_456">Post</a>');
+    expect(formatted).toContain('<a href="https://vk.com/club123">Club</a>');
+    expect(formatted).toContain('<a href="https://vk.com/public456">Public</a>');
+    expect(formatted).toContain('<a href="https://vk.com/id789">User</a>');
+  });
+
+  test('formatVkTextForTelegram preserves line breaks with hyperlinks', () => {
+    const textWithBreaksAndLinks = 'First line with [vk.com/test1|link1]\n\nSecond line with [https://example.com|link2]\n\nThird line';
+    const formatted = formatVkTextForTelegram(textWithBreaksAndLinks, {
+      boldFirstLine: false,
+      boldUppercase: false,
+    });
+
+    expect(formatted).toBe('First line with <a href="https://vk.com/test1">link1</a>\n\nSecond line with <a href="https://example.com">link2</a>\n\nThird line');
+  });
 });
