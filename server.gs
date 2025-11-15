@@ -2075,6 +2075,12 @@ function sendTelegramMessage(token, chatId, text) {
       disable_web_page_preview: true
     };
     
+    // 🔍 DEBUG: Логируем payload для отладки проблем с переносами строк
+    if (text && text.indexOf('\n') !== -1) {
+      logEvent("DEBUG", "telegram_payload_with_linebreaks", "server", 
+               `Text length: ${text.length}, Line breaks: ${(text.match(/\n/g) || []).length}, Payload preview: ${JSON.stringify(payload).substring(0, 200)}`);
+    }
+    
     var response = UrlFetchApp.fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2206,8 +2212,14 @@ function sendMediaGroupWithCaption(token, chatId, mediaUrls, caption) {
       type: item.type,
       media: item.url,
       caption: index === 0 ? caption : undefined,
-      parse_mode: index === 0 ? 'Markdown' : undefined
+      parse_mode: index === 0 ? 'HTML' : undefined
     }));
+    
+    // 🔍 DEBUG: Логируем media payload для отладки проблем с переносами строк
+    if (caption && caption.indexOf('\n') !== -1) {
+      logEvent("DEBUG", "telegram_media_payload_with_linebreaks", "server", 
+               `Caption length: ${caption.length}, Line breaks: ${(caption.match(/\n/g) || []).length}, First media caption: ${media[0]?.caption?.substring(0, 100) || 'no caption'}`);
+    }
     
     var response = UrlFetchApp.fetch(url, {
       method: 'POST',
@@ -2350,7 +2362,7 @@ function sendTelegramVideo(token, chatId, videoUrl, caption) {
       chat_id: chatId,
       video: videoUrl,
       caption: caption || undefined,
-      parse_mode: caption ? 'Markdown' : undefined,
+      parse_mode: caption ? 'HTML' : undefined,
       supports_streaming: true
     };
     
@@ -2358,6 +2370,12 @@ function sendTelegramVideo(token, chatId, videoUrl, caption) {
     if (!payload.caption) {
       delete payload.caption;
       delete payload.parse_mode;
+    }
+    
+    // 🔍 DEBUG: Логируем video payload для отладки проблем с переносами строк
+    if (caption && caption.indexOf('\n') !== -1) {
+      logEvent("DEBUG", "telegram_video_payload_with_linebreaks", "server", 
+               `Caption length: ${caption.length}, Line breaks: ${(caption.match(/\n/g) || []).length}, Caption preview: ${caption.substring(0, 100).replace(/\n/g, '\\n')}`);
     }
     
     logEvent("DEBUG", "telegram_video_send_start", "server", 
@@ -2506,8 +2524,23 @@ function formatVkTextForTelegram(text, options) {
   var boldFirstLine = options.boldFirstLine !== false; // по умолчанию true
   var boldUppercase = options.boldUppercase !== false; // по умолчанию true
   
-  // Сохраняем оригинальные переносы строк - НЕ удаляем их!
-  // VK использует \n для переносов строк, сохраняем их как есть
+  // ✅ НОРМАЛИЗАЦИЯ ПЕРЕНОСОВ СТРОК - КРИТИЧЕСКО ДЛЯ TELEGRAM HTML
+  // VK может использовать разные форматы переносов: \r\n, \r, \n
+  // Конвертируем все в \n для Telegram HTML совместимости
+  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  
+  // ✅ ДОПОЛНИТЕЛЬНАЯ ОБРАБОТКА: Сохраняем двойные переносы как абзацы
+  // Telegram HTML лучше обрабатывает двойные переносы строк
+  text = text.replace(/\n\n+/g, '\n\n'); // Нормализуем множественные переносы
+  
+  // 🔍 DEBUG: Логируем оригинальный текст для отладки проблем с переносами
+  if (text.indexOf('\n') !== -1) {
+    logEvent("DEBUG", "vk_text_with_linebreaks", "server", 
+             `Text length: ${text.length}, Line breaks: ${(text.match(/\n/g) || []).length}, First 100 chars: ${text.substring(0, 100).replace(/\n/g, '\\n')}`);
+  }
+  
+  // Сохраняем переносы строк - НЕ удаляем их!
+  // Telegram HTML поддерживает \n для переносов строк
   
   // Делаем жирным первое предложение (если включено) - HTML формат
   if (boldFirstLine) {
@@ -2519,18 +2552,33 @@ function formatVkTextForTelegram(text, options) {
     text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '<b>$&</b>');
   }
   
-  // Сначала обрабатываем специфичные VK упоминания пользователей и групп
+  // ✅ КРИТИЧЕСКИ ВАЖНЫЙ ПОРЯДОК REGEX - СПЕЦИФИЧНЫЕ → ОБЩИЕ
+  
+  // 1. Пользователи [id123|Имя] - САМЫЙ ВЫСОКИЙ ПРИОРИТЕТ
   text = text.replace(/\[id(\d+)\|([^\]]+)\]/g, '<a href="https://vk.com/id$1">$2</a>');
+  
+  // 2. Группы [club123|Группа] и [public123|Паблик] - ВЫСОКИЙ ПРИОРИТЕТ
   text = text.replace(/\[(club|public)(\d+)\|([^\]]+)\]/g, function(match, type, id, title) {
-    // Для club и public используем правильные URL
     return `<a href="https://vk.com/${type}${id}">${title}</a>`;
   });
   
-  // Затем преобразуем общие VK гиперссылки [URL|Текст] в HTML <a href="URL">Текст</a>
+  // 3. ✅ КРИТИЧЕСКИЙ: VK ссылки БЕЗ протокола [vk.com/...|текст] - СРЕДНИЙ ПРИОРИТЕТ
+  text = text.replace(/\[vk\.com\/([^\]|]+)\|([^\]]+)\]/g, '<a href="https://vk.com/$1">$2</a>');
+  
+  // 4. VK ссылки С протоколом [https://vk.com/...|text] - СРЕДНИЙ ПРИОРИТЕТ
+  text = text.replace(/\[(https?:\/\/vk\.com\/[^\]|]+)\|([^\]]+)\]/g, '<a href="$1">$2</a>');
+  
+  // 5. Общие гиперссылки [https://...|text] - САМЫЙ НИЗКИЙ ПРИОРИТЕТ
   text = text.replace(/\[([^\]|]+)\|([^\]]+)\]/g, '<a href="$1">$2</a>');
   
   // НЕ удаляем переносы строк и НЕ сокращаем множественные пробелы
   // Сохраняем оригинальное форматирование VK поста
+  
+  // 🔍 DEBUG: Логируем финальный результат
+  if (text.indexOf('\n') !== -1) {
+    logEvent("DEBUG", "formatted_text_with_linebreaks", "server", 
+             `Final text length: ${text.length}, Line breaks: ${(text.match(/\n/g) || []).length}, First 100 chars: ${text.substring(0, 100).replace(/\n/g, '\\n')}`);
+  }
   
   return text;
 }
