@@ -2506,35 +2506,34 @@ function formatVkTextForTelegram(text, options) {
   var boldFirstLine = options.boldFirstLine !== false; // по умолчанию true
   var boldUppercase = options.boldUppercase !== false; // по умолчанию true
   
-  // Делаем жирным первое предложение (если включено)
+  // Сохраняем оригинальные переносы строк - НЕ удаляем их!
+  // VK использует \n для переносов строк, сохраняем их как есть
+  
+  // Делаем жирным первое предложение (если включено) - HTML формат
   if (boldFirstLine) {
-    text = text.replace(/^([^.!?]*[.!?])/, '*$1*');
+    text = text.replace(/^([^.!?]*[.!?])/, '<b>$1</b>');
   }
   
-  // Делаем жирными слова в ВЕРХНЕМ РЕГИСТРЕ (если включено)
+  // Делаем жирными слова в ВЕРХНЕМ РЕГИСТРЕ (если включено) - HTML формат
   if (boldUppercase) {
-    text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '*$&*');
+    text = text.replace(/\b[А-ЯA-Z]{2,}\b/g, '<b>$&</b>');
   }
   
-  // Преобразуем ссылки VK в правильный формат для Telegram
-  text = text.replace(/\[(id\d+|club\d+|public\d+|\w+)\|([^\]]+)\]/g, function(match, id, title) {
-    // Если это числовой ID пользователя или группы
-    if (id.startsWith('id')) {
-      return `[${title}](https://vk.com/${id})`;
-    } else if (id.startsWith('club') || id.startsWith('public')) {
-      return `[${title}](https://vk.com/${id})`;
-    } else {
-      // Обычное имя пользователя или группы
-      return `[${title}](https://vk.com/${id})`;
-    }
+  // Сначала обрабатываем специфичные VK упоминания пользователей и групп
+  text = text.replace(/\[id(\d+)\|([^\]]+)\]/g, '<a href="https://vk.com/id$1">$2</a>');
+  text = text.replace(/\[(club|public)(\d+)\|([^\]]+)\]/g, function(match, type, id, title) {
+    // Для club и public используем правильные URL
+    return `<a href="https://vk.com/${type}${id}">${title}</a>`;
   });
   
-  // Удаляем лишние пробелы
-  text = text.replace(/\s+/g, ' ').trim();
+  // Затем преобразуем общие VK гиперссылки [URL|Текст] в HTML <a href="URL">Текст</a>
+  text = text.replace(/\[([^\]|]+)\|([^\]]+)\]/g, '<a href="$1">$2</a>');
+  
+  // НЕ удаляем переносы строк и НЕ сокращаем множественные пробелы
+  // Сохраняем оригинальное форматирование VK поста
   
   return text;
 }
-
 /**
  * Форматирует полный VK пост для отправки в Telegram с учетом настроек связки
  */
