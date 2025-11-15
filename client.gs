@@ -556,27 +556,23 @@ function callServer(payload, options) {
     timeout: (options && options.timeout) || REQUEST_TIMEOUT
   };
 
-  try {
-    var response = UrlFetchApp.fetch(SERVER_URL, requestOptions);
-    var responseCode = response.getResponseCode();
-    var responseText = response.getContentText();
-    var result = {};
+  var response = UrlFetchApp.fetch(SERVER_URL, requestOptions);
+  var responseCode = response.getResponseCode();
+  var responseText = response.getContentText();
+  var result = {};
 
-    if (responseText) {
-      try {
-        result = JSON.parse(responseText);
-      } catch (parseError) {
-        throw new Error('Failed to parse server response JSON');
-      }
+  if (responseText) {
+    try {
+      result = JSON.parse(responseText);
+    } catch (parseError) {
+      throw new Error('Failed to parse server response JSON');
     }
-
-    result = result || {};
-    result.httpStatus = responseCode;
-
-    return result;
-  } catch (error) {
-    throw error;
   }
+
+  result = result || {};
+  result.httpStatus = responseCode;
+
+  return result;
 }
 
 function addBinding(bindingName, bindingDescription, vkGroupUrl, tgChatId, formatSettings) {
@@ -3297,7 +3293,7 @@ function migratePublishedSheetsNames() {
     SpreadsheetApp.getUi().alert(`❌ Ошибка миграции: ${error.message}`);
   }
   
-  </script>
+  <\/script>
 </body>
 </html>`;
 }
