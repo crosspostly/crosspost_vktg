@@ -45,6 +45,7 @@ function onOpen() {
     .addItem("📊 Статистика", "showUserStatistics")
     .addItem("🔍 Логи", "showLogsSheet")
     .addSeparator()
+    .addItem("🧪 Тест логирования", "testClientLogging")
     .addItem("🧹 Очистить старые логи (>30 дней)", "cleanOldLogs")
     .addToUi();
   
@@ -224,7 +225,7 @@ function addBinding(bindingName, bindingDescription, vkGroupUrl, tgChatId, forma
     const sanitizedDescription = typeof bindingDescription === "string" ? bindingDescription.trim() : "";
     
     logEvent("INFO", "add_binding_start", "client", 
-             `Name: ${sanitizedName}, VK URL: ${vkGroupUrl}, TG Chat: ${tgChatId}`);
+             `Name: ${sanitizedName}, VK URL: ${vkGroupUrl}, TG Chat: ${tgChatId}`, null);
     
     const payload = {
       event: "add_binding",
@@ -240,7 +241,7 @@ function addBinding(bindingName, bindingDescription, vkGroupUrl, tgChatId, forma
       }
     };
     
-    logEvent("DEBUG", "add_binding_payload", "client", JSON.stringify(payload).substring(0, 200));
+    logEvent("DEBUG", "add_binding_payload", "client", JSON.stringify(payload).substring(0, 200), null);
     
     const response = UrlFetchApp.fetch(SERVER_URL, {
       method: 'POST',
@@ -254,17 +255,18 @@ function addBinding(bindingName, bindingDescription, vkGroupUrl, tgChatId, forma
     
     if (result.success) {
       logEvent("INFO", "binding_added", "client",
-               `Binding ID: ${result.binding_id}, Name: ${sanitizedName}, VK Group: ${result.converted?.vk_group_id || 'N/A'}`);
+               `Binding ID: ${result.binding_id}, Name: ${sanitizedName}, VK Group: ${result.converted?.vk_group_id || 'N/A'}`, 
+               result.binding_id);
       
       // Published sheets and cache lifecycle are managed by server v6
       return result;
     } else {
-      logEvent("WARN", "add_binding_failed", "client", result.error);
+      logEvent("WARN", "add_binding_failed", "client", result.error, null);
       return result;
     }
     
   } catch (error) {
-    logEvent("ERROR", "add_binding_error", "client", error.message);
+    logEvent("ERROR", "add_binding_error", "client", error.message, null);
     return { success: false, error: error.message };
   }
 }
@@ -278,7 +280,7 @@ function editBinding(bindingId, bindingName, bindingDescription, vkGroupUrl, tgC
     const sanitizedDescription = typeof bindingDescription === "string" ? bindingDescription.trim() : "";
     
     logEvent("INFO", "edit_binding_start", "client",
-             `Binding ID: ${bindingId}, Name: ${sanitizedName}, VK URL: ${vkGroupUrl}`);
+             `Binding ID: ${bindingId}, Name: ${sanitizedName}, VK URL: ${vkGroupUrl}`, bindingId);
     
     // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Получаем старую связку для сравнения групп
     const bindingsResult = getBindings();
@@ -289,7 +291,7 @@ function editBinding(bindingId, bindingName, bindingDescription, vkGroupUrl, tgC
       if (oldBinding) {
         oldVkGroupId = extractVkGroupId(oldBinding.vkGroupUrl || oldBinding.vk_group_url);
         logEvent("DEBUG", "old_binding_found", "client", 
-                 `Old VK Group ID: ${oldVkGroupId}`);
+                 `Old VK Group ID: ${oldVkGroupId}`, bindingId);
       }
     }
     
@@ -299,7 +301,7 @@ function editBinding(bindingId, bindingName, bindingDescription, vkGroupUrl, tgC
     if (oldVkGroupId && newVkGroupId && oldVkGroupId !== newVkGroupId) {
       const cleared = clearGroupFromCache(oldVkGroupId);
       logEvent("INFO", "group_cache_cleared_on_edit", "client", 
-               `Old group: ${oldVkGroupId} → New group: ${newVkGroupId}, Cache cleared: ${cleared}`);
+               `Old group: ${oldVkGroupId} → New group: ${newVkGroupId}, Cache cleared: ${cleared}`, bindingId);
     }
     
     const payload = {
@@ -328,17 +330,17 @@ function editBinding(bindingId, bindingName, bindingDescription, vkGroupUrl, tgC
     const result = JSON.parse(response.getContentText());
     
     if (result.success) {
-      logEvent("INFO", "binding_edited", "client", `Binding ID: ${bindingId}, Name: ${sanitizedName}`);
+      logEvent("INFO", "binding_edited", "client", `Binding ID: ${bindingId}, Name: ${sanitizedName}`, bindingId);
       
       // Published sheet lifecycle is managed on the server after edits
     } else {
-      logEvent("WARN", "edit_binding_failed", "client", result.error);
+      logEvent("WARN", "edit_binding_failed", "client", result.error, bindingId);
     }
     
     return result;
     
   } catch (error) {
-    logEvent("ERROR", "edit_binding_error", "client", error.message);
+    logEvent("ERROR", "edit_binding_error", "client", error.message, bindingId);
     return { success: false, error: error.message };
   }
 }
@@ -349,7 +351,7 @@ function deleteBinding(bindingId) {
     const license = getLicense();
     if (!license) return { success: false, error: "❌ Лицензия не найдена" };
     
-    logEvent("INFO", "delete_binding_start", "client", `Binding ID: ${bindingId}`);
+    logEvent("INFO", "delete_binding_start", "client", `Binding ID: ${bindingId}`, bindingId);
     
     // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Получаем VK Group ID перед удалением для очистки кеша
     const bindingsResult = getBindings();
@@ -360,7 +362,7 @@ function deleteBinding(bindingId) {
       if (binding) {
         vkGroupId = extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
         logEvent("DEBUG", "binding_found_for_deletion", "client", 
-                 `Binding ID: ${bindingId}, VK Group ID: ${vkGroupId}`);
+                 `Binding ID: ${bindingId}, VK Group ID: ${vkGroupId}`, bindingId);
       }
     }
     
@@ -381,22 +383,22 @@ function deleteBinding(bindingId) {
     const result = JSON.parse(response.getContentText());
     
     if (result.success) {
-      logEvent("INFO", "binding_deleted", "client", `Binding ID: ${bindingId}`);
+      logEvent("INFO", "binding_deleted", "client", `Binding ID: ${bindingId}`, bindingId);
       
       // ✅ Если успешно удалили связку - очищаем кеш VK группы
       if (vkGroupId) {
         const cleared = clearGroupFromCache(vkGroupId);
         logEvent("INFO", "group_cache_cleared_on_delete", "client", 
-                 `Binding: ${bindingId}, VK Group: ${vkGroupId}, Cache cleared: ${cleared}`);
+                 `Binding: ${bindingId}, VK Group: ${vkGroupId}, Cache cleared: ${cleared}`, bindingId);
       }
     } else {
-      logEvent("WARN", "delete_binding_failed", "client", result.error);
+      logEvent("WARN", "delete_binding_failed", "client", result.error, bindingId);
     }
     
     return result;
     
   } catch (error) {
-    logEvent("ERROR", "delete_binding_error", "client", error.message);
+    logEvent("ERROR", "delete_binding_error", "client", error.message, bindingId);
     return { success: false, error: error.message };
   }
 }
@@ -503,13 +505,29 @@ function publishLastPost(bindingId) {
     const license = getLicense();
     if (!license) return { success: false, error: "❌ Лицензия не найдена" };
     
-    logEvent("INFO", "publish_last_post_start", "client", `Binding ID: ${bindingId}`);
+    logEvent("INFO", "publish_last_post_start", "client", `Binding ID: ${bindingId}`, bindingId);
+    
+    // Получаем информацию о связке для извлечения VK Group ID
+    const bindingsResult = getBindings();
+    if (!bindingsResult.success) {
+      return { success: false, error: bindingsResult.error };
+    }
+    
+    const binding = bindingsResult.bindings.find(b => b.id === bindingId);
+    if (!binding) {
+      return { success: false, error: "❌ Связка не найдена" };
+    }
+    
+    const vkGroupId = extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url);
+    if (!vkGroupId) {
+      return { success: false, error: "❌ Не удалось извлечь VK Group ID из URL" };
+    }
     
     const payload = {
-      event: "send_post",  // Используем send_post БЕЗ vk_post — сервер опубликует последний пост
+      event: "publish_last_post",  // Используем правильный event для публикации последнего поста
       license_key: license.key,
-      binding_id: bindingId
-      // vk_post НЕ передаем — сервер сам возьмет последний или N постов по настройке
+      binding_id: bindingId,
+      vk_group_id: vkGroupId
     };
     
     const response = UrlFetchApp.fetch(SERVER_URL, {
@@ -523,15 +541,16 @@ function publishLastPost(bindingId) {
     const result = JSON.parse(response.getContentText());
     
     if (result.success) {
-      logEvent("INFO", "publish_last_post_success", "client", `Binding ID: ${bindingId}, Message ID: ${result.message_id || 'N/A'}`);
+      logEvent("INFO", "publish_last_post_success", "client", 
+               `Binding ID: ${bindingId}, VK Group: ${vkGroupId}, Message: ${result.message || 'Success'}`, bindingId);
     } else {
-      logEvent("WARN", "publish_last_post_failed", "client", result.error);
+      logEvent("WARN", "publish_last_post_failed", "client", result.error, bindingId);
     }
     
     return result;
     
   } catch (error) {
-    logEvent("ERROR", "publish_last_post_error", "client", error.message);
+    logEvent("ERROR", "publish_last_post_error", "client", error.message, bindingId);
     return { success: false, error: error.message };
   }
 }
@@ -539,6 +558,53 @@ function publishLastPost(bindingId) {
 // Alias для обратной совместимости
 function testPublication(bindingId) {
   return publishLastPost(bindingId);
+}
+
+/**
+ * Тестовая функция для проверки логирования на клиенте
+ */
+function testClientLogging() {
+  try {
+    logEvent("INFO", "test_logging_start", "client", "Testing client logging system", null);
+    
+    // Тест создания листа Logs
+    const logsSheet = getOrCreateClientLogsSheet();
+    logEvent("INFO", "logs_sheet_created", "client", "Logs sheet created/accessed successfully", null);
+    
+    // Тест создания Published листа
+    const publishedSheet = getOrCreatePublishedSheet("TestBinding");
+    logEvent("INFO", "published_sheet_created", "client", "Published_TestBinding sheet created/accessed successfully", "TestBinding");
+    
+    // Тест записи в Published лист
+    const testPublicationData = {
+      timestamp: new Date(),
+      status: "sent",
+      vkGroupId: "-123456789",
+      vkPostId: "123",
+      vkPostUrl: "https://vk.com/wall-123456789_123",
+      vkPostDate: new Date().toISOString(),
+      mediaCount: 2,
+      captionLength: 150,
+      tgChatId: "-1001234567890",
+      tgMessageIds: "456",
+      tgMessageUrls: "https://t.me/testchannel/456",
+      notes: "Test publication"
+    };
+    
+    writePublicationRow(testPublicationData, "TestBinding");
+    logEvent("INFO", "test_publication_written", "client", "Test publication row written successfully", "TestBinding");
+    
+    logEvent("INFO", "test_logging_complete", "client", "Client logging test completed successfully", null);
+    
+    SpreadsheetApp.getUi().alert("✅ Тест логирования завершен успешно!\n\nПроверьте листы:\n• Logs - логи операций\n• Published_TestBinding - история публикаций");
+    
+    return { success: true, message: "Client logging test completed" };
+    
+  } catch (error) {
+    logEvent("ERROR", "test_logging_error", "client", error.message, null);
+    SpreadsheetApp.getUi().alert("❌ Ошибка теста: " + error.message);
+    return { success: false, error: error.message };
+  }
 }
 
 function setGlobalSetting(settingKey, settingValue) {
@@ -1076,7 +1142,7 @@ function extractTelegramChatId(input) {
 
 /**
  * Клиентская функция очистки старых логов (более 30 дней) из клиентских лог-листов
- * Обрабатывает листы: "Client Logs" и другие листы с "Log" в названии в клиентской таблице
+ * Обрабатывает листы: "Logs" и другие листы с "Log" в названии в клиентской таблице
  */
 function cleanOldLogs() {
   try {
@@ -1087,7 +1153,7 @@ function cleanOldLogs() {
     // Ищем все клиентские листы с логами
     for (let i = 0; i < allSheets.length; i++) {
       const sheetName = allSheets[i].getName();
-      if (sheetName === "Client Logs" || sheetName.toLowerCase().includes("log")) {
+      if (sheetName === "Logs" || sheetName.toLowerCase().includes("log")) {
         logSheets.push(allSheets[i]);
       }
     }
@@ -1279,7 +1345,7 @@ function getOrCreatePublishedPostsSheet(bindingName, vkGroupId) {
 // ============================================
 // 6. ЛОГИРОВАНИЕ
 // ============================================
-function logClientEvent(level, event, user, details) {
+function logClientEvent(level, event, user, details, bindingId) {
   try {
     if (!DEV_MODE && level === "DEBUG") {
       return;
@@ -1310,13 +1376,33 @@ function logClientEvent(level, event, user, details) {
       }
     }
 
-    sheet.appendRow([
+    // Цветовое форматирование для статусов
+    const row = sheet.appendRow([
       timestamp,
       level,
       event,
       resolvedUser,
-      detailsValue
+      detailsValue,
+      bindingId || ""
     ]);
+
+    // Применяем цветовое форматирование
+    const lastRow = sheet.getLastRow();
+    const levelRange = sheet.getRange(lastRow, 2, 1, 1);
+    
+    if (level === "ERROR") {
+      levelRange.setBackground("#ffebee"); // Красный
+      levelRange.setFontColor("#c62828");
+    } else if (level === "WARN") {
+      levelRange.setBackground("#fff3e0"); // Оранжевый
+      levelRange.setFontColor("#ef6c00");
+    } else if (level === "INFO") {
+      levelRange.setBackground("#e8f5e8"); // Зеленый
+      levelRange.setFontColor("#2e7d32");
+    } else if (level === "DEBUG") {
+      levelRange.setBackground("#e3f2fd"); // Синий
+      levelRange.setFontColor("#1565c0");
+    }
 
     console.log(`[${level}] ${event} (${resolvedUser}): ${detailsValue}`);
   } catch (error) {
@@ -1324,18 +1410,18 @@ function logClientEvent(level, event, user, details) {
   }
 }
 
-function logEvent(level, event, source, details) {
-  logClientEvent(level, event, source || "client", details);
+function logEvent(level, event, source, details, bindingId) {
+  logClientEvent(level, event, source || "client", details, bindingId);
 }
 
 function getOrCreateClientLogsSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName("Client Logs");
+  let sheet = ss.getSheetByName("Logs");
 
   if (!sheet) {
-    sheet = ss.insertSheet("Client Logs");
-    sheet.appendRow(["Timestamp", "Level", "Event", "User", "Details"]);
-    const headerRange = sheet.getRange(1, 1, 1, 5);
+    sheet = ss.insertSheet("Logs");
+    sheet.appendRow(["Timestamp", "Level", "Event", "User", "Details", "Binding ID"]);
+    const headerRange = sheet.getRange(1, 1, 1, 6);
     headerRange.setFontWeight("bold");
     headerRange.setBackground("#e3f2fd");
     headerRange.setFontColor("#0f172a");
@@ -2886,13 +2972,15 @@ function ensureAllPublishedSheetsExist() {
           // Создаем новый лист
           publishedSheet = ss.insertSheet(sheetName);
           
-          // Устанавливаем заголовки
+          // Устанавливаем правильные заголовки (12 колонок)
           publishedSheet.appendRow([
-            "Post ID", "Published Date", "Text Preview", "Media Count", "Status"
+            "Timestamp", "Status", "VK Group ID", "VK Post ID", "VK Post URL", 
+            "VK Post Date", "Media Count", "Caption Length", "TG Chat ID", 
+            "TG Message IDs", "TG Message URLs", "Notes"
           ]);
           
           // Форматируем заголовки
-          const headerRange = publishedSheet.getRange(1, 1, 1, 5);
+          const headerRange = publishedSheet.getRange(1, 1, 1, 12);
           headerRange.setBackground("#667eea");
           headerRange.setFontColor("white");
           headerRange.setFontWeight("bold");
@@ -2925,6 +3013,200 @@ function ensureAllPublishedSheetsExist() {
   } catch (error) {
     logEvent("ERROR", "ensure_published_sheets_error", "client", error.message);
     return { success: false, error: error.message, total: 0, created: 0 };
+  }
+}
+
+// ============================================
+// 8. ЛОГИРОВАНИЕ ПУБЛИКАЦИЙ И УПРАВЛЕНИЕ PUBLISHED ЛИСТАМИ
+// ============================================
+
+/**
+ * Создает или получает лист Published для конкретной связки
+ * @param {string} bindingName - Название связки
+ * @return {Sheet} Объект листа
+ */
+function getOrCreatePublishedSheet(bindingName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheetName = `Published_${bindingName}`;
+  let sheet = ss.getSheetByName(sheetName);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    
+    // Устанавливаем правильные заголовки (12 колонок)
+    sheet.appendRow([
+      "Timestamp", "Status", "VK Group ID", "VK Post ID", "VK Post URL", 
+      "VK Post Date", "Media Count", "Caption Length", "TG Chat ID", 
+      "TG Message IDs", "TG Message URLs", "Notes"
+    ]);
+    
+    // Форматируем заголовки
+    const headerRange = sheet.getRange(1, 1, 1, 12);
+    headerRange.setBackground("#667eea");
+    headerRange.setFontColor("white");
+    headerRange.setFontWeight("bold");
+    sheet.setFrozenRows(1);
+    
+    logEvent("INFO", "published_sheet_created", "client", 
+             `Created sheet: ${sheetName} for binding: ${bindingName}`, bindingName);
+  }
+
+  return sheet;
+}
+
+/**
+ * Записывает информацию о публикации в лист Published_[BindingName]
+ * @param {Object} publicationData - Данные о публикации
+ * @param {string} bindingName - Название связки
+ */
+function writePublicationRow(publicationData, bindingName) {
+  try {
+    const sheet = getOrCreatePublishedSheet(bindingName);
+    
+    // Формируем строку для записи
+    const row = [
+      publicationData.timestamp || new Date(),
+      publicationData.status || "unknown", // sent, skipped, error
+      publicationData.vkGroupId || "",
+      publicationData.vkPostId || "",
+      publicationData.vkPostUrl || "",
+      publicationData.vkPostDate || "",
+      publicationData.mediaCount || 0,
+      publicationData.captionLength || 0,
+      publicationData.tgChatId || "",
+      publicationData.tgMessageIds || "",
+      publicationData.tgMessageUrls || "",
+      publicationData.notes || ""
+    ];
+    
+    // Вставляем строку после заголовка (в начало)
+    sheet.insertRowAfter(1);
+    const newRange = sheet.getRange(2, 1, 1, 12);
+    newRange.setValues([row]);
+    
+    // Применяем цветовое форматирование для статуса
+    const statusRange = sheet.getRange(2, 2, 1, 1);
+    if (publicationData.status === "sent") {
+      statusRange.setBackground("#d4edda"); // Зеленый
+      statusRange.setFontColor("#155724");
+    } else if (publicationData.status === "skipped") {
+      statusRange.setBackground("#fff3cd"); // Желтый
+      statusRange.setFontColor("#856404");
+    } else if (publicationData.status === "error") {
+      statusRange.setBackground("#f8d7da"); // Красный
+      statusRange.setFontColor("#721c24");
+    }
+    
+    logEvent("INFO", "publication_row_written", "client", 
+             `Status: ${publicationData.status}, VK Post: ${publicationData.vkPostId}, Binding: ${bindingName}`, 
+             bindingName);
+    
+    return { success: true };
+    
+  } catch (error) {
+    logEvent("ERROR", "publication_row_write_error", "client", 
+             `Binding: ${bindingName}, Error: ${error.message}`, bindingName);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Обновленная функция publishLastPost с логированием на клиенте
+ */
+function publishLastPostWithLogging(bindingId) {
+  try {
+    const license = getLicense();
+    if (!license) return { success: false, error: "❌ Лицензия не найдена" };
+    
+    // Получаем информацию о связке
+    const bindingsResult = getBindings();
+    if (!bindingsResult.success) {
+      return { success: false, error: bindingsResult.error };
+    }
+    
+    const binding = bindingsResult.bindings.find(b => b.id === bindingId);
+    if (!binding) {
+      return { success: false, error: "❌ Связка не найдена" };
+    }
+    
+    const bindingName = binding.name || binding.binding_name || `Binding_${bindingId}`;
+    
+    // ✅ Обеспечиваем существование Published листа для связки
+    getOrCreatePublishedSheet(bindingName);
+    
+    logEvent("INFO", "publish_last_post_start", "client", 
+             `Starting publication for binding: ${bindingName} (${bindingId})`, bindingId);
+    
+    // Отправляем запрос на сервер
+    const payload = {
+      event: "publish_last_post",
+      license_key: license.key,
+      binding_id: bindingId,
+      vk_group_id: extractVkGroupId(binding.vkGroupUrl || binding.vk_group_url)
+    };
+    
+    const response = UrlFetchApp.fetch(SERVER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
+      timeout: REQUEST_TIMEOUT
+    });
+    
+    const result = JSON.parse(response.getContentText());
+    
+    // Логируем результат операции
+    let publicationData = {
+      timestamp: new Date(),
+      status: "error",
+      vkGroupId: result.vkGroupId || "",
+      vkPostId: result.vkPostId || "",
+      vkPostUrl: result.vkPostUrl || "",
+      vkPostDate: result.vkPostDate || "",
+      mediaCount: result.mediaCount || 0,
+      captionLength: result.captionLength || 0,
+      tgChatId: binding.tgChatId || binding.tg_chat_id || "",
+      tgMessageIds: result.tgMessageIds || "",
+      tgMessageUrls: result.tgMessageUrls || "",
+      notes: result.notes || result.error || ""
+    };
+    
+    if (result.success) {
+      if (result.skipped) {
+        // Пост уже был опубликован
+        publicationData.status = "skipped";
+        publicationData.notes = result.notes || "Post already published (duplicate)";
+        
+        logEvent("INFO", "publish_last_post_skipped", "client", 
+                 `Post already published: ${result.vkPostId}, Binding: ${bindingName}`, bindingId);
+      } else {
+        // Успешная публикация
+        publicationData.status = "sent";
+        publicationData.tgMessageIds = result.message_id || result.tgMessageIds || "";
+        publicationData.tgMessageUrls = result.tgMessageUrls || "";
+        publicationData.notes = "Successfully published";
+        
+        logEvent("INFO", "publish_last_post_success", "client", 
+                 `Post published: ${result.vkPostId}, Message ID: ${result.message_id || 'N/A'}, Binding: ${bindingName}`, 
+                 bindingId);
+      }
+    } else {
+      // Ошибка публикации
+      publicationData.status = "error";
+      publicationData.notes = result.error || "Unknown error";
+      
+      logEvent("ERROR", "publish_last_post_failed", "client", 
+               `Error: ${result.error}, Binding: ${bindingName}`, bindingId);
+    }
+    
+    // Записываем в Published лист
+    writePublicationRow(publicationData, bindingName);
+    
+    return result;
+    
+  } catch (error) {
+    logEvent("ERROR", "publish_last_post_error", "client", error.message, bindingId);
+    return { success: false, error: error.message };
   }
 }
 
