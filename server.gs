@@ -1900,10 +1900,12 @@ function sendVkPostToTelegram(chatId, vkPost, binding) {
       const totalCount = results.length;
       
       // Prepare publication data for binding sheet logging
+      // ✅ FIX: Extract proper owner_id from vkPost to avoid "unknown" in URLs
+      var actualOwnerId = vkPost.owner_id || binding.vkGroupId || '';
       var publicationData = {
-        vkGroupId: binding.vkGroupId || '',
+        vkGroupId: actualOwnerId,
         vkPostId: vkPost.id || '',
-        vkPostUrl: `https://vk.com/wall${binding.vkGroupId || 'unknown'}_${vkPost.id || 'unknown'}`,
+        vkPostUrl: `https://vk.com/wall${actualOwnerId}_${vkPost.id || ''}`,
         vkPostDate: vkPost.date ? new Date(vkPost.date * 1000).toISOString() : new Date().toISOString(),
         mediaSummary: createMediaSummary(vkPost.attachments || []),
         captionChars: (vkPost.text || '').length,
@@ -4203,6 +4205,30 @@ function handlePublishLastPost(payload, clientIp) {
     
     var lastPost = postsData.posts[0];
     
+    // ✅ ПРОВЕРКА НА ДУБЛИКАТЫ: Проверяем был ли пост уже опубликован
+    var bindingName = binding.bindingName || `Binding_${binding_id}`;
+    var alreadySent = checkPostAlreadySent(bindingName, lastPost.id);
+    
+    if (alreadySent) {
+      logEvent("INFO", "publish_last_post_skipped_duplicate", license_key, 
+               `Post already published: VK ${vk_group_id}_${lastPost.id}, Binding: ${bindingName}`);
+      
+      return jsonResponse({
+        success: true,
+        skipped: true,
+        message: "Post already published (duplicate)",
+        // Данные для логирования пропуска
+        vkGroupId: vk_group_id,
+        vkPostId: lastPost.id,
+        vkPostUrl: `https://vk.com/wall${lastPost.owner_id || vk_group_id}_${lastPost.id}`,
+        vkPostDate: lastPost.date ? new Date(lastPost.date * 1000).toISOString() : new Date().toISOString(),
+        mediaCount: (lastPost.attachments || []).length,
+        captionLength: (lastPost.text || '').length,
+        tgChatId: binding.tgChatId,
+        notes: "Post already published (duplicate)"
+      });
+    }
+    
     // Получаем настройки связки для форматирования
     var binding = null;
     if (binding_id) {
@@ -4243,24 +4269,28 @@ function handlePublishLastPost(payload, clientIp) {
                `Error parsing format settings: ${error.message}`);
     }
     
-    // Отправляем пост в Telegram
-    var sendResult = handleSendPost({
-      license_key: license_key,
-      post: lastPost,
-      tg_chat_id: binding.tgChatId,
-      format_settings: formatSettings,
-      vk_group_id: vk_group_id
-    }, clientIp);
+    // Отправляем пост в Telegram напрямую через sendVkPostToTelegram
+    var sendResult = sendVkPostToTelegram(binding.tgChatId, lastPost, binding);
     
-    var sendData = JSON.parse(sendResult.getContent());
-    
-    if (sendData.success) {
+    if (sendResult.success) {
       logEvent("INFO", "publish_last_post_success", license_key, 
                `Post published successfully: VK ${vk_group_id}_${lastPost.id} -> TG ${binding.tgChatId}`);
       
+      // ✅ Возвращаем полные данные для логирования на клиенте
       return jsonResponse({
         success: true,
         message: "Last post published successfully",
+        skipped: false,
+        // Данные для Published листа
+        vkGroupId: vk_group_id,
+        vkPostId: lastPost.id,
+        vkPostUrl: `https://vk.com/wall${lastPost.owner_id || vk_group_id}_${lastPost.id}`,
+        vkPostDate: lastPost.date ? new Date(lastPost.date * 1000).toISOString() : new Date().toISOString(),
+        mediaCount: (lastPost.attachments || []).length,
+        captionLength: (lastPost.text || '').length,
+        tgChatId: binding.tgChatId,
+        tgMessageIds: sendResult.message_id || '',
+        tgMessageUrls: sendResult.message_id ? generateTelegramMessageUrls(binding.tgChatId, [sendResult.message_id]) : '',
         published_post: {
           vk_post_id: lastPost.id,
           vk_group_id: vk_group_id,
@@ -4270,11 +4300,16 @@ function handlePublishLastPost(payload, clientIp) {
       });
     } else {
       logEvent("ERROR", "publish_last_post_send_failed", license_key, 
-               `Send error: ${sendData.error}`);
+               `Send error: ${sendResult.error}`);
       
       return jsonResponse({
         success: false,
-        error: `Failed to send post to Telegram: ${sendData.error}`
+        error: `Failed to send post to Telegram: ${sendResult.error}`,
+        // Данные для логирования ошибки
+        vkGroupId: vk_group_id,
+        vkPostId: lastPost.id,
+        vkPostUrl: `https://vk.com/wall${lastPost.owner_id || vk_group_id}_${lastPost.id}`,
+        notes: sendResult.error
       }, 500);
     }
     
